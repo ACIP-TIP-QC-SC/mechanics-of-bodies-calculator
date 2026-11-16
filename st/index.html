@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+<script>
+/* Theme from the main page (light by default); when opened on its own, from the saved choice. */
+(function () { var de = document.documentElement, m = 'light';
+  try { if (window.parent !== window) { var p = window.parent.document.documentElement; m = p.hasAttribute('data-theme') ? p.getAttribute('data-theme') : 'system'; } else { m = localStorage.getItem('mob.theme') || 'light'; } } catch (e) {}
+  if (m === 'system') de.removeAttribute('data-theme'); else de.setAttribute('data-theme', m === 'dark' ? 'dark' : 'light'); })();
+</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Statics of Rigid Bodies · Mechanics of Bodies Calculator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="../shared/styles.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Modules"></nav>
+  <div class="bar">
+    <h2 id="modTitle">Module</h2>
+    <div class="seg" role="group" aria-label="Units">
+      <button type="button" id="uSI" aria-pressed="true">SI</button><button type="button" id="uUS" aria-pressed="false">U.S. Customary</button>
+    </div>
+    <label class="tog" id="showPWrap"><input type="checkbox" id="showP" checked> <span id="showPLabel">Values on the diagram</span></label>
+    <select id="examples" aria-label="Load example"></select>
+  </div>
+  <main class="layout">
+    <aside class="panel" id="controlsPanel" aria-label="Inputs">
+      <div class="ph">Inputs</div>
+      <div id="controls"></div>
+    </aside>
+    <section id="center">
+      <div class="panel anim">
+        <div id="statusPill" class="pill"></div>
+        <div class="abar" id="animBar" hidden></div>
+        <div class="seg" id="viewSeg" role="group" aria-label="Diagram view">
+          <button type="button" data-v="2d" class="on" aria-pressed="true">2D diagram</button><button type="button" data-v="3d" aria-pressed="false">3D view</button>
+        </div>
+        <button type="button" id="resetIso" class="btn small" hidden>Reset to isometric</button>
+      </div>
+      <div class="panel cv">
+        <div class="canvas-wrap">
+          <svg id="svg2d" xmlns="http://www.w3.org/2000/svg"></svg>
+          <canvas id="cv3d" hidden></canvas>
+        </div>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="panel cv" id="plotPanel" hidden>
+        <div class="plot-wrap"><svg id="svgPlot" xmlns="http://www.w3.org/2000/svg"></svg></div>
+      </div>
+      <div class="hint" id="hint"></div>
+    </section>
+    <aside class="panel" id="right" aria-label="Results and solution">
+      <div id="msgs"></div>
+      <div class="ph">Results</div>
+      <table class="results" id="results"></table>
+      <div class="stephead">
+        <div class="ph" style="margin:0">Step-by-step solution</div>
+        <div class="btns"><button type="button" class="copy" id="copySol">Copy solution</button><button type="button" class="copy" id="pdfSol">Print PDF</button></div>
+      </div>
+      <ol class="steps" id="steps"></ol>
+    </aside>
+  </main>
+</div>
+  <script src="../vendor/html2canvas.min.js"></script>
+  <script src="../vendor/jspdf.umd.min.js"></script>
+  <script src="../shared/core.js"></script>
+  <script src="../shared/ui.js"></script>
+  <script src="../shared/iso3d.js"></script>
+  <script src="../shared/charts.js"></script>
+  <script src="../shared/anim.js"></script>
+  <script src="../shared/report.js"></script>
+  <script src="../shared/beam.js"></script>
+  <script src="internal.js"></script>
+  <script src="modInternal.js"></script>
+  <script src="../shared/app.js"></script>
+  <script>
+    /* Statics modules, in tab order. Modules that are not built yet are simply absent. */
+    MOB.start({ name: 'Statics of Rigid Bodies', key: 'st', modules: [window.SForces, window.SEquil, window.STruss, window.SInternal, window.SFriction, window.SSection] });
+  </script>
+</body>
+</html>
