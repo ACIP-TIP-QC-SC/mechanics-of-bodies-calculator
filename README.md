@@ -1,4 +1,4 @@
-# Mechanics of Bodies Calculator
+# Mechanics of Rigid and Deformable Bodies Calculator
 
 An interactive, browser-only solver for Statics of Rigid Bodies, Dynamics of Rigid Bodies and Mechanics of Deformable Bodies, with 2D and 3D diagrams, step-by-step solutions and a printable PDF report.
 
@@ -10,7 +10,7 @@ American Concrete Institute Philippines T.I.P. QC Student Chapter · by CEM Juma
 
 Built so far:
 
-- **Statics of Rigid Bodies:** Internal Forces (internal loadings at a cut, shear and moment diagrams, cables)
+- **Statics of Rigid Bodies:** Internal Forces (internal loadings at a cut, shear and moment diagrams with the deflected shape and its animation, cables)
 
 Planned: Force Systems, Equilibrium, Trusses, Friction, Centroids and Moments of Inertia (Statics); seven Dynamics modules; eight Mechanics of Deformable Bodies modules. A discipline tab appears once its first module is built.
 

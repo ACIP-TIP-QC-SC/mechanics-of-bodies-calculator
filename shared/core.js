@@ -1,5 +1,5 @@
 /* =====================================================================
- * Mechanics of Bodies Calculator — CORE (shared by every discipline)
+ * Mechanics of Rigid and Deformable Bodies Calculator — CORE (shared by every discipline)
  * ---------------------------------------------------------------------
  * Units and conversion, number formatting (4 significant figures), the
  * step recorder, the result builder and the preset merge. No DOM use:
@@ -157,7 +157,7 @@
   }
 
   const Core = {
-    APP_TITLE: 'Mechanics of Bodies Calculator',
+    APP_TITLE: 'Mechanics of Rigid and Deformable Bodies Calculator',
     PI, DEG, UNITS, TO_SI, unitFactor, convert, twin, tidy, fmt, clamp, near, sumStr, polyStr,
     Steps, fail, clone, deepMerge, presetState, linSolve, bisect,
   };

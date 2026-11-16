@@ -303,6 +303,33 @@
       return { N: sg.N, V: cl(sg.V(x), zV), M: cl(sg.M(x), zM), seg: sg };
     }
 
+    /* ---- deflected shape: EI·v'' = M integrated twice (constant EI), with v = 0 at every support,
+            zero slope at a fixed support and a free change of slope at each hinge ---- */
+    const I1 = (g, t) => g.Ma * t + (g.Va * t * t) / 2 + (g.q0 * t * t * t) / 6 + (g.q1 * t * t * t * t) / 24;
+    const I2 = (g, t) => (g.Ma * t * t) / 2 + (g.Va * t * t * t) / 6 + (g.q0 * t * t * t * t) / 24 + (g.q1 * t * t * t * t * t) / 120;
+    let defl = null;
+    (function () {
+      let tp = 0, vp = 0;
+      segs.forEach((g) => { g.tp = tp; g.vp = vp; const hh = g.b - g.a; vp += tp * hh + I2(g, hh); tp += I1(g, hh); });
+      const segAt = (x) => segs.find((g) => x <= g.b + 1e-9) || segs[segs.length - 1];
+      const part = (x) => { const g = segAt(x), t = x - g.a; return { v: g.vp + g.tp * t + I2(g, t), th: g.tp + I1(g, t) }; };
+      const A = [], rhs = [];
+      sups.forEach((sp) => {
+        const pp = part(sp.x);
+        A.push([sp.x, 1].concat(hinges.map((xh) => Math.max(0, sp.x - xh)))); rhs.push(-pp.v);
+        if (sp.type === 'fixed') { A.push([1, 0].concat(hinges.map((xh) => (sp.x > xh ? 1 : 0)))); rhs.push(-pp.th); }
+      });
+      const sol = linSolve(A, rhs);
+      if (!sol.x) return;
+      const c = sol.x;
+      const y = (x) => part(x).v + c[0] * x + c[1] + hinges.reduce((a, xh, j) => a + c[2 + j] * Math.max(0, x - xh), 0);
+      const xsm = []; for (let i = 0; i <= 400; i++) xsm.push((L * i) / 400);
+      let mx = { x: 0, y: 0 };
+      xsm.forEach((x) => { const v = y(x); if (Math.abs(v) > Math.abs(mx.y)) mx = { x, y: v }; });
+      const tiny = 1e-9 * (scaleM || scaleV * L || 1) * L * L;
+      defl = { y, max: Math.abs(mx.y) > tiny ? mx : { x: 0, y: 0 }, flat: !(Math.abs(mx.y) > tiny) };
+    })();
+
     /* ---- extreme values ---- */
     const cand = [], zeros = [];
     segs.forEach((sg, i) => {
@@ -393,7 +420,7 @@
 
     return {
       ok: true, err: [], warn, L, sups, hinges, hname, det, unknowns: unk, reactions, acts, dists, all, events, segs, at, jumpAt, ext, closure,
-      hasAxial, cutSteps, stepsReact, stepsSeg, stepsCheck, stepsMax, units: { F, Lu, FL, WL },
+      hasAxial, defl, cutSteps, stepsReact, stepsSeg, stepsCheck, stepsMax, units: { F, Lu, FL, WL },
     };
   }
   function ordinal(n) { return n === 1 ? 'first' : n === 2 ? 'second' : n === 3 ? 'third' : n + 'th'; }

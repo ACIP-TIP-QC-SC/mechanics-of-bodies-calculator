@@ -1,4 +1,4 @@
-/* Mechanics of Bodies Calculator — look and layout shared by every solver:
+/* Mechanics of Rigid and Deformable Bodies Calculator — look and layout shared by every solver:
    tabs | title bar | controls · diagram · worked solution. */
 :root {
   --paper: #f2f5f6; --panel: #ffffff; --ink: #15242d; --muted: #5a6b75; --rule: #d3dce0;

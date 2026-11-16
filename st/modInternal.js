@@ -61,6 +61,12 @@
       const sync = () => (st.hinges = hs.map((o) => o.x));
       const listApp = { update: () => { sync(); root.App.update(); }, rebuild: () => { sync(); root.App.rebuild(true); } };
       UI.Controls(listApp).list(sec, { items: hs, max: 2, title: () => 'Hinge (M = 0)', fields: () => [{ key: 'x', label: 'Position x', unit: Lu, wide: true }], add: [['Hinge', () => ({ x: tidy(st.L / 2) })]] });
+      sec = C.section(c, 'Deflected shape');
+      C.toggle(sec, { label: 'Show the deflected shape', get: () => st.defl !== false, set: (v) => { st.defl = v; if (!v) st.play = 'cut'; } });
+      if (st.defl !== false) {
+        C.seg(sec, { label: 'Play animates', get: () => st.play || 'cut', set: (v) => { st.play = v; delete st._k; }, options: [['cut', 'The moving cut'], ['deflect', 'The beam deflecting']] });
+        C.note(sec, 'The shape is exaggerated and assumes the same EI along the whole beam. Results list EI × deflection, so divide by EI for the actual deflection.');
+      }
       sec = C.section(c, 'Cut');
       C.slider(sec, { label: 'Cut at x', min: 0, max: st.L, step: tidy(st.L / 200, 2), get: () => st.cut, set: (v) => (st.cut = v), unit: Lu, rebuild: true });
       const res = root.App && root.App.res;
@@ -111,12 +117,13 @@
   M.compute = (U) => Internal.solve(S(), U);
   M.onUnits = (from, to) => Internal.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => (isBeam() ? 'Beam, shear and moment diagrams' : 'Cable diagram');
+  const showDefl = () => isBeam() && S().defl !== false;
+  M.cap2D = () => (isBeam() ? (showDefl() ? 'Beam diagrams and deflected shape' : 'Beam, shear and moment diagrams') : 'Cable diagram');
   M.cap3D = '3D view';
   M.plotCaption = 'Tension along the span';
-  M.hint = () => (isBeam() ? 'Drag the orange cut line along the beam, or press Play to sweep it. Positive shear acts downward on the right face of the left segment; positive moment bends the beam concave upward.' : 'Tension is tangent to the cable, and its horizontal component F_H is the same at every point.');
+  M.hint = () => (isBeam() ? 'Drag the orange cut line along the beam. Press Play to sweep the cut or, if chosen in the inputs, to watch the beam deflect. Positive shear acts downward on the right face of the left segment; positive moment bends the beam concave upward.' : 'Tension is tangent to the cable, and its horizontal component F_H is the same at every point.');
   M.legend = () => (isBeam()
-    ? [[COL.load, 'Loads'], [COL.react, 'Reactions'], [COL.shear, 'Shear V', 'sq'], [COL.moment, 'Moment M', 'sq'], [COL.accent, 'Cut', 'ln']]
+    ? [[COL.load, 'Loads'], [COL.react, 'Reactions'], [COL.shear, 'Shear V', 'sq'], [COL.moment, 'Moment M', 'sq']].concat(showDefl() ? [[DCOL, 'Deflected shape', 'ln']] : [], [[COL.accent, 'Cut', 'ln']])
     : [[COL.cable, 'Cable', 'ln'], [COL.load, 'Loads'], [COL.react, 'Support reactions'], [COL.tension, 'Tension']]);
 
   /* Play sweeps the cut along the beam. One stable object, so Pause and Play resume. */
@@ -125,7 +132,16 @@
     frame(u) { const st = S(); st.cut = tidy((Math.round(u * 400) / 400) * st.L); st.side = 'R'; },
     label() { const st = S(); return `cut at x = ${fmt(st.cut)} ${Core.UNITS[M.units].len}`; },
   };
-  M.anim = () => (isBeam() ? sweep : null);
+  /* Play grows the deflected shape from the straight beam. Paused at the start it shows the full shape. */
+  const DCOL = '#0f8a7e';
+  const ease = (u) => u * u * (3 - 2 * u);
+  const deflect = {
+    duration: 4, loop: false,
+    frame(u) { S()._k = u <= 0 ? 1 : ease(u); },
+    label() { return `deflection at ${Math.round(defK() * 100)} % of full`; },
+  };
+  const defK = () => (S()._k === undefined ? 1 : S()._k);
+  M.anim = () => (isBeam() ? (showDefl() && S().play === 'deflect' ? deflect : sweep) : null);
 
   M.onDrag = function (p, phase, res) {
     if (!isBeam() || res.geo.kind !== 'beam') return false;
@@ -170,8 +186,9 @@
     const ml = 66, mr = wallR ? 70 : 30, pw = W - ml - mr;
     const X = (x) => ml + (x / L) * pw;
     svg._inv = (sx, sy) => [((sx - ml) / pw) * L, sy];
-    const nP = b.hasAxial ? 3 : 2;
-    const topH = Math.max(168, Math.min(H * 0.38, 250));
+    const dOn = showDefl() && b.defl && !b.defl.flat, kD = S().play === 'deflect' ? defK() : 1;
+    const nP = (b.hasAxial ? 3 : 2) + (dOn ? 1 : 0);
+    const topH = Math.max(168, Math.min(H * (dOn ? 0.32 : 0.38), 250));
     const gap = 12, bot = 24;
     const ph = (H - topH - bot - gap * (nP - 1)) / nP;
     const root0 = s('g', {}, svg);
@@ -270,16 +287,39 @@
     const panels = [];
     if (b.hasAxial) panels.push({ key: 'N', name: `N (${F})`, color: COL.axial, unit: F });
     panels.push({ key: 'V', name: `V (${F})`, color: COL.shear, unit: F }, { key: 'M', name: `M (${FL})`, color: COL.moment, unit: FL });
+    const DU = `${F}·${Lu}³`;
+    if (dOn) panels.push({ key: 'D', name: `EI·v (${DU})`, color: DCOL, unit: DU });
     const val = (sg, key, x) => (key === 'N' ? sg.N : key === 'V' ? sg.V(x) : sg.M(x));
     const frames = [];
+    const xtk = b.events.filter((e, i, arr) => i === 0 || i === arr.length - 1 || (X(e) - X(arr[i - 1]) > 26));
+    /* Deflected shape: the elastic curve EI·v, drawn to an exaggerated scale on the straight beam axis. */
+    function deflPanel(p, pi) {
+      const n = 160, full = [];
+      let lo = 0, hi = 0;
+      for (let i = 0; i <= n; i++) { const x = (L * i) / n, v = b.defl.y(x); full.push([x, v]); lo = Math.min(lo, v); hi = Math.max(hi, v); }
+      const Fm = Charts.frame(svg, { x: ml, y: 8 + topH + pi * (ph + gap), w: pw, h: ph, xmin: 0, xmax: L, ymin: lo, ymax: hi, ylabel: p.name, ycolor: p.color, yside: 52, xticks: xtk, padY: 0.3, padTop: true, padBottom: true });
+      s('line', { x1: Fm.X(0), y1: Fm.Y(0), x2: Fm.X(L), y2: Fm.Y(0), stroke: '#8c99a3', 'stroke-width': 1.4, 'stroke-dasharray': '5 4' }, Fm.g);
+      b.sups.forEach((sp) => {
+        const x = Fm.X(sp.x), y = Fm.Y(0);
+        if (sp.type === 'fixed') s('rect', { x: x - (sp.x < 1e-9 ? 5 : sp.x > L - 1e-9 ? 0 : 2.5), y: y - 9, width: 5, height: 18, fill: COL.support }, Fm.g);
+        else s('polygon', { points: `${x},${y + 1} ${x - 6},${y + 10} ${x + 6},${y + 10}`, fill: '#e8eef1', stroke: COL.support, 'stroke-width': 1.3 }, Fm.g);
+      });
+      Charts.curve(Fm, full.map(([x, v]) => [x, v * kD]), { color: p.color, width: 3.2 });
+      b.hinges.forEach((xh) => s('circle', { cx: Fm.X(xh), cy: Fm.Y(b.defl.y(xh) * kD), r: 4, fill: '#fff', stroke: COL.ink, 'stroke-width': 1.4 }, Fm.g));
+      const m = b.defl.max, right = Fm.X(m.x) > ml + pw * 0.6;
+      Charts.mark(Fm, m.x, m.y * kD, opt.showP && Math.abs(X(m.x) - X(g.cut.x)) >= 190 ? `largest: ${fmt(m.y)} at x = ${fmt(m.x)}` : null, { color: p.color, anchor: right ? 'end' : 'start', dx: right ? -8 : 8, dy: m.y > 0 ? -8 : 16 });
+      if (pw > 420) T(Fm.g, ml + pw - 6, 8 + topH + pi * (ph + gap) + 14, 'exaggerated, constant EI', { anchor: 'end', color: COL.dim, size: 10.5, weight: 400 });
+      frames.push({ F: Fm, p, y: (x) => b.defl.y(x) * kD, full: (x) => b.defl.y(x) });
+    }
     panels.forEach((p, pi) => {
+      if (p.key === 'D') { deflPanel(p, pi); return; }
       let lo = 0, hi = 0;
       const curves = b.segs.map((sg) => {
         const n = (p.key === 'N' || (!sg.q0 && !sg.q1 && p.key === 'V')) ? 1 : 28, pts = [];
         for (let i = 0; i <= n; i++) { const x = sg.a + ((sg.b - sg.a) * i) / n, v = val(sg, p.key, x); pts.push([x, v]); lo = Math.min(lo, v); hi = Math.max(hi, v); }
         return pts;
       });
-      const Fm = Charts.frame(svg, { x: ml, y: 8 + topH + pi * (ph + gap), w: pw, h: ph, xmin: 0, xmax: L, ymin: lo, ymax: hi, ylabel: p.name, ycolor: p.color, yside: 52, xticks: pi === panels.length - 1 ? b.events.filter((e, i, arr) => i === 0 || i === arr.length - 1 || (X(e) - X(arr[i - 1]) > 26)) : false, padY: 0.24 });
+      const Fm = Charts.frame(svg, { x: ml, y: 8 + topH + pi * (ph + gap), w: pw, h: ph, xmin: 0, xmax: L, ymin: lo, ymax: hi, ylabel: p.name, ycolor: p.color, yside: 52, xticks: pi === panels.length - 1 ? xtk : false, padY: 0.24 });
       frames.push({ F: Fm, p });
       curves.forEach((pts) => Charts.curve(Fm, pts, { color: p.color, fill: p.color, fop: 0.22, width: 2 }));
       // vertical lines at jumps
@@ -327,7 +367,8 @@
     s('circle', { cx: xc, cy: 10, r: 6.5, fill: COL.accent, stroke: '#fff', 'stroke-width': 1.5 }, gc);
     const side = c.x > L * 0.75 ? 'end' : 'start', dx = side === 'end' ? -10 : 10;
     T(gc, xc + dx, 15, `cut at x = ${fmt(c.x)} ${Lu}` + (b.jumpAt(c.x) ? (c.side === 'L' ? ' (left side)' : ' (right side)') : ''), { anchor: side, color: COL.accent, size: 12, weight: 700 });
-    frames.forEach(({ F: Fm, p }) => {
+    frames.forEach(({ F: Fm, p, y, full }) => {
+      if (p.key === 'D') { const v = full(c.x); Charts.mark(Fm, c.x, y(c.x), `EI·v = ${fmt(Math.abs(v) < 1e-9 * Math.abs(b.defl.max.y) ? 0 : v)} ${p.unit}`, { color: COL.accent, anchor: side, dx, dy: v > 0 ? -7 : 16, size: 12 }); return; }
       const v = c[p.key];
       Charts.mark(Fm, c.x, v, `${p.key} = ${fmt(v)} ${p.unit}`, { color: COL.accent, anchor: side, dx, dy: Fm.Y(v) - Fm.Y(Fm.y1) < 22 ? 16 : -7, size: 12 });
     });
@@ -430,7 +471,17 @@
   function drawBeam3D(v, res, U, opt) {
     const g = res.geo, b = g.beam, { F, FL } = g, L = b.L;
     const d = L / 22, w = L / 14, z0 = -w / 2, z1 = w / 2; v._hs = L / 28;
-    v.box(0, -d / 2, z0, L, d / 2, z1, '#b9c2cb', 1, '#4a5661');
+    const dOn = showDefl() && b.defl && !b.defl.flat, kD = S().play === 'deflect' ? defK() : 1;
+    const dsc = dOn ? ((L * 0.07) / Math.abs(b.defl.max.y)) * kD : 0, dy = (x) => (dOn ? b.defl.y(x) * dsc : 0);
+    if (dOn) {
+      // the beam itself is drawn bent (exaggerated); a thin dashed line keeps the straight axis
+      const n = 40;
+      for (let i = 0; i < n; i++) { const xa = (L * i) / n, xb = (L * (i + 1)) / n, ya = dy(xa), yb2 = dy(xb); v.extrude([[xa, ya - d / 2], [xa, ya + d / 2], [xb, yb2 + d / 2], [xb, yb2 - d / 2]], z0, z1, '#b9c2cb', 1, null, { sideStroke: null }); }
+      const cl = []; for (let i = 0; i <= n; i++) { const x = (L * i) / n; cl.push([x, dy(x), z1]); }
+      v.line(cl, DCOL, 3);
+      v.line([[0, 0, z1], [L, 0, z1]], '#6b7785', 1.2, [5, 4]);
+      if (opt.showP) v.label([b.defl.max.x, dy(b.defl.max.x) + (b.defl.max.y > 0 ? d : -d), z1], `EI·v = ${fmt(b.defl.max.y)} ${F}·${g.Lu}³`, DCOL);
+    } else v.box(0, -d / 2, z0, L, d / 2, z1, '#b9c2cb', 1, '#4a5661');
     b.sups.forEach((sp) => {
       if (sp.type === 'fixed') { const x0 = sp.x > L - 1e-9 ? L : sp.x < 1e-9 ? -d * 1.2 : sp.x - d * 0.6; v.box(x0, -d * 2.4, z0 * 1.8, x0 + d * 1.2, d * 2.4, z1 * 1.8, '#8d98a3', 1, '#4a5661'); }
       else if (sp.type === 'pin') v.extrude([[sp.x, -d / 2], [sp.x - d * 1.1, -d * 2.3], [sp.x + d * 1.1, -d * 2.3]], z0, z1, '#7fb394', 1, '#3c6b50');
@@ -442,12 +493,12 @@
     const hl = L / 7;
     b.dists.forEach((q) => {
       const sg = q.w1 < 0 || q.w2 < 0 ? -1 : 1, y0 = sg * d / 2, ha = sg * hl * 0.75 * Math.abs(q.w1) / wmax, hb2 = sg * hl * 0.75 * Math.abs(q.w2) / wmax;
-      v.extrude([[q.x1, y0], [q.x1, y0 + ha], [q.x2, y0 + hb2], [q.x2, y0]], z0, z1, '#c0392b', 0.22, '#c0392b');
+      v.extrude([[q.x1, y0 + dy(q.x1)], [q.x1, y0 + ha + dy(q.x1)], [q.x2, y0 + hb2 + dy(q.x2)], [q.x2, y0 + dy(q.x2)]], z0, z1, '#c0392b', 0.22, '#c0392b');
       if (opt.showP) v.label([(q.x1 + q.x2) / 2, y0 + (ha + hb2) / 2 + sg * d * 0.4, 0], q.w1 === q.w2 ? `${fmt(Math.abs(q.w1))} ${g.F}/${g.Lu}` : `${fmt(Math.abs(q.w1))} → ${fmt(Math.abs(q.w2))} ${g.F}/${g.Lu}`, '#c0392b');
     });
     b.acts.forEach((a) => {
       if (a.Mz) { const pts = []; for (let i = 0; i <= 20; i++) { const t = (-50 + 280 * (i / 20)) * DEG; pts.push([a.x + d * 2 * Math.cos(t), d * 2 * Math.sin(t), z1 * 1.05]); } if (a.Mz < 0) pts.reverse(); v.line(pts, '#8e44ad', 2.5); arrow3(v, pts[18], pts[20], '#8e44ad'); if (opt.showP) v.label([a.x, d * 2.4, z1], `${fmt(Math.abs(a.Mz))} ${FL}`, '#8e44ad'); return; }
-      const m = Math.hypot(a.Fx, a.Fy) || 1, len = hl * (0.6 + 0.4 * Math.abs(a.P) / Pmax), tip = [a.x, a.Fy > 0 ? -d / 2 : d / 2, 0], tail = [a.x - (a.Fx / m) * len, tip[1] - (a.Fy / m) * len, 0];
+      const m = Math.hypot(a.Fx, a.Fy) || 1, len = hl * (0.6 + 0.4 * Math.abs(a.P) / Pmax), tip = [a.x, (a.Fy > 0 ? -d / 2 : d / 2) + dy(a.x), 0], tail = [a.x - (a.Fx / m) * len, tip[1] - (a.Fy / m) * len, 0];
       arrow3(v, tail, tip, '#c0392b', 3);
       if (opt.showP) v.label(tail, `${fmt(Math.abs(a.P))} ${F}`, '#c0392b');
     });

@@ -62,6 +62,13 @@ group('beam engine', () => {
   close('wL²/8', b.ext.Mmax.M, 24, 1e-9);
   b = Beam.solve({ L: 5, supports: [{ type: 'fixed', x: 0 }], loads: [{ kind: 'dist', x1: 0, x2: 5, w1: 2, w2: 2 }] });
   close('cantilever wL²/2', b.ext.Mmin.M, -25, 1e-9);
+  // deflected shape (EI·v): 5wL⁴/384 at midspan, PL³/3 at the tip of a cantilever, PL³/48
+  b = Beam.solve({ L: 8, supports: SS(8), loads: [{ kind: 'dist', x1: 0, x2: 8, w1: 3, w2: 3 }] });
+  close('EI·v = 5wL⁴/384', b.defl.max.y, -5 * 3 * 8 ** 4 / 384, 1e-6); close('at midspan', b.defl.max.x, 4, 1e-6);
+  b = Beam.solve({ L: 5, supports: [{ type: 'fixed', x: 5 }], loads: [{ kind: 'point', x: 0, P: 2 }] });
+  close('EI·v = PL³/3', b.defl.y(0), -2 * 125 / 3, 1e-9); close('fixed end stays', b.defl.y(5), 0, 1e-9);
+  b = Beam.solve({ L: 6, supports: SS(6), loads: [{ kind: 'point', x: 3, P: 4 }] });
+  close('EI·v = PL³/48', b.defl.y(3), -4 * 216 / 48, 1e-9);
   // inclined load: 10 kN at 60° at midspan of 6 m → A_x = −5, N = +5 left of the load
   b = Beam.solve({ L: 6, supports: SS(6), loads: [{ kind: 'point', x: 3, P: 10, ang: 60 }] });
   close('inclined A_x', b.reactions[0].Rx, -5, 1e-9); close('inclined N', b.at(1).N, 5, 1e-9); close('inclined N right', b.at(4).N, 0, 1e-9);
@@ -69,6 +76,7 @@ group('beam engine', () => {
   // compound beam: fixed at 0, hinge at 4, roller at 8, 12 kN at 6 → B_y = 6, A_y = 6, M_A = −24 (clockwise reaction = hogging at wall)
   b = Beam.solve({ L: 8, supports: [{ type: 'fixed', x: 0 }, { type: 'roller', x: 8 }], loads: [{ kind: 'point', x: 6, P: 12 }], hinges: [4] });
   close('hinge B_y', b.reactions[1].Ry, 6, 1e-9); close('hinge A_y', b.reactions[0].Ry, 6, 1e-9); close('hinge M at wall', b.at(0, 'R').M, -24, 1e-9); close('hinge M = 0', b.at(4).M, 0, 1e-9);
+  close('hinge: roller stays', b.defl.y(8), 0, 1e-6); close('hinge: wall stays', b.defl.y(0), 0, 1e-9); close('hinge: deflection there = cantilever with 6 at its tip', b.defl.y(4), -6 * 64 / 3, 1e-9);
   truthy('hinge steps solve one unknown at a time', b.stepsReact.every((s) => s.t !== 'Remaining equations, solved together'));
   // closure of the diagrams
   truthy('closure', Math.abs(b.closure.V) < 1e-9 && Math.abs(b.closure.M) < 1e-9);

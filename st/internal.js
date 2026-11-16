@@ -22,7 +22,7 @@
       mode: 'diagrams', fu: 'kN',
       L: 9, supports: [{ type: 'pin', x: 0 }, { type: 'roller', x: 9 }],
       loads: [{ kind: 'point', x: 3, P: 6, ang: 90 }, { kind: 'dist', x1: 3, x2: 9, w1: 2, w2: 2 }],
-      hinges: [], cut: 4.5, side: 'R',
+      hinges: [], cut: 4.5, side: 'R', defl: true, play: 'cut',
       cab: { span: 18, hB: 0, loads: [{ x: 3, P: 4 }, { x: 8, P: 15 }, { x: 16, P: 3 }], known: 'sag', at: 2, sag: 12, FH: 6 },
       par: { L: 100, level: true, hA: 10, hB: 10, w0: 5, given: 'sag', Tmax: 700, len: 103 },
       cat: { L: 20, h: 6, w0: 5, given: 'sag', len: 24 },
@@ -69,6 +69,10 @@
     if (roots.length) out.push({ k: 'Shear is zero at x', v: roots.map((z) => fmt(z.x)).join(', '), u: Lu });
     if (b.hasAxial) out.push({ k: 'Largest normal force (tension positive)', v: Math.abs(e.Nmax.N) >= Math.abs(e.Nmin.N) ? e.Nmax.N : e.Nmin.N, u: F });
     if (!cutMode) out.push(...cutRows);
+    if (b.defl && !b.defl.flat) {
+      out.push({ k: 'Largest deflection is at x', v: b.defl.max.x, u: Lu });
+      out.push({ k: 'EI × largest deflection (↑ positive)', v: b.defl.max.y, u: `${F}·${Lu}³` });
+    }
     const steps = cutMode
       ? b.stepsReact.concat(cut.steps)
       : b.stepsReact.concat(b.stepsSeg, b.stepsCheck, b.stepsMax);
