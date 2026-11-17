@@ -6,7 +6,7 @@ const R = (p) => require(path.join(__dirname, '..', p));
 const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/internal.js');
 const Forces = R('st/forces.js'), Equil = R('st/equil.js'), Truss = R('st/truss.js'), Friction = R('st/friction.js');
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
-const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js'), Torsion = R('md/torsion.js'), BeamStress = R('md/beamstress.js'), Deflect = R('md/deflect.js');
+const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js'), Torsion = R('md/torsion.js'), BeamStress = R('md/beamstress.js'), Deflect = R('md/deflect.js'), Transform = R('md/transform.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
 const filter = (process.argv[2] || '').toLowerCase();
@@ -628,6 +628,63 @@ group('beam deflection module', () => {
   Deflect.convertState(st, 'SI', 'US'); close('v_max in inches', out(Deflect.solve(st, U.US), 'Largest deflection v_max'), a / 25.4, 1e-4);
   Deflect.convertState(st, 'US', 'SI'); close('v_max after the round trip', out(Deflect.solve(st, U.SI), 'Largest deflection v_max'), a, 1e-4);
   truthy('a beam on one pin fails', !df({ ei: 'unit', at: 2, bm: { L: 4, sups: [sp('pin', 0)], loads: [Ld('point', { x: 2, P: 5 })] } }).ok);
+});
+
+group('stress transformation module', () => {
+  const tf = (mode, o, sys) => Transform.solve(Core.deepMerge(Transform.defaults(), Object.assign({ mode }, o)), U[sys || 'SI']);
+  const ps = (sx, sy, txy, th, sys) => tf('stress', { ps: { sx, sy, txy, th } }, sys);
+  const pe = (ex, ey, gxy, th, o) => tf('strain', { pe: Object.assign({ ex, ey, gxy, th, ez: 'zero' }, o) });
+  // Example 14.2
+  let r = ps(-80, 50, -25, -30);
+  close("14.2 σx'", out(r, "Normal stress σ_x'"), -25.8); close("14.2 τx'y'", out(r, "Shear stress τ_x'y'"), -68.8); close("14.2 σy'", out(r, "Normal stress σ_y'"), -4.15);
+  // Examples 14.3, 14.4 and 14.8
+  r = ps(-20, 90, 60, 0);
+  close('14.3 σ1', out(r, 'Principal stress σ_1'), 116); close('14.3 σ2', out(r, 'Principal stress σ_2'), -46.4); close('14.3 θp (σ2)', out(r, 'Angle to σ_2, θ_p2'), -23.7); close('14.3 θp (σ1)', out(r, 'Angle to σ_1, θ_p1'), 66.3);
+  close('14.4 τmax', out(r, 'Maximum in-plane shear stress τ_max'), 81.4); close('14.4 σavg', out(r, 'Average normal stress σ_avg'), 35); close('14.4 θs', out(r, 'Angle to the plane of τ_max, θ_s'), 21.3);
+  // Example 14.7
+  r = ps(-12, 0, -6, 0, 'US');
+  close('14.7 σ1', out(r, 'Principal stress σ_1'), 2.49); close('14.7 σ2', out(r, 'Principal stress σ_2'), -14.5);
+  // Example 14.9
+  r = ps(-8, 12, -6, 30, 'US');
+  close("14.9 σx'", out(r, "Normal stress σ_x'"), -8.20); close("14.9 τx'y'", out(r, "Shear stress τ_x'y'"), 5.66); close("14.9 σy'", out(r, "Normal stress σ_y'"), 12.2);
+  // Examples 14.10 and 14.11
+  r = ps(32, 16, 0, 0); close('14.10 τabs', out(r, 'Absolute maximum shear stress τ_abs'), 16); close('14.10 τ in-plane', out(r, 'Maximum in-plane shear stress τ_max'), 8);
+  r = ps(-0.02, 0, -0.04, 0, 'US');
+  close('14.11 σ1', out(r, 'Principal stress σ_1'), 0.0312); close('14.11 σ2', out(r, 'Principal stress σ_2'), -0.0512); close('14.11 τabs', out(r, 'Absolute maximum shear stress τ_abs'), 0.0412);
+  // Examples 14.12 to 14.18 (strain)
+  r = pe(500, -300, 200, -30);
+  close("14.12 εx'", out(r, "Normal strain ε_x'"), 213); close("14.12 γx'y'", out(r, "Shear strain γ_x'y'"), 793); close("14.12 εy'", out(r, "Normal strain ε_y'"), -13.4);
+  r = pe(-350, 200, 80, 0);
+  close('14.13 θp (ε2)', out(r, 'Angle to ε_2, θ_p2'), -4.14); close('14.13 ε1', out(r, 'Principal strain ε_1'), 203); close('14.13 ε2', out(r, 'Principal strain ε_2'), -353); close('14.14 γmax', out(r, 'Maximum in-plane shear strain γ_max'), 556);
+  r = pe(250, -150, 120, 0);
+  close('14.15 ε1', out(r, 'Principal strain ε_1'), 259); close('14.15 ε2', out(r, 'Principal strain ε_2'), -159); close('14.15 θp', out(r, 'Angle to ε_1, θ_p1'), 8.35);
+  close('14.16 γmax', out(r, 'Maximum in-plane shear strain γ_max'), 418); close('14.16 θs', out(r, 'Angle to the plane of γ_max, θ_s'), -36.7);
+  r = pe(-300, -100, 100, -20);
+  close("14.17 εx'", out(r, "Normal strain ε_x'"), -309); close("14.17 γx'y'", out(r, "Shear strain γ_x'y'"), -52.0); close("14.17 εy'", out(r, "Normal strain ε_y'"), -91.3);
+  r = pe(-400, 200, 150, 0); close('14.18 γabs', out(r, 'Absolute maximum shear strain γ_abs'), 618);
+  r = pe(300, 100, 0, 0); close('plane strain γabs uses εz = 0', out(r, 'Absolute maximum shear strain γ_abs'), 300);
+  r = pe(300, 100, 0, 0, { ez: 'nu', nu: 0.3 }); close('plane stress εz', out(r, 'Out-of-plane strain ε_z'), -171.43); close('plane stress γabs', out(r, 'Absolute maximum shear strain γ_abs'), 471.43);
+  // Examples 14.19 and 14.20 (60° rosette)
+  r = tf('rosette', { ro: { kind: '60', ea: 60, eb: 135, ec: 264, E: 200, nu: 0.3 } });
+  close('14.19 εy', out(r, 'Normal strain ε_y'), 246); close('14.19 γxy', out(r, 'Shear strain γ_xy'), -149); close('14.19 ε1', out(r, 'Principal strain ε_1'), 272); close('14.19 ε2', out(r, 'Principal strain ε_2'), 33.9);
+  close('14.19 θp', out(r, 'Angle to ε_2, θ_p2'), 19.3); close('14.20 σ1', out(r, 'Principal stress σ_1'), 62.0); close('14.20 σ2', out(r, 'Principal stress σ_2'), 25.4);
+  r = tf('rosette', { ro: { kind: 'gen', ta: 0, tb: 60, tc: 120, ea: 60, eb: 135, ec: 264, E: 0 } });
+  close('general angles match the 60° rosette', out(r, 'Shear strain γ_xy'), -148.96);
+  r = tf('rosette', { ro: { kind: '45', ea: 400, eb: 300, ec: -200, E: 0 } });
+  close('45° rosette γxy = 2εb − (εa + εc)', out(r, 'Shear strain γ_xy'), 400); close('45° rosette εy', out(r, 'Normal strain ε_y'), -200);
+  truthy('two gauges in the same direction fail', !tf('rosette', { ro: { kind: 'gen', ta: 0, tb: 180, tc: 90, ea: 1, eb: 2, ec: 3, E: 0 } }).ok);
+  // Examples 14.21 and 14.22 (generalized Hooke's law)
+  r = tf('hooke', { hk: { sx: 800, sy: -500, sz: 0, txy: 0, tyz: 0, txz: 0, E: 120, nu: 0.34, a: 300, b: 50, c: 20 } });
+  close('14.21 εx', out(r, 'Normal strain ε_x'), 0.00808); close('14.21 εy', out(r, 'Normal strain ε_y'), -0.00643); close('14.21 εz', out(r, 'Normal strain ε_z'), -0.000850);
+  close("14.21 a' = 302.4", 300 + out(r, 'Change in the side along x, δ_x'), 302.4); close("14.21 b' = 49.68", 50 + out(r, 'Change in the side along y, δ_y'), 49.68);
+  r = tf('hooke', { hk: { sx: -0.02, sy: -0.02, sz: -0.02, txy: 0, tyz: 0, txz: 0, E: 0.6, nu: 0.45, a: 4, b: 2, c: 3 } }, 'US');
+  close('14.22 e', out(r, 'Dilatation e'), -0.01); close('14.22 ε', out(r, 'Normal strain ε_x'), -0.00333); close('14.22 δa', out(r, 'Change in the side along x, δ_x'), -0.0133); close('14.22 k = −p/e', out(r, 'Bulk modulus k'), 2);
+  truthy('ν = 0.5 fails', !tf('hooke', { hk: { nu: 0.5 } }).ok);
+  // unit round trip
+  const st = Core.deepMerge(Transform.defaults(), { mode: 'stress', ps: { sx: -20, sy: 90, txy: 60, th: 30 } });
+  const a = out(Transform.solve(st, U.SI), 'Principal stress σ_1');
+  Transform.convertState(st, 'SI', 'US'); close('σ1 in ksi', out(Transform.solve(st, U.US), 'Principal stress σ_1'), a * 0.145038, 1e-4);
+  Transform.convertState(st, 'US', 'SI'); close('σ1 after the round trip', out(Transform.solve(st, U.SI), 'Principal stress σ_1'), a, 1e-4);
 });
 
 groups.forEach(([name, fn]) => { if (filter && !name.toLowerCase().includes(filter)) return; console.log(name); fn(); });
