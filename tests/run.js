@@ -4,7 +4,7 @@
 const path = require('path');
 const R = (p) => require(path.join(__dirname, '..', p));
 const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/internal.js');
-const Forces = R('st/forces.js'), Equil = R('st/equil.js');
+const Forces = R('st/forces.js'), Equil = R('st/equil.js'), Truss = R('st/truss.js');
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
@@ -215,6 +215,52 @@ group('equilibrium module', () => {
   close('unit round trip', out(Equil.solve(st, US), 'N_B'), 536.2);
 });
 
+group('trusses module', () => {
+  const D = Truss.defaults, mk = (o) => Object.assign(D(), o), SI = U.SI;
+  const J = (s) => s.split(' ').map((t) => { const [name, x, y] = t.split(','); return { name, x: +x, y: +y }; });
+  const Mb = (s) => s.split(' ').map((m) => ({ a: m[0], b: m[1] }));
+  const ld = (j, Fx, Fy) => ({ j, by: 'comp', Fx, Fy });
+  // Example 6.5 (default custom truss, in kN)
+  let r = Truss.solve(mk({ mode: 'custom' }), SI);
+  truthy('6.5 solves', r.ok);
+  [['A_x', -0.4], ['A_y', 0.3], ['N_D', 0.9], ['F_AB', 0.8], ['F_BC', 0.8], ['F_CD', 1.2], ['F_AG', 0.5], ['F_GC', 0.5], ['F_GE', 0.8], ['F_EC', 0.9], ['F_ED', 1.5]].forEach(([k, v]) => close('6.5 ' + k, out(r, k), v));
+  close('6.5 GB zero', out(r, 'F_GB'), 0);
+  truthy('6.5 compression marked', /\(C\)/.test(r.out.find((o) => o.k === 'F_GE').u));
+  truthy('6.5 section takes moments about G', r.steps.some((s) => /Section: Moments about joint G/.test(s.t) && /F_BC = 0.8 kN \(T\)/.test(s.r)));
+  truthy('6.5 section sums forces in y for GC', r.steps.some((s) => /perpendicular to BC and GE/.test(s.t)));
+  truthy('6.5 reactions come first', /Support reactions/.test(r.steps[1].t));
+  // Example 6.1 triangle, closed form, and joint B first with one equation per unknown
+  const tri = { mode: 'custom', fu: 'N', cutOn: false, custom: { joints: J('A,0,0 B,0,2 C,2,0'), members: Mb('BA BC CA'), supports: [{ j: 'A', type: 'pin', ang: 90 }, { j: 'C', type: 'roller', ang: 90 }], loads: [ld('B', 500, 0)] } };
+  r = Truss.solve(mk(tri), SI);
+  close('6.1 F_BC', out(r, 'F_BC'), 707.1); close('6.1 F_BA', out(r, 'F_BA'), 500); close('6.1 F_CA', out(r, 'F_CA'), 500);
+  // joint displacement against virtual work: δ_Bx = Σ F² L / (500 AE), AE = 200 GPa × 1000 mm²
+  r = Truss.solve(mk(Object.assign({}, tri, { ae: { use: true, E: 200, A: 1000 } })), SI);
+  const vw = ((500 * Math.SQRT2) ** 2 * 2 * Math.SQRT2 + 500 ** 2 * 2 + 500 ** 2 * 2) / 500 / 2e8 * 1000;
+  close('6.1 δ_Bx by virtual work (mm)', r.geo.disp[1][0], vw);
+  close('6.1 support A does not move', Math.abs(r.geo.disp[0][0]) + 1, 1);
+  // Fink truss of Example 6.4: GC, DF and then FC are zero by inspection; BH = 2 kN (C)
+  const fink = { mode: 'custom', fu: 'kN', cutOn: false, custom: { joints: J('A,0,0 B,3,1.5 C,6,3 D,9,1.5 E,12,0 H,3.75,0 G,6,0 F,8.25,0'), members: Mb('AB BC CD DE AH HG GF FE BH HC CG CF FD'), supports: [{ j: 'A', type: 'pin', ang: 90 }, { j: 'E', type: 'roller', ang: 90 }], loads: [ld('B', 2 / Math.sqrt(5), -4 / Math.sqrt(5)), ld('C', 0, -5)] } };
+  r = Truss.solve(mk(fink), SI);
+  const zs = r.steps.find((s) => /Zero-force/.test(s.t));
+  truthy('6.4 zero-force rule table', zs && zs.table.rows.map((x) => x[1]).sort().join(' ') === 'F_CF = 0 F_CG = 0 F_FD = 0');
+  close('6.4 BH', out(r, 'F_BH'), 2); close('6.4 count', out(r, 'Zero-force members'), 3);
+  // determinacy and stability
+  truthy('unstable fails (m + r < 2j)', !Truss.solve(mk({ mode: 'custom', custom: { joints: J('A,0,0 B,4,0 C,4,3 D,0,3'), members: Mb('AB BC CD DA'), supports: [{ j: 'A', type: 'pin' }, { j: 'B', type: 'roller', ang: 90 }], loads: [ld('C', 5, 0)] } }), SI).ok);
+  const ind = Truss.solve(mk({ mode: 'custom', custom: { joints: J('A,0,0 B,4,0 C,4,3 D,0,3'), members: Mb('AB BC CD DA AC BD'), supports: [{ j: 'A', type: 'pin' }, { j: 'B', type: 'roller', ang: 90 }], loads: [ld('C', 5, 0)] } }), SI);
+  truthy('indeterminate fails (m + r > 2j)', !ind.ok && /indeterminate/.test(ind.err[0]));
+  const geo = Truss.solve(mk({ mode: 'custom', custom: { joints: J('A,0,0 B,4,0 C,8,0 D,4,3'), members: Mb('AB BC AD DC BD'), supports: [{ j: 'A', type: 'roller', ang: 90 }, { j: 'C', type: 'roller', ang: 90 }, { j: 'B', type: 'roller', ang: 90 }], loads: [ld('D', 0, -5)] } }), SI);
+  truthy('parallel reactions fail although m + r = 2j', !geo.ok && /Unstable/.test(geo.err[0]));
+  // every template is simple (m + r = 2j) and stable
+  Truss.TEMPLATES.forEach(([t]) => [2, 3, 4, 6, 9].forEach((n) => { if (t === 'roof' && n % 2) return; const q = Truss.solve(mk({ tpl: t, n }), SI); truthy(`template ${t} n=${n}`, q.ok); }));
+  // Pratt 4 panels: top chord FG = M_center / h, bottom chord BC by moments about F
+  r = Truss.solve(mk({ tpl: 'pratt', n: 4, a: 3, h: 4, P: 10, cutF: 0.375 }), SI);
+  close('Pratt FG', out(r, 'F_FG'), 15); close('Pratt BC', out(r, 'F_BC'), 11.25); close('Pratt A_y', out(r, 'A_y'), 15);
+  // units: SI to US and back keeps the state
+  const st = mk({ mode: 'custom', ae: { use: true, E: 200, A: 1500 } }), st0 = JSON.stringify(st);
+  Truss.convertState(st, 'SI', 'US'); Truss.convertState(st, 'US', 'SI');
+  const a = JSON.parse(st0), b2 = st;
+  close('unit round trip E', b2.ae.E, a.ae.E, 1e-6); close('unit round trip x', b2.custom.joints[3].x, a.custom.joints[3].x, 1e-6); close('unit round trip load', b2.custom.loads[0].Fy, a.custom.loads[0].Fy, 1e-6);
+});
 group('section engine', () => {
   // every kind and rotation against Green's theorem on its outline
   let worst = 0;

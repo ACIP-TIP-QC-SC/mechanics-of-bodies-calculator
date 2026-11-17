@@ -157,7 +157,7 @@
   function unknowns(sups, err) {
     const U = [];
     sups.forEach((sp, i) => {
-      const L = LET[i], p = [+sp.x, +sp.y];
+      const L = sp.name || LET[i], p = [+sp.x, +sp.y];
       if (!isFinite(p[0]) || !isFinite(p[1])) { err.push(`Support ${L}: enter its position.`); return; }
       const a = (+sp.ang || 0) * DEG, d = [Math.cos(a), Math.sin(a)];
       if (sp.type === 'pin') U.push({ name: `${L}_x`, sup: i, p, d: [1, 0] }, { name: `${L}_y`, sup: i, p, d: [0, 1] });
@@ -234,7 +234,7 @@
       const kv = pick.kind === 'x' ? Kx : pick.kind === 'y' ? Ky : Mk(pick.c);
       const lhs = terms.map((t) => (t.k === i ? `(${fmt(t.a)}) ${t.u.name}` : `(${fmt(t.a)})(${fmt(x[t.k])})`)).join(' + ');
       const where = pick.kind === 'm' ? (sups.findIndex((sp) => Math.abs(sp.x - pick.c[0]) < 1e-9 && Math.abs(sp.y - pick.c[1]) < 1e-9)) : -1;
-      S.add({ t: pick.kind === 'x' ? 'Sum of forces along x' : pick.kind === 'y' ? 'Sum of forces along y' : `Moments about ${where >= 0 ? 'point ' + LET[where] : `(${fmt(pick.c[0])}, ${fmt(pick.c[1])}) ${Lu}, where the lines of two unknowns meet`}`,
+      S.add({ t: pick.kind === 'x' ? 'Sum of forces along x' : pick.kind === 'y' ? 'Sum of forces along y' : `Moments about ${where >= 0 ? 'point ' + (sups[where].name || LET[where]) : `(${fmt(pick.c[0])}, ${fmt(pick.c[1])}) ${Lu}, where the lines of two unknowns meet`}`,
         f: pick.kind === 'x' ? '→+ ΣF_x = 0' : pick.kind === 'y' ? '+↑ ΣF_y = 0' : '↺+ ΣM = 0',
         n: pick.kind === 'm' ? 'This point removes every unknown except one from the equation.' : undefined,
         s: `${lhs}${Math.abs(kv) > 1e-12 * scale ? (kv < 0 ? ' − ' : ' + ') + fmt(Math.abs(kv)) : ''} = 0`, r: `${unk[i].name} = ${fmt(x[i])} ${unk[i].m ? FL : F}` });
@@ -254,12 +254,12 @@
     if (n === 2 && tf === 2 && !loads.length && cps.length === 0) warn.push('No loads: every reaction is zero.');
     unk.forEach((u, i) => out.push({ k: `${u.name}${u.m ? ' (↺ positive)' : ''}`, v: x[i], u: u.m ? FL : F, hl: true }));
     // resultant reaction at pins
-    sups.forEach((sp, j) => { if (sp.type === 'pin' || sp.type === 'fixed') { const ix = unk.findIndex((u) => u.name === `${LET[j]}_x`), iy = ix + 1; out.push({ k: `Resultant at ${LET[j]}, F_${LET[j]}`, v: Math.hypot(x[ix], x[iy]), u: F }); } });
+    sups.forEach((sp, j) => { if (sp.type === 'pin' || sp.type === 'fixed') { const Lj = sp.name || LET[j], ix = unk.findIndex((u) => u.name === `${Lj}_x`), iy = ix + 1; out.push({ k: `Resultant at ${Lj}, F_${Lj}`, v: Math.hypot(x[ix], x[iy]), u: F }); } });
     // two-force and three-force member notes
     const nForcesPts = new Set(loads.map((l) => l.p.join(',')).concat(sups.map((sp) => `${sp.x},${sp.y}`)));
     if (!cps.length && nForcesPts.size === 2 && sups.length + loads.length >= 2) S.add({ t: 'Two-force member', n: 'Forces act at only two points and there is no couple, so the two resultant forces must be equal, opposite and collinear, along the line joining those points.' });
     else if (!cps.length && nForcesPts.size === 3 && sups.every((sp) => sp.type !== 'fixed')) S.add({ t: 'Three-force member', n: 'Forces act at only three points and there is no couple, so their lines of action meet at one point (or are parallel).' });
-    return ok(det.text, out, S, { kind: 'rigid', c, outline: (q.outline || []).map((p) => [+p.x, +p.y]), sups: sups.map((sp, i) => ({ type: sp.type, p: [+sp.x, +sp.y], ang: +sp.ang || 0, L: LET[i] })), unk: unk.map((u, i) => ({ name: u.name, p: u.p, d: u.d, m: !!u.m, v: x[i], type: u.sup != null && sups[u.sup] ? sups[u.sup].type : '' })), loads: loads.map((l) => ({ p: l.p, v: [l.Fx, l.Fy], F: l.F, dist: !!l.dist, name: l.name })), dists: (q.dists || []).map((d) => ({ x1: +d.x1, x2: +d.x2, y: +d.y || 0, w1: +d.w1, w2: +d.w2 })), couples: (q.couples || []).map((m, i) => ({ M: cps[i], p: [+m.x || 0, +m.y || 0] })) }, warn, det.cls === 'warn' ? 'warn' : 'ok');
+    return ok(det.text, out, S, { kind: 'rigid', c, outline: (q.outline || []).map((p) => [+p.x, +p.y]), sups: sups.map((sp, i) => ({ type: sp.type, p: [+sp.x, +sp.y], ang: +sp.ang || 0, L: sp.name || LET[i] })), unk: unk.map((u, i) => ({ name: u.name, p: u.p, d: u.d, m: !!u.m, v: x[i], type: u.sup != null && sups[u.sup] ? sups[u.sup].type : '' })), loads: loads.map((l) => ({ p: l.p, v: [l.Fx, l.Fy], F: l.F, dist: !!l.dist, name: l.name })), dists: (q.dists || []).map((d) => ({ x1: +d.x1, x2: +d.x2, y: +d.y || 0, w1: +d.w1, w2: +d.w2 })), couples: (q.couples || []).map((m, i) => ({ M: cps[i], p: [+m.x || 0, +m.y || 0] })) }, warn, det.cls === 'warn' ? 'warn' : 'ok');
   }
 
   /* ------------------------------------------------------------------ */
