@@ -4,7 +4,7 @@
 const path = require('path');
 const R = (p) => require(path.join(__dirname, '..', p));
 const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/internal.js');
-const Forces = R('st/forces.js');
+const Forces = R('st/forces.js'), Equil = R('st/equil.js');
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
@@ -177,6 +177,42 @@ group('force systems module', () => {
   // unit round trip
   const st = mk({ mode: 'reduce', fu: 'kN' }); Forces.convertState(st, 'SI', 'US'); Forces.convertState(st, 'US', 'SI');
   close('unit round trip', out(Forces.solve(st, SI), 'Line of action crosses the horizontal through O at x'), 2.25, 1e-6);
+});
+
+group('equilibrium module', () => {
+  const D = Equil.defaults, mk = (o) => Core.deepMerge(D(), o), SI = U.SI, US = U.US;
+  // closed form: 60 kg cylinder on two cables at 30° and 45° above the horizontal
+  let r = Equil.solve(mk({}), SI);
+  close('T_BA', out(r, 'Force F_BA'), 430.9); close('T_BC', out(r, 'Force F_BC'), 527.7);
+  // one magnitude and one angle unknown: same problem, F_BC = 527.7 N known, its angle unknown
+  r = Equil.solve(mk({ pa: { how: 'angle', u2: { P: 527.7 } } }), SI);
+  close('angle found', out(r, 'Angle of F_BC (↺ from +x)'), 45, 2e-3);
+  truthy('cable that would push fails', !Equil.solve(mk({ pa: { u1: { ang: 330 } } }), SI).ok);
+  // spring
+  r = Equil.solve(mk({ pa: { u2: { type: 'spring', k: 500 } } }), SI);
+  close('spring stretch', out(r, 'Stretch of spring BC'), 527.7 / 500);
+  // Example 3.8
+  r = Equil.solve(mk({ mode: 'particle3d' }), SI);
+  close('3.8 F_B', out(r, 'Tension F_AB'), 693.7); close('3.8 F_C', out(r, 'Tension F_AC'), 812.7); close('3.8 F_D', out(r, 'Tension F_AD'), 862.0);
+  // Example 5.9
+  r = Equil.solve(mk({ mode: 'rigid', fu: 'lb' }), US);
+  close('5.9 N_B', out(r, 'N_B'), 536.2); close('5.9 A_x', out(r, 'A_x'), 268.1); close('5.9 A_y', out(r, 'A_y'), 285.6);
+  truthy('5.9 begins with a moment equation', /Moments about point A/.test(r.steps[1].t));
+  // simply supported beam with a uniform load: 2 kN/m over 6 m, plus a couple at a cantilever
+  r = Equil.solve(mk({ mode: 'rigid', fu: 'kN', rb: { outline: [{ x: 0, y: 0 }, { x: 6, y: 0 }], supports: [{ type: 'pin', x: 0, y: 0 }, { type: 'roller', x: 6, y: 0, ang: 90 }], loads: [], dists: [{ x1: 0, x2: 6, y: 0, w1: 2, w2: 2 }] } }), SI);
+  close('UDL A_y', out(r, 'A_y'), 6); close('UDL N_B', out(r, 'N_B'), 6);
+  r = Equil.solve(mk({ mode: 'rigid', fu: 'kN', rb: { outline: [{ x: 0, y: 0 }, { x: 3, y: 0 }], supports: [{ type: 'fixed', x: 0, y: 0 }], loads: [{ by: 'polar', F: 10, ang: 270, x: 3, y: 0 }], couples: [{ M: 5, dir: 'ccw', x: 1, y: 0 }], dists: [] } }), SI);
+  close('cantilever M_A', out(r, 'M_A (↺ positive)'), 25); close('cantilever A_y', out(r, 'A_y'), 10);
+  // cable support: beam pinned at A, cable at B pulling at 135°
+  r = Equil.solve(mk({ mode: 'rigid', fu: 'kN', rb: { outline: [{ x: 0, y: 0 }, { x: 4, y: 0 }], supports: [{ type: 'pin', x: 0, y: 0 }, { type: 'cable', x: 4, y: 0, ang: 135 }], loads: [{ by: 'polar', F: 10, ang: 270, x: 2, y: 0 }], dists: [] } }), SI);
+  close('cable T_B', out(r, 'T_B'), 5 * Math.SQRT2);
+  // failing: three rollers and a horizontal load
+  r = Equil.solve(mk({ mode: 'rigid', rb: { outline: [{ x: 0, y: 0 }, { x: 8, y: 0 }], supports: [{ type: 'roller', x: 0, y: 0, ang: 90 }, { type: 'roller', x: 4, y: 0, ang: 90 }, { type: 'roller', x: 8, y: 0, ang: 90 }], loads: [{ by: 'polar', F: 5, ang: 0, x: 4, y: 0 }], dists: [] } }), SI);
+  truthy('three rollers: improper constraint', !r.ok && /Improperly constrained/.test(r.err[0]));
+  r = Equil.solve(mk({ mode: 'rigid', rb: { supports: [{ type: 'fixed', x: 0, y: 0 }, { type: 'roller', x: 6, y: -2, ang: 90 }] } }), SI);
+  truthy('fixed + roller: indeterminate', !r.ok && /indeterminate/.test(r.err[0]));
+  const st = mk({ mode: 'rigid', fu: 'lb' }); Equil.convertState(st, 'US', 'SI'); Equil.convertState(st, 'SI', 'US');
+  close('unit round trip', out(Equil.solve(st, US), 'N_B'), 536.2);
 });
 
 group('section engine', () => {

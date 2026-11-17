@@ -165,5 +165,52 @@
     return true;
   }
 
-  root.Charts = { niceTicks, clear, text, frame, curve, mark, plot, mohr };
+  const box2 = (pts, f) => {
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]), b = { xmin: Math.min(...xs), xmax: Math.max(...xs), ymin: Math.min(...ys), ymax: Math.max(...ys) };
+    const m = Math.max(b.xmax - b.xmin, b.ymax - b.ymin, 1e-9) * f;
+    return { xmin: b.xmin - m, xmax: b.xmax + m, ymin: b.ymin - m, ymax: b.ymax + m };
+  };
+  /** Top (x–y) and front (x–z) views of 3D arrows. items: { a, b, color, w, dash, label, kind: 'arrow'|'line'|'moment'|'dot' } */
+  function twoViews(svg, items) {
+    const T = text;
+    const { W, H } = clear(svg);
+    const stack = W < 560, pw = stack ? W - 20 : (W - 30) / 2, ph = stack ? (H - 30) / 2 : H - 20;
+    const views = [{ name: 'Top view (x–y)', i: 0, j: 1, n: ['x', 'y'] }, { name: 'Front view (x–z)', i: 0, j: 2, n: ['x', 'z'] }];
+    const all = []; items.forEach((it) => { all.push(it.a); if (it.b) all.push(it.b); }); all.push([0, 0, 0]);
+    let sc = Infinity; const B = views.map((v) => { const b = box2(all.map((p) => [p[v.i], p[v.j]]), 0.18); sc = Math.min(sc, (pw - 40) / (b.xmax - b.xmin), (ph - 50) / (b.ymax - b.ymin)); return b; });
+    views.forEach((v, k) => {
+      const ox = stack ? 10 : 10 + k * (pw + 10), oy = stack ? 10 + k * (ph + 10) : 10, b = B[k];
+      const cx = ox + pw / 2 - ((b.xmin + b.xmax) / 2) * sc, cy = oy + 24 + (ph - 24) / 2 + ((b.ymin + b.ymax) / 2) * sc;
+      const X = (p) => cx + p[v.i] * sc, Y = (p) => cy - p[v.j] * sc;
+      const g = s('g', {}, svg);
+      s('rect', { x: ox, y: oy, width: pw, height: ph, fill: '#fff', stroke: '#d3dce0' }, g);
+      T(g, ox + 8, oy + 17, v.name, { color: '#5a6b75', size: 11.5, weight: 700 });
+      const x0 = ox + 12, x1 = ox + pw - 12, y0 = oy + 26, y1 = oy + ph - 10;
+      s('line', { x1: x0, y1: cy, x2: x1, y2: cy, stroke: '#c4ced4' }, g); s('line', { x1: cx, y1: y0, x2: cx, y2: y1, stroke: '#c4ced4' }, g);
+      T(g, x1, cy + 14, v.n[0], { anchor: 'end', color: '#5a6b75', size: 11 }); T(g, cx + 6, y0 + 10, v.n[1], { color: '#5a6b75', size: 11 });
+      // labels: kept inside the panel and nudged down so they do not sit on each other
+      const placed = [], lab = (x, y, txt, color, left) => {
+        const tw = txt.length * 6.4, h = 13; let l = left ? x - tw : x;
+        l = Math.max(ox + 4, Math.min(l, ox + pw - 4 - tw));
+        let t = y - 10;
+        for (let n = 0; n < 8 && placed.some((r) => l < r[0] + r[2] && r[0] < l + tw && t < r[1] + h && r[1] < t + h); n++) t += h + 1;
+        placed.push([l, t, tw]); T(g, l, t + 10, txt, { color, size: 11.5, weight: 700 });
+      };
+      items.forEach((it) => {
+        const ax = X(it.a), ay = Y(it.a);
+        if (it.kind === 'dot') { s('circle', { cx: ax, cy: ay, r: 4, fill: it.color, stroke: '#fff', 'stroke-width': 1.3 }, g); if (it.label) lab(ax + 6, ay - 6, it.label, it.color); return; }
+        const bx = X(it.b), by = Y(it.b), L = Math.hypot(bx - ax, by - ay);
+        if (L < 1.5) { if (it.kind !== 'line') s('circle', { cx: ax, cy: ay, r: 3.5, fill: 'none', stroke: it.color, 'stroke-width': 1.6 }, g); return; }
+        s('line', { x1: ax, y1: ay, x2: bx, y2: by, stroke: it.color, 'stroke-width': it.w || 2.4, 'stroke-dasharray': it.dash }, g);
+        if (it.kind !== 'line') {
+          const ux = (bx - ax) / L, uy = (by - ay) / L, hs = Math.min(10, L * 0.4), px = -uy, py = ux;
+          const head = (ex, ey) => s('polygon', { points: `${ex},${ey} ${ex - ux * hs + px * hs * 0.42},${ey - uy * hs + py * hs * 0.42} ${ex - ux * hs - px * hs * 0.42},${ey - uy * hs - py * hs * 0.42}`, fill: it.color }, g);
+          head(bx, by); if (it.kind === 'moment') head(bx - ux * hs * 0.8, by - uy * hs * 0.8);
+        }
+        if (it.label) { const lft = bx < ax - 2; lab(bx + (lft ? -6 : 6), by + (by > ay + 2 ? 14 : -6), it.label, it.color, lft); }
+      });
+    });
+  }
+
+  root.Charts = { niceTicks, clear, text, frame, curve, mark, plot, mohr, twoViews };
 })(window);
