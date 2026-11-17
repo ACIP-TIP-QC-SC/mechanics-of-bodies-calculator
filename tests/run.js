@@ -6,7 +6,7 @@ const R = (p) => require(path.join(__dirname, '..', p));
 const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/internal.js');
 const Forces = R('st/forces.js'), Equil = R('st/equil.js'), Truss = R('st/truss.js'), Friction = R('st/friction.js');
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
-const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js');
+const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js'), Torsion = R('md/torsion.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
 const filter = (process.argv[2] || '').toLowerCase();
@@ -470,6 +470,48 @@ group('axial load module', () => {
   Axial.convertState(st, 'SI', 'US'); r = Axial.solve(st, U.US);
   close('converted δ_D in in.', out(r, 'Displacement of the end D, δ_D'), -0.8913 / 25.4, 2e-3);
   truthy('single post fails', !Axial.solve({ mode: 'rigid', fu: 'kN', rig: { side: 'post', len: 1, rods: [rod(0.5, 0.3, 100)], loads: [{ x: 0.2, P: 10 }] } }, U.SI).ok);
+});
+
+group('torsion module', () => {
+  const sg = (L, d, T, o) => Object.assign({ L, shape: 'circle', d, di: 0, G: 75, T }, o || {});
+  const shaft = (tu, right, segs, Us) => Torsion.solve({ mode: 'shaft', tu, sh: { right, segs } }, Us || U.SI);
+  // Example 10.5 angle of twist
+  let r = shaft('kN·m', 'free', [sg(3, 200, 150), sg(2, 200, -60), sg(1.5, 200, -10)]);
+  close('10.5 φ_A/D', out(r, 'Angle of twist of D relative to A'), 7.22e-3); close('10.5 φ_A/C', out(r, 'Angle of twist of C relative to A'), 8.49e-3);
+  close('10.5 T_BC', out(r, 'Internal torque T_BC'), -70);
+  // Example 10.6 gear on a stepped set of torques
+  r = shaft('N·m', 'free', [sg(0.5, 14, -40, { G: 80 }), sg(0.3, 14, -280, { G: 80 }), sg(0.4, 14, 150, { G: 80 })]);
+  close('10.6 φ_A', out(r, 'Angle of twist of D relative to A'), -0.2121);
+  // Examples 10.2 and 10.3 torsion formula
+  r = shaft('kip·in.', 'free', [sg(3, 1.5, 12.5, { G: 11000 })], U.US); close('10.2 τ_A', out(r, 'Maximum shear stress in AB'), 18.9);
+  r = shaft('N·m', 'free', [sg(0.5, 100, 40, { shape: 'tube', di: 80 })]); close('10.3 τ_o', out(r, 'Maximum shear stress in AB'), 0.345);
+  // Example 10.8 and Section 10.5: both ends fixed
+  r = shaft('N·m', 'fixed', [sg(0.2, 20, -800), sg(1.5, 20, 500), sg(0.3, 20, 0)]);
+  close('10.8 T_B', -out(r, 'Reaction torque at A, T_A'), 645); close('10.8 T_A', -out(r, 'Reaction torque at D, T_D'), -345);
+  r = shaft('N·m', 'fixed', [sg(3, 40, 500), sg(2, 40, 0)]);
+  close('10.5 T_A', out(r, 'Reaction torque at A, T_A'), 200); close('10.5 T_B', out(r, 'Reaction torque at C, T_C'), 300);
+  // Example 10.4 power
+  r = Torsion.solve({ mode: 'power', tu: 'lb·ft', pw: { P: 5, spd: 175, spdU: 'rpm', task: 'size', shape: 'circle', tA: 14.5, step: 0.125, L: 0, G: 0 } }, U.US);
+  close('10.4 T', out(r, 'Torque T'), 150.1); close('10.4 d', out(r, 'Required diameter d'), 0.858); close('10.4 use 7/8 in.', out(r, 'Size to use (rounded up)'), 0.875);
+  // a tube sized for a chosen bore meets τ_allow exactly
+  r = Torsion.solve({ mode: 'power', tu: 'kN·m', pw: { P: 90, spd: 1750, spdU: 'rpm', task: 'size', shape: 'tube', di: 30, tA: 50, step: 0, L: 0, G: 0 } }, U.SI);
+  close('sized tube reaches τ_allow', out(r, 'Maximum shear stress τ_max'), 50);
+  // Example 10.9 tube bonded to a core
+  r = Torsion.solve({ mode: 'composite', tu: 'lb·in.', cp: { T: 3000, L: 4, d: 2, di: 1, G: 11400, Gc: 5200 } }, U.US);
+  close('10.9 T_st', out(r, 'Torque in the tube'), 2911.5); close('10.9 T_br', out(r, 'Torque in the core'), 88.54);
+  close('10.9 τ_br', out(r, 'Largest shear stress in the core'), 0.451); close('10.9 τ_st min', out(r, 'Shear stress in the tube at the bond'), 0.989); close('10.9 τ_st max', out(r, 'Largest shear stress in the tube'), 1.977);
+  // Example 10.10 triangle and the round shaft of the same area
+  r = Torsion.solve({ mode: 'noncirc', tu: 'lb·in.', nc: { shape: 'triangle', a: 1.5, L: 4, G: 3700, task: 'allow', tA: 8, phiA: 0.02, cmp: true } }, U.US);
+  close('10.10 by stress', out(r, 'Torque allowed by the shear stress'), 1350); close('10.10 by twist', out(r, 'Largest torque T'), 170);
+  close('10.10 round shaft', out(r, 'Largest torque on a round shaft of the same area'), 233);
+  // circle entry of Table 10–1 agrees with the torsion formula
+  r = Torsion.solve({ mode: 'noncirc', tu: 'N·m', nc: { shape: 'circle', a: 20, L: 1, G: 75, task: 'check', T: 100 } }, U.SI);
+  close('circle τ = 16T/(πd³)', out(r, 'Maximum shear stress τ_max'), (16 * 100) / (Math.PI * 0.02 ** 3) / 1e6);
+  // unit toggle keeps the physics and the torque unit
+  const st = Torsion.defaults(); st.tu = 'kip·in.'; st.sh.segs = [sg(3, 1.5, 12.5, { G: 11000 })];
+  Torsion.convertState(st, 'US', 'SI'); Torsion.convertState(st, 'SI', 'US');
+  truthy('kip·in. comes back as kip·in.', st.tu === 'kip·in.'); close('torque comes back', st.sh.segs[0].T, 12.5, 1e-4);
+  truthy('bore wider than the tube fails', !shaft('kN·m', 'free', [sg(1, 50, 2, { shape: 'tube', di: 60 })]).ok);
 });
 
 groups.forEach(([name, fn]) => { if (filter && !name.toLowerCase().includes(filter)) return; console.log(name); fn(); });
