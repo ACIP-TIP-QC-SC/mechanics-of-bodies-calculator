@@ -65,7 +65,13 @@
     if (x === null || x === undefined || typeof x !== 'number' || !isFinite(x)) return '—';
     if (Math.abs(x) < 1e-12) return '0';
     const a = Math.abs(x);
-    const s = (a >= 1e-4 && a < 1e10) ? String(parseFloat(x.toPrecision(sig))) : x.toExponential(sig - 1);
+    let s;
+    if (a >= 1e6) {
+      // large values the way the textbook writes them: 2.9(10⁹)
+      let e = Math.floor(Math.log10(a) / 3) * 3, m = parseFloat((x / Math.pow(10, e)).toPrecision(sig));
+      if (Math.abs(m) >= 1000) { m /= 1000; e += 3; }
+      s = m + '(10' + String(e).split('').map((d) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[+d]).join('') + ')';
+    } else s = a >= 1e-4 ? String(parseFloat(x.toPrecision(sig))) : x.toExponential(sig - 1);
     return s.replace('-', '−');
   }
   const clamp = (x, a, b) => Math.min(Math.max(x, a), b);

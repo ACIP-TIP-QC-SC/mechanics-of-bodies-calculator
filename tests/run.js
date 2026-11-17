@@ -4,6 +4,7 @@
 const path = require('path');
 const R = (p) => require(path.join(__dirname, '..', p));
 const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/internal.js');
+const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
 const filter = (process.argv[2] || '').toLowerCase();
@@ -18,6 +19,8 @@ function truthy(label, v) { if (v) pass++; else { failN++; console.log(`  FAIL $
 const out = (res, k) => { const o = (res.out || []).find((x) => x.k === k); return o ? o.v : NaN; };
 const SS = (L) => [{ type: 'pin', x: 0 }, { type: 'roller', x: L }];
 
+const ZSEC = [{ kind: 'rect', x: -300, y: 50, b: 100, h: 300 }, { kind: 'rect', x: -300, y: -50, b: 600, h: 100 }, { kind: 'rect', x: 200, y: -350, b: 100, h: 300 }];
+const EX911 = [{ kind: 'cone', x: 0, y: 0, z: 0, r: 50, h: 200, dir: 'up', rho: 8 }, { kind: 'hemi', x: 0, y: 0, z: 0, r: 50, dir: 'down', rho: 4 }, { kind: 'cone', x: 0, y: 0, z: 100, r: 25, h: 100, dir: 'up', rho: 8, hole: true }, { kind: 'cyl', x: 0, y: 0, z: 0, r: 25, h: 100, dir: 'up', rho: 8, hole: true }];
 group('core', () => {
   close('kN·m to lb·ft', Core.convert(1, 'kN·m', 'lb·ft'), 737.562, 1e-5);
   close('kN/m to lb/ft', Core.convert(1, 'kN/m', 'lb/ft'), 68.5218, 1e-5);
@@ -132,6 +135,69 @@ group('internal forces module', () => {
   // failing inputs give messages, never NaN
   truthy('bad cable', Internal.solve(st({ mode: 'cableP', cab: { loads: [{ x: 30, P: 4 }] } }), U.SI).ok === false);
   truthy('short cable', Internal.solve(st({ mode: 'catenary', cat: { given: 'len', len: 10 } }), U.SI).ok === false);
+});
+
+group('section engine', () => {
+  // every kind and rotation against Green's theorem on its outline
+  let worst = 0;
+  for (const kind of ['rect', 'tri', 'circle', 'semi', 'quarter', 'sector']) for (const rot of [0, 90, 180, 270]) {
+    const p = { kind, x: 3, y: -2, rot, b: 4, h: 7, r: 5, a: 35 }, r = Section.partProps(p), g = Section.polyProps(Section.outline(p, 4000));
+    const gx = g.Sy / g.A, gy = g.Sx / g.A, G = { A: g.A, x: gx, y: gy, Ix: g.Ix - g.A * gy * gy, Iy: g.Iy - g.A * gx * gx, Ixy: g.Ixy - g.A * gx * gy };
+    for (const k of ['A', 'x', 'y', 'Ix', 'Iy', 'Ixy']) worst = Math.max(worst, Math.abs(r[k] - G[k]) / Math.max(1, Math.abs(G[k])));
+  }
+  truthy('closed forms agree with Green\'s theorem', worst < 1e-4);
+  // Example 10.4: 100 x 150 rectangle with a 25 mm radius hole, about the base
+  let s = Section.solve([{ kind: 'rect', x: 0, y: 0, b: 100, h: 150 }, { kind: 'circle', x: 50, y: 75, r: 25, hole: true }]);
+  close('10.4 I_x', s.I0.x, 101e6);
+  // Examples 10.5, 10.7, 10.8: Z section
+  s = Section.solve(ZSEC);
+  close('10.5 I_x', s.Ic.x, 2.90e9); close('10.5 I_y', s.Ic.y, 5.60e9); close('10.7 I_xy', s.Ic.xy, -3.00e9);
+  close('10.8 I_max', s.mohr.max, 7.54e9); close('10.8 I_min', s.mohr.min, 0.960e9); close('10.8 θ_p1', s.mohr.thp, 57.1);
+  // Example 9.10: plate with a triangle, a square and a rectangular hole
+  s = Section.solve([{ kind: 'tri', x: 0, y: 0, b: 3, h: 3 }, { kind: 'rect', x: -3, y: 0, b: 3, h: 3 }, { kind: 'rect', x: -3, y: 1, b: 1, h: 2, hole: true }]);
+  close('9.10 x̄', s.x, -0.348); close('9.10 ȳ', s.y, 1.22);
+  // shear-formula helpers on a rectangle
+  s = Section.solve([{ kind: 'rect', x: 0, y: 0, b: 10, h: 20 }]);
+  close('Q at the neutral axis = bh²/8', s.Q(10), 500); close('Q at quarter depth', s.Q(15), 10 * 5 * 7.5); close('t', s.t(3), 10);
+  close('S = bh²/6', s.S.top, 10 * 400 / 6);
+  // templates: wide-flange symmetric, pipe
+  let t = Section.template('I', { bf: 200, d: 300, tf: 20, tw: 10 }); s = Section.solve(t.parts);
+  close('I-shape Ī_x', s.Ic.x, (200 * 300 ** 3 - 190 * 260 ** 3) / 12); close('I-shape ȳ', s.y, 150);
+  t = Section.template('pipe', { d: 100, tf: 10 }); s = Section.solve(t.parts);
+  close('pipe Ī_x', s.Ic.x, Math.PI / 4 * (50 ** 4 - 40 ** 4));
+  truthy('bad template is refused', Section.template('I', { bf: 100, d: 30, tf: 20, tw: 10 }).err.length > 0);
+  // Mohr, stress form: σx = −20, σy = 90, τxy = 60 gives σ1 = 116, σ2 = −46.4
+  const m = Mohr.stress(-20, 90, 60); close('Mohr σ1', m.max, 116.4); close('Mohr σ2', m.min, -46.4); close('Mohr θp for σ1', m.thp, 66.3);
+});
+
+group('centroids module', () => {
+  const D = SecMod.defaults, mk = (o) => Core.deepMerge(D(), o);
+  // Example 9.9 wire
+  let r = SecMod.solve(mk({ mode: 'line' }), U.SI);
+  close('9.9 x̄', out(r, 'Centroid x̄'), 45.5); close('9.9 ȳ', out(r, 'Centroid ȳ'), -22.5); close('9.9 z̄', out(r, 'Centroid z̄'), -0.805);
+  // Example 9.11 frustum, hemisphere and hole
+  r = SecMod.solve(mk({ mode: 'volume', vol: { useRho: true, parts: EX911 } }), U.SI);
+  close('9.11 z̄', out(r, 'Centre of mass z̄'), 14.6); close('9.11 mass', out(r, 'Total mass m'), 3.142);
+  // Example 9.13 solid of revolution
+  r = SecMod.solve(mk({ mode: 'pappus', lu: 'in.', pap: { kind: 'polygon', angle: 360, pts: [{ r: 2.5, z: 0 }, { r: 3.5, z: 0 }, { r: 3.5, z: 3 }, { r: 2.5, z: 2 }] } }), U.US);
+  close('9.13 surface area', out(r, 'Surface area of revolution'), 143); close('9.13 volume', out(r, 'Volume of revolution'), 47.6);
+  // Example 9.12 sphere
+  r = SecMod.solve(mk({ mode: 'pappus', pap: { kind: 'semicircle', a: 2, angle: 360 } }), U.SI);
+  close('9.12 sphere area', out(r, 'Surface area of revolution'), 16 * Math.PI); close('9.12 sphere volume', out(r, 'Volume of revolution'), 32 * Math.PI / 3);
+  // torus
+  r = SecMod.solve(mk({ mode: 'pappus', pap: { kind: 'circle', R: 5, a: 1, angle: 360 } }), U.SI);
+  close('torus volume 2π²Ra²', out(r, 'Volume of revolution'), 2 * Math.PI ** 2 * 5);
+  // Example 10.8 by direct entry
+  r = SecMod.solve(mk({ mode: 'inclined', inc: { Ix: 2.9e9, Iy: 5.6e9, Ixy: -3e9, theta: 57.1 } }), U.SI);
+  close('10.8 I_max', out(r, 'Maximum principal moment of inertia I_max'), 7.54e9); close('10.8 I_u at θ_p1', out(r, 'I_u at θ = 57.1°'), 7.54e9);
+  // composite area mode with the Z section
+  r = SecMod.solve(mk({ mode: 'area', area: { shape: 'custom', parts: ZSEC, theta: 0 } }), U.SI);
+  close('area mode Ī_xy', out(r, 'Product of inertia Ī_xy (centroidal)'), -3e9); truthy('step tables present', r.steps[0].table.rows.length === 4);
+  // unit toggle keeps the physics
+  const st = mk({ mode: 'area', area: { shape: 'custom', parts: ZSEC, theta: 0 } }); SecMod.convertState(st, 'SI', 'US');
+  r = SecMod.solve(st, U.US); close('converted Ī_x in in.⁴', out(r, 'Ī_x about the centroidal x′ axis'), 2.9e9 / 25.4 ** 4, 2e-3); truthy('unit became in.', st.lu === 'in.');
+  truthy('all-hole area fails', !SecMod.solve(mk({ area: { shape: 'custom', parts: [{ kind: 'rect', x: 0, y: 0, b: 1, h: 1, hole: true }] } }), U.SI).ok);
+  truthy('impossible inertia fails', !SecMod.solve(mk({ mode: 'inclined', inc: { Ix: 1, Iy: 1, Ixy: 5, theta: 0 } }), U.SI).ok);
 });
 
 groups.forEach(([name, fn]) => { if (filter && !name.toLowerCase().includes(filter)) return; console.log(name); fn(); });

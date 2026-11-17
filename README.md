@@ -10,7 +10,7 @@ American Concrete Institute Philippines T.I.P. QC Student Chapter · by CEM Juma
 
 Built so far:
 
-- **Statics of Rigid Bodies:** Internal Forces (internal loadings at a cut, shear and moment diagrams with the deflected shape and its animation, cables)
+- **Statics of Rigid Bodies:** Centroids and Moments of Inertia (composite areas, wires and bodies, Pappus and Guldinus, principal axes and Mohr's circle); Internal Forces (internal loadings at a cut, shear and moment diagrams with the deflected shape and its animation, cables)
 
 Planned: Force Systems, Equilibrium, Trusses, Friction, Centroids and Moments of Inertia (Statics); seven Dynamics modules; eight Mechanics of Deformable Bodies modules. A discipline tab appears once its first module is built.
 

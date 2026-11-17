@@ -2,8 +2,7 @@
  * Charts: SVG line charts and filled diagrams (shear, moment, tension,
  * motion graphs, …). Always drawn in the light palette so they print
  * the same in light and dark mode.
- * (The Mohr's circle drawing is added here with the first module that
- * needs it: Centroids and Moments of Inertia.)
+ * Mohr's circle (inertia, stress, strain) is drawn by Charts.mohr.
  * ===================================================================== */
 (function (root) {
   'use strict';
@@ -106,5 +105,65 @@
     return true;
   }
 
-  root.Charts = { niceTicks, clear, text, frame, curve, mark, plot };
+
+  /**
+   * Mohr's circle, drawn to the same scale on both axes.
+   * o = { avg, R, xl, yl (axis names), yDown (true when the vertical axis is positive downward, as for stress),
+   *       pts: [{ x, y, label, color, spoke, anchor, dy }], arc: { from: [x,y], to: [x,y], label, color }, zero: include the origin }
+   * Sets svg._inv so a pointer position can be read back in circle coordinates.
+   */
+  function mohr(svg, o) {
+    const { W, H } = clear(svg);
+    const pl = 20, pr = 46, pt = 26, pb = 34;
+    const R = o.R > 0 ? o.R : Math.abs(o.avg) * 0.1 || 1;
+    let x0 = o.avg - R, x1 = o.avg + R;
+    if (o.zero !== false) { x0 = Math.min(x0, 0); x1 = Math.max(x1, 0); }
+    const mx = (x1 - x0) * 0.1 + R * 0.25; x0 -= mx; x1 += mx;
+    const yr = R * 1.32, sc = Math.min((W - pl - pr) / (x1 - x0), (H - pt - pb) / (2 * yr));
+    const xm = (x0 + x1) / 2, cx = pl + (W - pl - pr) / 2, cy = pt + (H - pt - pb) / 2, ys = o.yDown ? 1 : -1;
+    const X = (x) => cx + (x - xm) * sc, Y = (y) => cy + ys * y * sc;
+    svg._inv = (sx, sy) => [xm + (sx - cx) / sc, (ys * (sy - cy)) / sc];
+    const g = s('g', {}, svg);
+    const xa = X(x0), xb = X(x1), yv0 = Y(-yr * ys), yv1 = Y(yr * ys);
+    // axes
+    s('line', { x1: xa, y1: Y(0), x2: xb + 14, y2: Y(0), stroke: '#5a6b75', 'stroke-width': 1.3 }, g);
+    s('polygon', { points: `${xb + 22},${Y(0)} ${xb + 12},${Y(0) - 4} ${xb + 12},${Y(0) + 4}`, fill: '#5a6b75' }, g);
+    text(g, xb + 24, Y(0) + 16, o.xl || '', { anchor: 'end', color: '#1d2733', size: 12.5, weight: 700 });
+    const xv = x0 <= 0 && x1 >= 0 ? X(0) : xa;
+    s('line', { x1: xv, y1: Math.min(yv0, yv1) - 6, x2: xv, y2: Math.max(yv0, yv1), stroke: '#5a6b75', 'stroke-width': 1.3 }, g);
+    const tipY = o.yDown ? Math.max(yv0, yv1) + 4 : Math.min(yv0, yv1) - 10;
+    s('polygon', { points: o.yDown ? `${xv},${tipY + 8} ${xv - 4},${tipY - 2} ${xv + 4},${tipY - 2}` : `${xv},${tipY - 4} ${xv - 4},${tipY + 6} ${xv + 4},${tipY + 6}`, fill: '#5a6b75' }, g);
+    text(g, xv + 8, o.yDown ? tipY + 6 : tipY + 6, o.yl || '', { color: '#1d2733', size: 12.5, weight: 700 });
+    niceTicks(x0, x1, Math.max(3, Math.round((xb - xa) / 90))).ticks.forEach((v) => {
+      s('line', { x1: X(v), y1: Y(0) - 3, x2: X(v), y2: Y(0) + 3, stroke: '#5a6b75', 'stroke-width': 1 }, g);
+      text(g, X(v), Y(0) + 15, fmt(v), { anchor: 'middle', color: '#5a6b75', size: 10, weight: 400 });
+    });
+    // circle and centre
+    s('circle', { cx: X(o.avg), cy: Y(0), r: Math.max(1.5, R * sc * (o.R > 0 ? 1 : 0)), fill: '#2f7fc1', 'fill-opacity': 0.08, stroke: '#2f7fc1', 'stroke-width': 2 }, g);
+    (o.pts || []).forEach((p) => { if (p.spoke) s('line', { x1: X(o.avg), y1: Y(0), x2: X(p.x), y2: Y(p.y), stroke: p.color || '#333', 'stroke-width': 1.6, 'stroke-dasharray': p.dash }, g); });
+    if (o.arc && o.R > 0) {
+      const a0 = Math.atan2(o.arc.from[1], o.arc.from[0] - o.avg); let a1 = Math.atan2(o.arc.to[1], o.arc.to[0] - o.avg);
+      if (o.arc.ccw && a1 < a0 - 1e-9) a1 += 2 * Math.PI; if (o.arc.ccw === false && a1 > a0 + 1e-9) a1 -= 2 * Math.PI;
+      const rr = Math.min(R * 0.3, 30 / sc), pts = [], n = 30;
+      for (let i = 0; i <= n; i++) { const a = a0 + ((a1 - a0) * i) / n; pts.push(`${X(o.avg + rr * Math.cos(a)).toFixed(1)},${Y(rr * Math.sin(a)).toFixed(1)}`); }
+      if (Math.abs(a1 - a0) > 0.02) {
+        s('polyline', { points: pts.join(' '), fill: 'none', stroke: o.arc.color || '#d4612a', 'stroke-width': 1.6 }, g);
+        const am = (a0 + a1) / 2; text(g, X(o.avg + rr * 1.5 * Math.cos(am)), Y(rr * 1.5 * Math.sin(am)) + 4, o.arc.label || '', { anchor: 'middle', color: o.arc.color || '#d4612a', size: 11.5 });
+      }
+    }
+    s('circle', { cx: X(o.avg), cy: Y(0), r: 3.2, fill: '#1d2733' }, g);
+    (o.pts || []).forEach((p) => {
+      s('circle', { cx: X(p.x), cy: Y(p.y), r: p.r || 4.5, fill: p.color || '#333', stroke: '#fff', 'stroke-width': 1.5 }, g);
+      if (p.label) {
+        const right = p.anchor ? p.anchor === 'start' : p.x >= o.avg;
+        const tx = X(p.x) + (right ? 8 : -8), te = text(g, tx, Y(p.y) + (p.dy !== undefined ? p.dy : (ys * p.y < 0 ? -8 : ys * p.y > 0 ? 16 : -8)), p.label, { anchor: right ? 'start' : 'end', color: p.color || '#333', size: 11.5, weight: 700 });
+        // keep the label inside the picture on narrow screens
+        const tw = te.getComputedTextLength ? te.getComputedTextLength() : 0;
+        if (tw) { const x0 = right ? tx : tx - tw; const sh = x0 < 4 ? 4 - x0 : x0 + tw > W - 4 ? W - 4 - (x0 + tw) : 0; if (sh) te.setAttribute('x', tx + sh); }
+      }
+    });
+    return true;
+  }
+
+  root.Charts = { niceTicks, clear, text, frame, curve, mark, plot, mohr };
 })(window);
