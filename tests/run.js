@@ -4,7 +4,7 @@
 const path = require('path');
 const R = (p) => require(path.join(__dirname, '..', p));
 const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/internal.js');
-const Forces = R('st/forces.js'), Equil = R('st/equil.js'), Truss = R('st/truss.js');
+const Forces = R('st/forces.js'), Equil = R('st/equil.js'), Truss = R('st/truss.js'), Friction = R('st/friction.js');
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
@@ -260,6 +260,42 @@ group('trusses module', () => {
   Truss.convertState(st, 'SI', 'US'); Truss.convertState(st, 'US', 'SI');
   const a = JSON.parse(st0), b2 = st;
   close('unit round trip E', b2.ae.E, a.ae.E, 1e-6); close('unit round trip x', b2.custom.joints[3].x, a.custom.joints[3].x, 1e-6); close('unit round trip load', b2.custom.loads[0].Fy, a.custom.loads[0].Fy, 1e-6);
+});
+group('friction module', () => {
+  const mk = (o) => Core.deepMerge(Friction.defaults(), o), SI = U.SI, US = U.US;
+  // Example 8.1: crate 20 kg, P = 80 N at 30° downward, 0.2 m above the floor
+  let r = Friction.solve(mk({}), SI);
+  close('8.1 F', out(r, 'Friction needed F'), 69.28); close('8.1 N', out(r, 'Normal force N'), 236.2); close('8.1 x', out(r, 'Position of N, x'), -0.00908, 3e-3);
+  truthy('8.1 does not slip', /no slipping or tipping/.test(r.status.text));
+  // Example 8.2: angle of repose; x = 2.5 tan 25° = 1.17 ft on the downhill side, no tipping
+  r = Friction.solve(mk({ bk: { wBy: 'force', W: 500, b: 3, H: 5, phi: 25, mu: Math.tan(25 * Math.PI / 180) + 1e-9, P: 0, psi: 0, hP: 0 } }), US);
+  close('8.2 x', out(r, 'Position of N, x'), -1.166); truthy('8.2 slip just impends', /no slipping/.test(r.status.text));
+  truthy('8.2 slips with smaller μ', /slips/.test(Friction.solve(mk({ bk: { wBy: 'force', W: 500, b: 3, H: 5, phi: 25, mu: 0.45, P: 0, psi: 0, hP: 0 } }), US).status.text));
+  // closed form: 500 N block, 0.6 m base, horizontal push at 0.8 m, μ 0.4: tips at 187.5 N (slip needs 200 N)
+  r = Friction.solve(mk({ bk: { wBy: 'force', W: 500, b: 0.6, H: 1, mu: 0.4, task: 'findP', psi: 0, hP: 0.8 } }), SI);
+  close('tip P', out(r, 'P to tip'), 187.5); close('slip P', out(r, 'P to slip'), 200); truthy('tipping governs', /Tips first/.test(r.status.text));
+  // an inclined push: the tipping force put back into the check gives N at the corner
+  const q = { wBy: 'force', W: 500, b: 0.6, H: 1, mu: 0.9, psi: 20, hP: 0.8, phi: 10 };
+  const Pt = out(Friction.solve(mk({ bk: Object.assign({ task: 'findP' }, q) }), SI), 'P to tip');
+  close('tip force consistent', out(Friction.solve(mk({ bk: Object.assign({ task: 'check', P: Pt }, q) }), SI), 'Position of N, x'), 0.3);
+  truthy('lift-off fails', !Friction.solve(mk({ bk: { task: 'check', P: 600, psi: 60 } }), SI).ok);
+  // Example 8.3 ladder
+  r = Friction.solve(mk({ mode: 'ladder' }), SI);
+  close('8.3 θ', out(r, 'Smallest angle θ (from the floor)'), 59.04); close('8.3 N_A', out(r, 'N_A'), 98.1); close('8.3 N_B', out(r, 'N_B'), 29.43);
+  // at the smallest angle the friction needed equals μ_A
+  close('ladder check at θ_min', out(Friction.solve(mk({ mode: 'ladder', ld: { task: 'check', th: 59.036243 } }), SI), 'Friction coefficient needed at A'), 0.3, 1e-4);
+  // Example 8.6 wedge
+  r = Friction.solve(mk({ mode: 'wedge' }), SI);
+  close('8.6 P', out(r, 'Pull to remove, P'), 1154.9); close('8.6 N_B', out(r, 'N_B'), 2383.1); close('8.6 N_C', out(r, 'N_C'), 2452.5);
+  truthy('8.6 self-locking', /Self-locking/.test(r.status.text));
+  truthy('frictionless wedge not self-locking', /Not self-locking/.test(Friction.solve(mk({ mode: 'wedge', wd: { mu: 0, muC: 0 } }), SI).status.text));
+  // Example 8.7 turnbuckle
+  r = Friction.solve(mk({ mode: 'screw' }), SI);
+  close('8.7 M', out(r, 'Moment to raise M'), 6.375); close('8.7 θ', out(r, 'Lead angle θ'), 3.643); close('8.7 φs', out(r, 'Friction angle φs'), 14.04);
+  // Example 8.8 belt
+  r = Friction.solve(mk({ mode: 'belt' }), SI);
+  close('8.8 T1', out(r, 'Tension after drum 1'), 277.4); close('8.8 W', out(r, 'Tension after drum 2'), 153.9); close('8.8 m', out(r, 'Mass that can be held'), 15.69);
+  close('one full turn e^(2πμ)', out(Friction.solve(mk({ mode: 'belt', bt: { known: 'low', T: 1, drums: [{ beta: 0, turns: 1, mu: 0.3 }] } }), SI), 'Tension after drum 1'), Math.exp(0.6 * Math.PI));
 });
 group('section engine', () => {
   // every kind and rotation against Green's theorem on its outline
