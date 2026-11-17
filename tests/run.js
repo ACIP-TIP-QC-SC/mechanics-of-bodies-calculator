@@ -6,7 +6,7 @@ const R = (p) => require(path.join(__dirname, '..', p));
 const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/internal.js');
 const Forces = R('st/forces.js'), Equil = R('st/equil.js'), Truss = R('st/truss.js'), Friction = R('st/friction.js');
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
-const MD = R('md/mdcore.js'), Stress = R('md/stress.js');
+const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
 const filter = (process.argv[2] || '').toLowerCase();
@@ -422,6 +422,54 @@ group('simple stress and strain module', () => {
   close('converted σ in ksi', out(r, 'Normal stress σ'), 16 / 6.894757, 2e-3);
   truthy('material table A-36 E = 29000 ksi', MD.material('a36', 'US').E === 29000);
   truthy('plate narrower than holes fails', !Stress.solve(mk({ mode: 'joint', fu: 'kN', jt: { task: 'allow', d: 20, n: 3, planes: 1, t: 10, w: 50, e: 20, tb: 80, st: 50, sb: 80, tp: 30 } }), U.SI).ok);
+});
+
+group('axial load module', () => {
+  const sg = (L, d, P, o) => Object.assign({ L, shape: 'circle', d, di: 0, E: 200, al: 12, P }, o || {});
+  const rod = (x, L, A, o) => Object.assign({ x, L, shape: 'area', A, E: 200, al: 12 }, o || {});
+  // Example 9.1 stepped bar
+  let r = Axial.solve({ mode: 'bar', fu: 'kN', ax: { right: 'free', dT: 0, segs: [sg(2, 50, 800), sg(1, 50, 400), sg(1.5, 50, -700)] } }, U.SI);
+  close('9.1 δ_D', out(r, 'Displacement of the end D, δ_D'), -0.891); close('9.1 δ_B/C', out(r, 'Change in length of BC'), -0.764);
+  close('9.1 N_AB', out(r, 'Internal force N_AB'), 500); close('9.1 N_CD', out(r, 'Internal force N_CD'), -700);
+  // Example 9.5 gap that closes
+  r = Axial.solve({ mode: 'bar', fu: 'kN', ax: { right: 'gap', gap: 0.2, dT: 0, segs: [sg(0.4, 10, 20), sg(0.8, 10, 0)] } }, U.SI);
+  close('9.5 F_A', out(r, 'Reaction at A, F_A'), 15.95); close('9.5 F_B', out(r, 'Reaction at C, F_C'), 4.049);
+  // a gap that stays open: determinate, F at the far wall is zero
+  r = Axial.solve({ mode: 'bar', fu: 'kN', ax: { right: 'gap', gap: 2, dT: 0, segs: [sg(0.4, 10, 20), sg(0.8, 10, 0)] } }, U.SI);
+  close('open gap F_A = P', out(r, 'Reaction at A, F_A'), 20); close('open gap F_C = 0', out(r, 'Reaction at C, F_C'), 0);
+  // Section 9.4 bar fixed at both ends
+  r = Axial.solve({ mode: 'bar', fu: 'N', ax: { right: 'fixed', dT: 0, segs: [sg(2, 20, 500), sg(3, 20, 0)] } }, U.SI);
+  close('9.4 F_A', out(r, 'Reaction at A, F_A'), 300); close('9.4 F_B', out(r, 'Reaction at C, F_C'), 200);
+  // Example 9.10 thermal stress
+  r = Axial.solve({ mode: 'bar', fu: 'kip', ax: { right: 'fixed', dT: 60, segs: [sg(2, 0, 0, { shape: 'rect', b: 0.5, h: 0.5, E: 29000, al: 6.6 })] } }, U.US);
+  close('9.10 F', out(r, 'Reaction at B, F_B'), 2.871); close('9.10 σ', out(r, 'Stress σ_AB'), -11.48);
+  // Example 9.7 rigid bar on three rods
+  r = Axial.solve({ mode: 'rigid', fu: 'kN', rig: { side: 'hang', pin: false, len: 0.8, dT: 0, w: 0, rods: [rod(0, 0.5, 50), rod(0.4, 0.5, 30), rod(0.8, 0.5, 50)], loads: [{ x: 0.2, P: 15 }] } }, U.SI);
+  close('9.7 F_A', out(r, 'Force in rod 1, F1'), 9.519); close('9.7 F_C', out(r, 'Force in rod 2, F2'), 3.462); close('9.7 F_E', out(r, 'Force in rod 3, F3'), 2.019);
+  // Example 9.3 rigid beam on two posts
+  r = Axial.solve({ mode: 'rigid', fu: 'kN', rig: { side: 'post', pin: false, len: 0.6, dT: 0, w: 0, rods: [rod(0, 0.3, 0, { shape: 'circle', d: 20 }), rod(0.6, 0.3, 0, { shape: 'circle', d: 40, E: 70 })], loads: [{ x: 0.2, P: 90 }] } }, U.SI);
+  close('9.3 F_AC', out(r, 'Force in post 1, F1'), 60); close('9.3 δ_F', out(r, 'Load 1 point moves down'), 0.225);
+  // Example 9.11 posts heated under a uniform load
+  r = Axial.solve({ mode: 'rigid', fu: 'kN', rig: { side: 'post', pin: false, len: 0.6, dT: 60, w: 150, rods: [rod(0, 0.25, 0, { shape: 'circle', d: 40 }), rod(0.3, 0.25, 0, { shape: 'circle', d: 60, E: 73.1, al: 23 }), rod(0.6, 0.25, 0, { shape: 'circle', d: 40 })], loads: [] } }, U.SI);
+  close('9.11 F_st', out(r, 'Force in post 1, F1'), -16.4); close('9.11 F_al', out(r, 'Force in post 2, F2'), 123);
+  // pinned bar by hand: rods at 3 and 9 ft, 8 kip at 6 ft; equal rods give F1 = 48/90 × 8 × ... check equilibrium only
+  r = Axial.solve({ mode: 'rigid', fu: 'kip', rig: { side: 'hang', pin: true, xp: 0, len: 9, dT: 0, w: 0, rods: [rod(3, 4, 0.2, { E: 29000 }), rod(9, 6, 0.2, { E: 29000 })], loads: [{ x: 6, P: 8 }] } }, U.US);
+  close('pinned bar moment balance', 3 * out(r, 'Force in rod 1, F1') + 9 * out(r, 'Force in rod 2, F2'), 48);
+  // Examples 9.6 and 9.12 members under a rigid cap
+  r = Axial.solve({ mode: 'parallel', fu: 'kip', par: { P: 9, L: 1.5, dT: 0, layout: 'nested', mem: [{ n: 1, shape: 'tube', d: 4, di: 2, E: 10000 }, { n: 1, shape: 'circle', d: 2, E: 15000 }] } }, U.US);
+  close('9.6 σ_al', out(r, 'Stress in member 1, σ1'), -0.637); close('9.6 σ_br', out(r, 'Stress in member 2, σ2'), -0.955);
+  r = Axial.solve({ mode: 'parallel', fu: 'kN', par: { P: 0, L: 0.15, dT: 65, layout: 'nested', mem: [{ n: 1, shape: 'area', A: 600, E: 73.1, al: 23 }, { n: 1, shape: 'area', A: 400, E: 200, al: 12 }] } }, U.SI);
+  close('9.12 F_sleeve', out(r, 'Force in member 1, F1'), 20.3); close('9.12 F_bolt', out(r, 'Force in member 2, F2'), -20.3);
+  // Example 9.13 stress concentration
+  r = Axial.solve({ mode: 'conc', fu: 'kN', cn: { geo: 'fillet', w: 40, h: 32, r: 4, t: 2, K: 1.75, task: 'allow', sA: 250 } }, U.SI);
+  close('9.13 N', out(r, 'Largest axial force N'), 9.14);
+  r = Axial.solve({ mode: 'conc', fu: 'kN', cn: { geo: 'hole', w: 40, d: 10, t: 5, K: 2.2, task: 'max', N: 30 } }, U.SI);
+  close('hole σ_max = K N/A', out(r, 'Maximum normal stress σ_max'), 2.2 * 30000 / 150);
+  // unit toggle keeps the physics
+  const st = { mode: 'bar', fu: 'kN', ax: { right: 'free', dT: 0, gap: 0.2, segs: [sg(2, 50, 800), sg(1, 50, 400), sg(1.5, 50, -700)] } };
+  Axial.convertState(st, 'SI', 'US'); r = Axial.solve(st, U.US);
+  close('converted δ_D in in.', out(r, 'Displacement of the end D, δ_D'), -0.8913 / 25.4, 2e-3);
+  truthy('single post fails', !Axial.solve({ mode: 'rigid', fu: 'kN', rig: { side: 'post', len: 1, rods: [rod(0.5, 0.3, 100)], loads: [{ x: 0.2, P: 10 }] } }, U.SI).ok);
 });
 
 groups.forEach(([name, fn]) => { if (filter && !name.toLowerCase().includes(filter)) return; console.log(name); fn(); });

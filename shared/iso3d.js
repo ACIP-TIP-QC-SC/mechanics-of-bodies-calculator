@@ -47,6 +47,7 @@
      *  function of facing(n) (> 0 when the normal n points toward the viewer), so that a solid something rests on is
      *  painted first when the contact plane faces the viewer and last when it faces away (see View3D.restLayer).
      *  out: the outward normal of a face on a closed solid; a face turned away from the viewer is then skipped. */
+    /** stroke 'fill' outlines the face in its own shaded colour, so faces that tile a surface show no seams. */
     face(pts, fill, alpha = 1, stroke = null, lw = 1, layer = 0, out = null) { this.faces.push({ pts, fill, alpha, stroke, lw, layer, out }); }
     line(pts, color = '#222', lw = 1.5, dash = null) { this.lines.push({ pts, color, lw, dash }); }
     label(p, text, color = '#111') { this.labels.push({ p, text, color }); }
@@ -199,8 +200,8 @@
           it.bnd.forEach(([a, b, ea, eb]) => {
             const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, x = Math.min(4, l) / l;
             ctx.moveTo(a[0] - (ea ? dx * x : 0), a[1] - (ea ? dy * x : 0)); ctx.lineTo(b[0] + (eb ? dx * x : 0), b[1] + (eb ? dy * x : 0));
-          }); ctx.strokeStyle = f.stroke; ctx.lineWidth = f.lw; ctx.lineCap = 'round'; ctx.globalAlpha = Math.min(1, f.alpha + 0.35); ctx.stroke(); ctx.globalAlpha = 1; ctx.lineCap = 'butt'; }
-        if (it.stroke && f.stroke) { ctx.strokeStyle = f.stroke; ctx.lineWidth = f.lw; ctx.globalAlpha = Math.min(1, f.alpha + 0.35); ctx.stroke(); ctx.globalAlpha = 1; }
+          }); ctx.strokeStyle = f.stroke === 'fill' ? col : f.stroke; ctx.lineWidth = f.lw; ctx.lineCap = 'round'; ctx.globalAlpha = Math.min(1, f.alpha + 0.35); ctx.stroke(); ctx.globalAlpha = 1; ctx.lineCap = 'butt'; }
+        if (it.stroke && f.stroke) { ctx.strokeStyle = f.stroke === 'fill' ? col : f.stroke; ctx.lineWidth = f.lw; ctx.globalAlpha = Math.min(1, f.alpha + 0.35); ctx.stroke(); ctx.globalAlpha = 1; }
       }
       for (const l of this.lines) {
         ctx.beginPath();
