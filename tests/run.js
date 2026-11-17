@@ -6,7 +6,7 @@ const R = (p) => require(path.join(__dirname, '..', p));
 const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/internal.js');
 const Forces = R('st/forces.js'), Equil = R('st/equil.js'), Truss = R('st/truss.js'), Friction = R('st/friction.js');
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
-const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js'), Torsion = R('md/torsion.js');
+const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js'), Torsion = R('md/torsion.js'), BeamStress = R('md/beamstress.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
 const filter = (process.argv[2] || '').toLowerCase();
@@ -512,6 +512,72 @@ group('torsion module', () => {
   Torsion.convertState(st, 'US', 'SI'); Torsion.convertState(st, 'SI', 'US');
   truthy('kip·in. comes back as kip·in.', st.tu === 'kip·in.'); close('torque comes back', st.sh.segs[0].T, 12.5, 1e-4);
   truthy('bore wider than the tube fails', !shaft('kN·m', 'free', [sg(1, 50, 2, { shape: 'tube', di: 60 })]).ok);
+});
+
+group('beam stresses module', () => {
+  const Rr = (x, y, b, h) => ({ kind: 'rect', x, y, b, h, rot: 0, hole: false });
+  const bs = (o, sys) => BeamStress.solve(Core.deepMerge(BeamStress.defaults(), o), U[sys || 'SI']);
+  const simple = (L, xa, xb, loads) => ({ src: 'beam', at: 'max', bm: { L, sup: 'simple', xa, xb, loads } });
+  const D = (x1, x2, w) => ({ kind: 'dist', x1, x2, w1: w, w2: w }), Pt = (x, P) => ({ kind: 'point', x, P });
+  // Example 11.11: I-beam, 5 kN/m over 6 m
+  let r = bs({ mode: 'flexure', sec: { src: 'shape', shape: 'I', bf: 250, d: 340, tf: 20, tw: 20 }, ld: simple(6, 0, 6, [D(0, 6, 5)]), fl: { pt: true, y: 150 } });
+  close('11.11 M', out(r, 'Moment M'), 22.5); close('11.11 I', out(r, 'Moment of inertia I'), 301.3e6); close('11.11 σ_max', out(r, 'Absolute maximum bending stress σ_max'), 12.7); close('11.11 σ_B', out(r, 'Stress at the point σ_P'), -11.2);
+  // Example 11.13: bar with ribs
+  r = bs({ mode: 'flexure', fu: 'N', sec: { src: 'parts', parts: [Rr(0, 5, 60, 30), Rr(0, 0, 10, 5), Rr(50, 0, 10, 5)] }, ld: { src: 'given', M: 40 }, fl: { pt: false } });
+  close('11.13 I', out(r, 'Moment of inertia I'), 0.1642e6); close('11.13 σ_max', out(r, 'Absolute maximum bending stress σ_max'), 4.65);
+  r = bs({ mode: 'flexure', fu: 'N', sec: { src: 'shape', shape: 'rect', b: 60, h: 30 }, ld: { src: 'given', M: 40 }, fl: { pt: false } });
+  close('11.13 without ribs', out(r, 'Absolute maximum bending stress σ_max'), 4.44);
+  // Example 11.14: inclined moment on a rectangle
+  r = bs({ mode: 'unsym', sec: { src: 'shape', shape: 'rect', b: 200, h: 400 }, un: { by: 'angle', M: 12, th: -Math.atan2(4, 3) * 180 / Math.PI } });
+  close('11.14 M_z', out(r, 'Moment about z, M_z'), 7.2); close('11.14 M_y', out(r, 'Moment about y, M_y'), -9.6);
+  close('11.14 B', out(r, 'Stress at the top-left corner'), 2.25); close('11.14 C', out(r, 'Stress at the top-right corner'), -4.95);
+  close('11.14 D', out(r, 'Stress at the bottom-right corner'), -2.25); close('11.14 E', out(r, 'Stress at the bottom-left corner'), 4.95); close('11.14 α', out(r, 'Angle of the neutral axis α'), -79.4);
+  // a moment about z alone on a symmetric section leaves the neutral axis horizontal
+  r = bs({ mode: 'unsym', sec: { src: 'shape', shape: 'rect', b: 100, h: 100 }, un: { by: 'comp', Mz: 5, My: 0 } });
+  close('symmetric section, M_z only: α = 0', out(r, 'Angle of the neutral axis α'), 0);
+  // Example 12.1: glued T-beam
+  r = bs({ mode: 'shear', sec: { src: 'shape', shape: 'T', bf: 150, d: 180, tf: 30, tw: 30 }, ld: simple(8, 0, 8, [D(4, 8, 6.5)]), sh: { y: 30 } });
+  close('12.1 V', out(r, 'Shear force V'), -19.5); close('12.1 I', out(r, 'Moment of inertia I'), 27.0e6); close('12.1 Q', out(r, 'Q at the level'), 0.2025e6); close('12.1 τ', out(r, 'Shear stress at the level τ'), 4.88);
+  // Example 12.3: wide flange, V = 80 kN
+  r = bs({ mode: 'shear', sec: { src: 'shape', shape: 'I', bf: 300, d: 240, tf: 20, tw: 15 }, ld: { src: 'given', V: 80 }, sh: { y: 100 } });
+  close('12.3 I', out(r, 'Moment of inertia I'), 155.6e6); close("12.3 τ_B'", out(r, 'Shear stress just above the level'), 1.13); close('12.3 τ_B', out(r, 'Shear stress just below the level'), 22.6); close('12.3 τ_C', out(r, 'Maximum shear stress τ_max'), 25.2);
+  // rectangle: τ_max = 1.5 V/A at the neutral axis
+  r = bs({ mode: 'shear', sec: { src: 'shape', shape: 'rect', b: 100, h: 200 }, ld: { src: 'given', V: 20 }, sh: { y: 0 } });
+  close('rectangle τ_max = 1.5V/A', out(r, 'Maximum shear stress τ_max'), 1.5); close('rectangle level of τ_max', out(r, 'Level of τ_max above the neutral axis'), 0);
+  // Example 12.4: three boards, glue
+  r = bs({ mode: 'flow', sec: { src: 'parts', parts: [Rr(0, 0, 10, 300), Rr(135, 0, 10, 300), Rr(-52.5, 300, 250, 10)] }, ld: { src: 'given', V: 850 }, fw: { held: 'part', part: 3, n: 2, F: 0, task: 's' } });
+  close('12.4 I', out(r, 'Moment of inertia I'), 87.42e6); close('12.4 q', out(r, 'Shear flow q'), 2660); close('12.4 q per seam', out(r, 'Shear flow per row'), 1330);
+  // Example 12.5: nailed box beam
+  r = bs({ mode: 'flow', fu: 'lb', sec: { src: 'parts', parts: [Rr(0, 0, 7.5, 1.5), Rr(0, 6, 7.5, 1.5), Rr(0, 1.5, 1.5, 4.5), Rr(6, 1.5, 1.5, 4.5)] }, ld: { src: 'given', V: 80 }, fw: { held: 'part', part: 2, n: 2, F: 30, task: 's', step: 0.5 } }, 'US');
+  close('12.5 I', out(r, 'Moment of inertia I'), 229.5); close('12.5 q_B', out(r, 'Shear flow q'), 11.76); close('12.5 s_B', out(r, 'Largest spacing s'), 5.10);
+  r = bs({ mode: 'flow', fu: 'lb', sec: { src: 'parts', parts: [Rr(0, 0, 1.5, 7.5), Rr(6, 0, 1.5, 7.5), Rr(1.5, 0, 4.5, 1.5), Rr(1.5, 6, 4.5, 1.5)] }, ld: { src: 'given', V: 80 }, fw: { held: 'part', part: 4, n: 2, F: 30, task: 's', step: 0 } }, 'US');
+  close('12.5 q_C', out(r, 'Shear flow q'), 7.059); close('12.5 s_C', out(r, 'Largest spacing s'), 8.50);
+  // Example 12.6: Case I
+  r = bs({ mode: 'flow', fu: 'lb', sec: { src: 'parts', parts: [Rr(0, 0, 3, 0.5), Rr(0, 4.5, 3, 0.5), Rr(1, 0.5, 1, 4)] }, fw: { held: 'part', part: 2, n: 1, F: 40, task: 'V', s: 9 } }, 'US');
+  close('12.6 I', out(r, 'Moment of inertia I'), 20.58); close('12.6 V', out(r, 'Largest shear force V'), 27.1);
+  // Example 15.1: W shape
+  r = bs({ mode: 'design', fu: 'kip', dz: { kind: 'W', sA: 24, tA: 14.5 }, ld: simple(18, 0, 12, [Pt(6, 40), Pt(18, 20)]) }, 'US');
+  close('15.1 M_max', out(r, 'Largest moment M_max'), 120); close('15.1 V_max', out(r, 'Largest shear V_max'), 30); close('15.1 S_req', out(r, 'Required section modulus S_req'), 60);
+  truthy('15.1 picks W18×40', out(r, 'Lightest W shape') === 'W18×40'); close('15.1 τ_avg', out(r, 'Average shear stress in the web τ_avg'), 5.32);
+  // Example 15.2: rectangle sized for shear
+  r = bs({ mode: 'design', dz: { kind: 'rect', sA: 9, tA: 0.6, ratio: 1.5 }, ld: simple(4, 1, 4, [D(0, 4, 12)]) });
+  close('15.2 M_max', out(r, 'Largest moment M_max'), 10.67); close('15.2 V_max', out(r, 'Largest shear V_max'), 20); close('15.2 a from bending', out(r, 'Width from bending b'), 147);
+  close('15.2 τ with that width', out(r, 'Largest shear stress with that width'), 0.929); close('15.2 a from shear', out(r, 'Required width b'), 183);
+  // Example 15.3: wooden T-beam check and nail spacing
+  const T153 = { src: 'shape', shape: 'T', bf: 200, d: 230, tf: 30, tw: 30 }, L153 = simple(4, 0, 4, [D(0, 2, 0.5), Pt(2, 1.5)]);
+  r = bs({ mode: 'design', sec: T153, dz: { kind: 'check', sA: 12, tA: 0.8 }, ld: L153 });
+  close('15.3 I', out(r, 'Moment of inertia I'), 60.125e6); close('15.3 σ', out(r, 'Largest bending stress σ_max'), 5.24); close('15.3 τ', out(r, 'Largest shear stress τ_max'), 0.309);
+  r = bs({ mode: 'flow', sec: T153, ld: L153, fw: { held: 'part', part: 2, n: 1, F: 1.5, task: 's', step: 0 } });
+  close('15.3 q_BC', out(r, 'Shear flow q'), 8.61); close('15.3 s_BC', out(r, 'Largest spacing s'), 174);
+  // a solid round bar: τ_max = 4V/(3A)
+  r = bs({ mode: 'shear', sec: { src: 'shape', shape: 'circle', D: 50 }, ld: { src: 'given', V: 10 }, sh: { y: 0 } });
+  close('circle τ_max = 4V/3A', out(r, 'Maximum shear stress τ_max'), (4 * 10e3) / (3 * Math.PI * 0.025 ** 2) / 1e6, 0.01);
+  // unit toggle round trip keeps the answer
+  const st = Core.deepMerge(BeamStress.defaults(), { mode: 'flexure', sec: { src: 'shape', shape: 'I', bf: 250, d: 340, tf: 20, tw: 20 }, ld: simple(6, 0, 6, [D(0, 6, 5)]) });
+  const a = out(BeamStress.solve(st, U.SI), 'Absolute maximum bending stress σ_max');
+  BeamStress.convertState(st, 'SI', 'US'); const b = out(BeamStress.solve(st, U.US), 'Absolute maximum bending stress σ_max');
+  BeamStress.convertState(st, 'US', 'SI'); close('σ_max in ksi', b, a / 6.894757, 1e-4); close('σ_max after the round trip', out(BeamStress.solve(st, U.SI), 'Absolute maximum bending stress σ_max'), a, 1e-5);
+  truthy('flange thicker than the depth fails', !bs({ mode: 'flexure', sec: { src: 'shape', shape: 'T', bf: 150, d: 20, tf: 30, tw: 30 }, ld: { src: 'given', M: 10 } }).ok);
 });
 
 groups.forEach(([name, fn]) => { if (filter && !name.toLowerCase().includes(filter)) return; console.log(name); fn(); });
