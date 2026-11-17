@@ -33,6 +33,7 @@
     try { const t = localStorage.getItem(TAB_KEY); if (t && App.modules[t]) App.active = t; } catch (e) {}
 
     const view3d = new root.View3D($('cv3d'));
+    App.view3d = view3d;
     const C = UI.Controls(App);
     const anim = root.Anim($('animBar'), (final) => (final ? App.rebuild(true) : App.update()));
     App.anim = anim;

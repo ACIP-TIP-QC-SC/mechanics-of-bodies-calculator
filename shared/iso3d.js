@@ -43,8 +43,9 @@
     clear() { this.faces = []; this.lines = []; this.labels = []; this.dims = []; }
 
     /* ---------- scene building ---------- */
-    /** layer: faces in a lower layer are always painted first (use -1 for floors and ground slabs). */
-    face(pts, fill, alpha = 1, stroke = null, lw = 1, layer = 0) { this.faces.push({ pts, fill, alpha, stroke, lw, layer }); }
+    /** layer: faces in a lower layer are always painted first (use -1 for floors and ground slabs).
+     *  out: the outward normal of a face on a closed solid; a face turned away from the viewer is then skipped. */
+    face(pts, fill, alpha = 1, stroke = null, lw = 1, layer = 0, out = null) { this.faces.push({ pts, fill, alpha, stroke, lw, layer, out }); }
     line(pts, color = '#222', lw = 1.5, dash = null) { this.lines.push({ pts, color, lw, dash }); }
     label(p, text, color = '#111') { this.labels.push({ p, text, color }); }
     /** Dimension line between 3D points a and b, shifted by the 3D offset vector `off`. */
@@ -63,21 +64,27 @@
         [P(x0, y0, z0), P(x1, y0, z0), P(x1, y0, z1), P(x0, y0, z1)], // bottom
         [P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1)], // top
       ];
-      f.forEach((q, i) => { if (opts.noTop && i === 5) return; this.face(q, fill, alpha, stroke, 1, opts.layer || 0); });
+      const sx = Math.sign(x1 - x0) || 1, sy = Math.sign(y1 - y0) || 1, sz = Math.sign(z1 - z0) || 1, closed = !opts.noTop;
+      const N = [[0, 0, -sz], [0, 0, sz], [-sx, 0, 0], [sx, 0, 0], [0, -sy, 0], [0, sy, 0]];
+      f.forEach((q, i) => { if (opts.noTop && i === 5) return; this.face(q, fill, alpha, stroke, 1, opts.layer || 0, closed ? N[i] : null); });
     }
     /** Extrude a 2D polygon in the x–y plane between z0 and z1. */
     extrude(poly, z0, z1, fill, alpha = 1, stroke = null, opts = {}) {
       const n = poly.length;
       if (n < 2) return;
+      const closed = opts.caps !== false && !opts.open && n >= 3, sz = Math.sign(z1 - z0) || 1;
+      let A2 = 0; for (let i = 0; i < n; i++) { const a = poly[i], b = poly[(i + 1) % n]; A2 += a[0] * b[1] - b[0] * a[1]; }
+      const ccw = A2 >= 0;
       if (opts.caps !== false && n >= 3) {
-        this.face(poly.map((p) => [p[0], p[1], z0]), fill, alpha, stroke, 1, opts.layer || 0);
-        this.face(poly.map((p) => [p[0], p[1], z1]), fill, alpha, stroke, 1, opts.layer || 0);
+        this.face(poly.map((p) => [p[0], p[1], z0]), fill, alpha, stroke, 1, opts.layer || 0, closed ? [0, 0, -sz] : null);
+        this.face(poly.map((p) => [p[0], p[1], z1]), fill, alpha, stroke, 1, opts.layer || 0, closed ? [0, 0, sz] : null);
       }
       const m = opts.open ? n - 1 : n;
       for (let i = 0; i < m; i++) {
-        const a = poly[i], b = poly[(i + 1) % n];
-        if (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-9) continue;
-        this.face([[a[0], a[1], z0], [b[0], b[1], z0], [b[0], b[1], z1], [a[0], a[1], z1]], fill, alpha, opts.sideStroke === undefined ? stroke : opts.sideStroke, 1, opts.layer || 0);
+        const a = poly[i], b = poly[(i + 1) % n], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+        if (L < 1e-9) continue;
+        const out = closed ? (ccw ? [dy / L, -dx / L, 0] : [-dy / L, dx / L, 0]) : null;
+        this.face([[a[0], a[1], z0], [b[0], b[1], z0], [b[0], b[1], z1], [a[0], a[1], z1]], fill, alpha, opts.sideStroke === undefined ? stroke : opts.sideStroke, 1, opts.layer || 0, out);
       }
     }
     /** Extrude a polygon given in the x–z plane between heights y0 and y1. */
@@ -94,6 +101,8 @@
     lathe(profile, fill, alpha = 1, stroke = null, seg = 40, cx = 0, cz = 0, opts = {}) {
       const n = profile.length;
       const m = opts.open ? n - 1 : n;
+      // a point inside the profile, revolved with each face, tells which way is out
+      const rc = profile.reduce((a, p) => a + p[0], 0) / n, yc = profile.reduce((a, p) => a + p[1], 0) / n;
       for (let j = 0; j < seg; j++) {
         const t0 = (j / seg) * 2 * Math.PI, t1 = ((j + 1) / seg) * 2 * Math.PI;
         const c0 = Math.cos(t0), s0 = Math.sin(t0), c1 = Math.cos(t1), s1 = Math.sin(t1);
@@ -101,7 +110,12 @@
           const a = profile[i], b = profile[(i + 1) % n];
           if (Math.abs(a[0]) < 1e-9 && Math.abs(b[0]) < 1e-9) continue;
           const q = [[cx + a[0] * c0, a[1], cz + a[0] * s0], [cx + b[0] * c0, b[1], cz + b[0] * s0], [cx + b[0] * c1, b[1], cz + b[0] * s1], [cx + a[0] * c1, a[1], cz + a[0] * s1]];
-          this.face(q, fill, alpha, stroke);
+          let out = null;
+          if (!opts.open) {
+            const nn = faceNormal(q), tm = (t0 + t1) / 2, I = [cx + rc * Math.cos(tm), yc, cz + rc * Math.sin(tm)], Q = q.reduce((acc, p) => [acc[0] + p[0] / 4, acc[1] + p[1] / 4, acc[2] + p[2] / 4], [0, 0, 0]);
+            out = dot(nn, [Q[0] - I[0], Q[1] - I[1], Q[2] - I[2]]) < 0 ? nn.map((v) => -v) : nn;
+          }
+          this.face(q, fill, alpha, stroke, 1, 0, out);
         }
       }
     }
@@ -145,23 +159,32 @@
       this.sc = ((Math.min(w, h) * 0.46) / this.radius) * this.zoom;
       const L = norm([0.35, 0.85, 0.45]);
       const yawR = (this.yaw * Math.PI) / 180, pr = (this.pitch * Math.PI) / 180;
-      const items = this.faces.map((f) => {
-        const pp = f.pts.map((p) => this.project(p));
-        let zs = 0; pp.forEach((q) => (zs += q[2]));
-        const nrm = faceNormal(f.pts);
-        const shade = 0.62 + 0.38 * Math.abs(dot(nrm, L));
-        return { f, pp, z: zs / pp.length, shade };
-      });
-      items.sort((a, b) => (a.f.layer || 0) - (b.f.layer || 0) || a.z - b.z);
+      const cy = Math.cos(yawR), sy = Math.sin(yawR), cpp = Math.cos(pr), spp = Math.sin(pr);
+      const facing = (n) => n[1] * spp + (n[0] * sy + n[2] * cy) * cpp; // > 0: the normal points toward the viewer
+      // Painter's algorithm: big faces are cut into small pieces, and edges into short segments, so that sorting by
+      // depth stays right where solids touch or pass in front of large faces; faces turned away are skipped.
+      const maxL = this.radius * 0.12, items = [], useLayer = this.pitch >= 0; // from below, floors are sorted like everything else
+      const pz = (pts) => { let z = 0; const pp = pts.map((p) => { const q = this.project(p); z += q[2]; return q; }); return { pp, z: z / pts.length }; };
+      for (const f of this.faces) {
+        if (f.out && f.alpha >= 0.99 && facing(f.out) < -1e-9) continue;
+        if (!f._nrm) f._nrm = f.out || faceNormal(f.pts);
+        const shade = 0.62 + 0.38 * Math.abs(dot(f._nrm, L)), layer = useLayer ? f.layer || 0 : 0;
+        if (f._maxL !== maxL) { f._sub = f.alpha >= 0.99 ? splitFace(f.pts, maxL) : null; f._maxL = maxL; } // see-through faces stay whole (no seams)
+        if (!f._sub) { const { pp, z } = pz(f.pts); items.push({ f, pp, z, shade, layer, stroke: true }); continue; }
+        f._sub.forEach((pc) => { const { pp, z } = pz(pc.pts); items.push({ f, pp, z, shade, layer, seam: true, bnd: f.stroke && pc.bnd.length ? pc.bnd.map((e) => e.map((q) => this.project(q))) : null }); });
+      }
+      items.sort((a, b) => a.layer - b.layer || a.z - b.z);
       for (const it of items) {
         const { f, pp, shade } = it;
         ctx.beginPath();
         pp.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])));
         ctx.closePath();
-        const [r, g, b] = hexToRgb(f.fill);
-        ctx.fillStyle = `rgba(${Math.round(r * shade)},${Math.round(g * shade)},${Math.round(b * shade)},${f.alpha})`;
+        const [r, g, b] = hexToRgb(f.fill), col = `rgba(${Math.round(r * shade)},${Math.round(g * shade)},${Math.round(b * shade)},${f.alpha})`;
+        ctx.fillStyle = col;
         ctx.fill();
-        if (f.stroke) { ctx.strokeStyle = f.stroke; ctx.lineWidth = f.lw; ctx.globalAlpha = Math.min(1, f.alpha + 0.35); ctx.stroke(); ctx.globalAlpha = 1; }
+        if (it.seam && f.alpha >= 0.99) { ctx.strokeStyle = col; ctx.lineWidth = 0.8; ctx.stroke(); }
+        if (it.bnd) { ctx.beginPath(); it.bnd.forEach(([a, b]) => { ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }); ctx.strokeStyle = f.stroke; ctx.lineWidth = f.lw; ctx.lineCap = 'round'; ctx.globalAlpha = Math.min(1, f.alpha + 0.35); ctx.stroke(); ctx.globalAlpha = 1; ctx.lineCap = 'butt'; }
+        if (it.stroke && f.stroke) { ctx.strokeStyle = f.stroke; ctx.lineWidth = f.lw; ctx.globalAlpha = Math.min(1, f.alpha + 0.35); ctx.stroke(); ctx.globalAlpha = 1; }
       }
       for (const l of this.lines) {
         ctx.beginPath();
@@ -214,6 +237,46 @@
     }
   }
   function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+  const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], len3 = (a) => Math.hypot(a[0], a[1], a[2]);
+  const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  /** A convex face larger than maxL cut into pieces no larger than maxL, each with the parts of the face's outline
+   *  it carries ({pts, bnd}); null when the face is small enough (or not convex). */
+  function splitFace(pts, maxL) {
+    const n = pts.length;
+    let big = false; for (let i = 0; i < n; i++) if (len3(sub3(pts[(i + 1) % n], pts[i])) > maxL) { big = true; break; }
+    if (!big || n < 3 || !convex(pts)) return null;
+    const out = [];
+    if (n === 4) {
+      const nu = Math.min(24, Math.ceil(Math.max(len3(sub3(pts[1], pts[0])), len3(sub3(pts[2], pts[3]))) / maxL)), nv = Math.min(24, Math.ceil(Math.max(len3(sub3(pts[3], pts[0])), len3(sub3(pts[2], pts[1]))) / maxL));
+      const P = (u, v) => lerp3(lerp3(pts[0], pts[1], u), lerp3(pts[3], pts[2], u), v);
+      for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
+        const q = [P(i / nu, j / nv), P((i + 1) / nu, j / nv), P((i + 1) / nu, (j + 1) / nv), P(i / nu, (j + 1) / nv)], bnd = [];
+        if (j === 0) bnd.push([q[0], q[1]]); if (i === nu - 1) bnd.push([q[1], q[2]]); if (j === nv - 1) bnd.push([q[2], q[3]]); if (i === 0) bnd.push([q[3], q[0]]);
+        out.push({ pts: q, bnd });
+      }
+      return out;
+    }
+    // fan into triangles, then halve the longest edge until every edge is short; fl marks edges on the outline
+    const tri = (a, b, c, fl, d) => {
+      const e = [len3(sub3(b, a)), len3(sub3(c, b)), len3(sub3(a, c))], k = e.indexOf(Math.max(...e));
+      if (e[k] <= maxL || d > 9) { const bnd = []; if (fl[0]) bnd.push([a, b]); if (fl[1]) bnd.push([b, c]); if (fl[2]) bnd.push([c, a]); out.push({ pts: [a, b, c], bnd }); return; }
+      if (k === 0) { const m = lerp3(a, b, 0.5); tri(a, m, c, [fl[0], false, fl[2]], d + 1); tri(m, b, c, [fl[0], fl[1], false], d + 1); }
+      else if (k === 1) { const m = lerp3(b, c, 0.5); tri(a, b, m, [fl[0], fl[1], false], d + 1); tri(a, m, c, [false, fl[1], fl[2]], d + 1); }
+      else { const m = lerp3(c, a, 0.5); tri(a, b, m, [fl[0], false, fl[2]], d + 1); tri(m, b, c, [false, fl[1], fl[2]], d + 1); }
+    };
+    for (let i = 1; i < n - 1; i++) tri(pts[0], pts[i], pts[i + 1], [i === 1, true, i === n - 2], 0);
+    return out;
+  }
+  function convex(pts) {
+    const n = pts.length, nn = faceNormal(pts); let sg = 0;
+    for (let i = 0; i < n; i++) {
+      const a = pts[i], b = pts[(i + 1) % n], c = pts[(i + 2) % n], u = sub3(b, a), v = sub3(c, b);
+      const cr = dot([u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], nn);
+      if (Math.abs(cr) < 1e-12) continue;
+      if (!sg) sg = Math.sign(cr); else if (Math.sign(cr) !== sg) return false;
+    }
+    return true;
+  }
   function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
   function faceNormal(p) {
     // Newell's method
