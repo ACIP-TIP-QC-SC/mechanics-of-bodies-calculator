@@ -126,13 +126,13 @@
     const g = s('g', {}, svg);
     const xa = X(x0), xb = X(x1), yv0 = Y(-yr * ys), yv1 = Y(yr * ys);
     // axes
-    s('line', { x1: xa, y1: Y(0), x2: xb + 14, y2: Y(0), stroke: '#5a6b75', 'stroke-width': 1.3 }, g);
-    s('polygon', { points: `${xb + 22},${Y(0)} ${xb + 12},${Y(0) - 4} ${xb + 12},${Y(0) + 4}`, fill: '#5a6b75' }, g);
+    s('line', { x1: xa, y1: Y(0), x2: xb + 14, y2: Y(0), stroke: '#111111', 'stroke-width': 1.3 }, g);
+    s('polygon', { points: `${xb + 22},${Y(0)} ${xb + 12},${Y(0) - 4} ${xb + 12},${Y(0) + 4}`, fill: '#111111' }, g);
     text(g, xb + 24, Y(0) + 16, o.xl || '', { anchor: 'end', color: '#1d2733', size: 12.5, weight: 700 });
     const xv = x0 <= 0 && x1 >= 0 ? X(0) : xa;
-    s('line', { x1: xv, y1: Math.min(yv0, yv1) - 6, x2: xv, y2: Math.max(yv0, yv1), stroke: '#5a6b75', 'stroke-width': 1.3 }, g);
+    s('line', { x1: xv, y1: Math.min(yv0, yv1) - 6, x2: xv, y2: Math.max(yv0, yv1), stroke: '#111111', 'stroke-width': 1.3 }, g);
     const tipY = o.yDown ? Math.max(yv0, yv1) + 4 : Math.min(yv0, yv1) - 10;
-    s('polygon', { points: o.yDown ? `${xv},${tipY + 8} ${xv - 4},${tipY - 2} ${xv + 4},${tipY - 2}` : `${xv},${tipY - 4} ${xv - 4},${tipY + 6} ${xv + 4},${tipY + 6}`, fill: '#5a6b75' }, g);
+    s('polygon', { points: o.yDown ? `${xv},${tipY + 8} ${xv - 4},${tipY - 2} ${xv + 4},${tipY - 2}` : `${xv},${tipY - 4} ${xv - 4},${tipY + 6} ${xv + 4},${tipY + 6}`, fill: '#111111' }, g);
     text(g, xv + 8, o.yDown ? tipY + 6 : tipY + 6, o.yl || '', { color: '#1d2733', size: 12.5, weight: 700 });
     niceTicks(x0, x1, Math.max(3, Math.round((xb - xa) / 90))).ticks.forEach((v) => {
       s('line', { x1: X(v), y1: Y(0) - 3, x2: X(v), y2: Y(0) + 3, stroke: '#5a6b75', 'stroke-width': 1 }, g);
@@ -186,8 +186,8 @@
       s('rect', { x: ox, y: oy, width: pw, height: ph, fill: '#fff', stroke: '#d3dce0' }, g);
       T(g, ox + 8, oy + 17, v.name, { color: '#5a6b75', size: 11.5, weight: 700 });
       const x0 = ox + 12, x1 = ox + pw - 12, y0 = oy + 26, y1 = oy + ph - 10;
-      s('line', { x1: x0, y1: cy, x2: x1, y2: cy, stroke: '#c4ced4' }, g); s('line', { x1: cx, y1: y0, x2: cx, y2: y1, stroke: '#c4ced4' }, g);
-      T(g, x1, cy + 14, v.n[0], { anchor: 'end', color: '#5a6b75', size: 11 }); T(g, cx + 6, y0 + 10, v.n[1], { color: '#5a6b75', size: 11 });
+      s('line', { x1: x0, y1: cy, x2: x1, y2: cy, stroke: '#111111', 'stroke-width': 0.9 }, g); s('line', { x1: cx, y1: y0, x2: cx, y2: y1, stroke: '#111111', 'stroke-width': 0.9 }, g);
+      T(g, x1, cy + 14, v.n[0], { anchor: 'end', color: '#111111', size: 11 }); T(g, cx + 6, y0 + 10, v.n[1], { color: '#111111', size: 11 });
       // labels: kept inside the panel and nudged down so they do not sit on each other
       const placed = [], lab = (x, y, txt, color, left) => {
         const tw = txt.length * 6.4, h = 13; let l = left ? x - tw : x;

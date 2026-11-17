@@ -28,7 +28,7 @@
   M.controls = function (c, C) {
     const st = S(), U = Core.UNITS[M.units], Lu = U.len, Ls = U.lenS, F = st.fu;
     let sec = C.section(c, 'Problem');
-    C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [['block', 'Block on a floor or slope: slip or tip'], ['ladder', 'Ladder against a wall'], ['wedge', 'Wedge'], ['screw', 'Square-threaded screw'], ['belt', 'Flat belt or rope over drums']] });
+    C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [['block', 'Block on a floor or slope: slip or tip'], ['incline', 'Block sliding on an incline'], ['ladder', 'Ladder against a wall'], ['wedge', 'Wedge'], ['screw', 'Square-threaded screw'], ['belt', 'Flat belt or rope over drums']] });
     C.seg(sec, { label: 'Force unit', get: () => st.fu, set: (v) => (st.fu = v), options: U.forces.map((f) => [f, f]) });
     if (st.mode === 'block') {
       const q = st.bk;
@@ -43,6 +43,20 @@
       if (q.task === 'check') C.num(sec, { label: 'P', get: () => q.P, set: (v) => (q.P = v), unit: F });
       C.num(sec, { label: 'Angle from the surface (+ away from it)', get: () => q.psi, set: (v) => (q.psi = v), unit: '°' });
       C.num(sec, { label: 'Height above the base', get: () => q.hP, set: (v) => (q.hP = v), unit: Lu });
+    } else if (st.mode === 'incline') {
+      const q = st.ic;
+      C.seg(sec, { label: 'Find', get: () => q.task, set: (v) => (q.task = v), options: [['release', 'Does it slide?'], ['hold', 'Force to hold'], ['up', 'Force to push up']] });
+      sec = C.section(c, 'Block and slope');
+      weightIn(sec, C, q, F, 'Block');
+      C.num(sec, { label: 'Slope angle φ', get: () => q.phi, set: (v) => (q.phi = v), unit: '°' });
+      C.num(sec, { label: 'Static friction μs', get: () => q.mus, set: (v) => (q.mus = v), unit: '' });
+      C.num(sec, { label: 'Kinetic friction μk (while sliding)', get: () => q.muk, set: (v) => (q.muk = v), unit: '' });
+      if (q.task === 'release') C.num(sec, { label: 'Distance it slides d', get: () => q.d, set: (v) => (q.d = v), unit: Lu });
+      else {
+        sec = C.section(c, 'Force P');
+        C.num(sec, { label: 'Angle from the slope (+ away from it)', get: () => q.psi, set: (v) => (q.psi = v), unit: '°' });
+        if (q.task === 'up') C.num(sec, { label: 'Acceleration up the slope (0 = steady speed)', get: () => q.acc, set: (v) => (q.acc = v), unit: U.acc });
+      }
     } else if (st.mode === 'ladder') {
       const q = st.ld;
       C.seg(sec, { label: 'Find', get: () => q.task, set: (v) => (q.task = v), options: [['minAngle', 'Smallest angle'], ['check', 'Friction needed at an angle']] });
@@ -91,17 +105,33 @@
   M.compute = (U) => Friction.solve(S(), U);
   M.onUnits = (from, to) => Friction.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => ({ block: 'Free-body diagram and friction cone', ladder: 'Free-body diagram of the ladder', wedge: 'Free-body diagram of the wedge and load', screw: 'Screw and the unwrapped thread', belt: 'Belt on the drums' }[mode()]);
+  M.cap2D = () => ({ block: 'Free-body diagram and friction cone', incline: 'Block on the incline', ladder: 'Free-body diagram of the ladder', wedge: 'Free-body diagram of the wedge and load', screw: 'Screw and the unwrapped thread', belt: 'Belt on the drums' }[mode()]);
   M.cap3D = '3D view';
   M.hint = () => ({
     block: 'Green: the normal force N at its position x and the friction force F. Orange dashed: the friction cone at ±φs = tan⁻¹ μs; while the resultant of N and F stays inside it, the block does not slip, and while N stays within the base, it does not tip.',
+    incline: 'Purple: friction, which acts up the slope when the block slides or is about to slide down, and down the slope when it is pushed up. Orange dashed: the angle of repose φs = tan⁻¹ μs; a slope steeper than it lets the block slide by itself. Press Play to watch it move.',
     ladder: 'The foot slips away from the wall and the top slides down, so friction acts toward the wall at A and upward at B.',
     wedge: 'Friction opposes the motion that is about to happen on each surface. Purple arrows are friction forces.',
     screw: 'The thread is unwrapped into a slope of rise l over a run of 2πr. The resultant R of the normal and friction forces leans at φs from the normal.',
     belt: 'The tension grows by e^(μβ) over each drum, toward the side the belt is about to slip to.',
   }[mode()]);
-  M.legend = () => [[LCOL, 'Loads'], [RCOL, 'Normal forces'], [FCOL, 'Friction']].concat(mode() === 'block' ? [[CONE, 'Friction cone', 'ln']] : []);
-  M.anim = null;
+  M.legend = () => [[LCOL, 'Loads'], [RCOL, 'Normal forces'], [FCOL, 'Friction']].concat(mode() === 'block' ? [[CONE, 'Friction cone', 'ln']] : mode() === 'incline' ? [[CONE, 'Angle of repose', 'ln']] : []);
+  /* Play slides the block down the slope (released) or up it (pushed); the clock shows the real time. */
+  let animGeo = null;
+  const slide = { duration: 6, loop: true,
+    frame(u) { S()._s = u; },
+    label(u) {
+      const g = animGeo; if (!g) return '';
+      const U = Core.UNITS[M.units];
+      if (g.task === 'release') { const t = u * g.t; return `t = ${fmt(t, 3)} s · v = ${fmt(g.a * t, 3)} ${U.vel}`; }
+      return g.a > 0 ? `a = ${fmt(g.a, 3)} ${U.acc} up the slope` : 'Steady speed up the slope';
+    } };
+  M.anim = () => {
+    if (mode() !== 'incline') return null;
+    const r = Friction.solve(S(), Core.UNITS[M.units]);
+    animGeo = r.ok && r.geo.moving ? r.geo : null;
+    return animGeo ? slide : null;
+  };
 
   /* ------------------------------------------------------------------ */
   /* 2D helpers                                                         */
@@ -139,6 +169,7 @@
     LW = svg.clientWidth || 800;
     const g = res.geo;
     if (g.kind === 'block') return drawBlock(svg, g, opt);
+    if (g.kind === 'incline') return drawIncline(svg, g, opt);
     if (g.kind === 'ladder') return drawLadder(svg, g, opt);
     if (g.kind === 'wedge') return drawWedge(svg, g, opt);
     if (g.kind === 'screw') return drawScrew(svg, g, opt);
@@ -187,6 +218,56 @@
     lbl(g0, 14, 22, vt, { color: g.verdict === 'none' ? '#1e7a45' : '#a3281f', size: 13, weight: 800 });
   }
 
+
+  /* -------- block on an incline -------- */
+  /** Where the block's centre sits along the slope (0 = foot, 1 = top), following the animation. */
+  function inclinePos(g) {
+    const k = S()._s, s0 = 0.24, s1 = 0.8;
+    if (k === undefined || !g.moving) return 0.55;
+    const e = g.task === 'release' || g.a > 0 ? k * k : k;
+    return g.task === 'release' ? s1 - (s1 - s0) * e : s0 + (s1 - s0) * e;
+  }
+  function drawIncline(svg, g, opt) {
+    const { F } = g.c, U = g.c.U, ph = g.phi * DEG, cp = Math.cos(ph), sp = Math.sin(ph), R = (u, w) => [u * cp - w * sp, u * sp + w * cp];
+    const bs = 0.17, top = R(1, 0), xr = top[0] + 0.12;
+    const D = UI.Draw2D(svg, { xmin: -0.3, xmax: xr, ymin: -0.1, ymax: top[1] + 0.32 }, { pad: 52 }); hatch(svg);
+    const g0 = D.root, P = (p) => [D.X(p[0]), D.Y(p[1])];
+    // ground and the slope
+    const gl = P([-0.3, 0]), gr = P([xr, 0]);
+    poly(g0, [gl, gr, [gr[0], gr[1] + 12], [gl[0], gl[1] + 12]], { fill: 'url(#hatchF)' });
+    s('line', { x1: gl[0], y1: gl[1], x2: gr[0], y2: gr[1], stroke: '#4a5661', 'stroke-width': 2 }, g0);
+    poly(g0, [P([0, 0]), P([top[0], 0]), P(top)], { fill: '#e3e9ed', stroke: '#4a5661', 'stroke-width': 1.8 });
+    const o = P([0, 0]);
+    arcPx(g0, o[0], o[1], 54, 0, g.phi, '#1d2733'); lbl(g0, o[0] + 60, o[1] - 6, `φ = ${fmt(g.phi)}°`, { color: '#1d2733', size: 11.5 });
+    // angle of repose
+    const rr = g.rep * DEG, Lr = 0.36;
+    s('line', { x1: o[0], y1: o[1], x2: D.X(Lr * Math.cos(rr)), y2: D.Y(Lr * Math.sin(rr)), stroke: CONE, 'stroke-width': 1.6, 'stroke-dasharray': '6 4' }, g0);
+    lbl(g0, D.X(Lr * Math.cos(rr)) + 4, D.Y(Lr * Math.sin(rr)) + (rr < ph ? 14 : -6), `φs = ${fmt(g.rep)}°`, { color: CONE, size: 11 });
+    // block
+    const sc = inclinePos(g), cn = [R(sc - bs / 2, 0), R(sc + bs / 2, 0), R(sc + bs / 2, bs), R(sc - bs / 2, bs)].map(P);
+    poly(g0, cn, { fill: '#d9b58a', 'fill-opacity': 0.75, stroke: '#8a6a3f', 'stroke-width': 1.6 });
+    const G = P(R(sc, bs / 2)); s('circle', { cx: G[0], cy: G[1], r: 3.5, fill: '#1d2733' }, g0);
+    const up = [cp, -sp], nrm = [-sp, -cp]; // screen: up the slope, out of the surface
+    force(g0, G[0], G[1], 0, 1, 50, LCOL, null, true, 4); lbl(g0, G[0] + 7, G[1] + 50, opt.showP ? `W = ${fmt(g.W)} ${F}` : 'W', { color: LCOL });
+    const b0 = P(R(sc, 0));
+    force(g0, b0[0], b0[1], nrm[0], nrm[1], 44, RCOL, opt.showP ? `N = ${fmt(g.N)} ${F}` : 'N', false, 2);
+    if (g.Ff > 1e-12) { const fd = g.fUp ? up : [-up[0], -up[1]], fb = P(R(sc + (g.fUp ? 1 : -1) * bs * 0.5, -0.012)); force(g0, fb[0], fb[1], fd[0], fd[1], 46, FCOL, opt.showP ? `F = ${fmt(g.Ff)} ${F}` : 'F', true, 2); }
+    if (g.task !== 'release' && g.P > 0) {
+      const dw = R(Math.cos(g.psi * DEG), Math.sin(g.psi * DEG)), d = [dw[0], -dw[1]];
+      if (g.psi > 0) { const at = P(R(sc + bs / 2, bs / 2)); force(g0, at[0], at[1], d[0], d[1], 52, LCOL, opt.showP ? `P = ${fmt(g.P)} ${F}` : 'P', true, 2); }
+      else { const at = P(R(sc - bs / 2, bs / 2)); force(g0, at[0], at[1], d[0], d[1], 52, LCOL, opt.showP ? `P = ${fmt(g.P)} ${F}` : 'P', false, 2); }
+    }
+    // direction of motion
+    if (g.moving) {
+      const dn = g.task === 'release', a0 = P(R(sc + (dn ? 0.13 : -0.13), bs * 1.9)), a1 = P(R(sc + (dn ? -0.13 : 0.13), bs * 1.9));
+      s('line', { x1: a0[0], y1: a0[1], x2: a1[0], y2: a1[1], stroke: '#1d2733', 'stroke-width': 1.6, 'stroke-dasharray': '5 4' }, g0);
+      arrowPx(g0, a1[0] - (a1[0] - a0[0]) * 0.15, a1[1] - (a1[1] - a0[1]) * 0.15, a1[0], a1[1], '#1d2733', 1.6, 9);
+      lbl(g0, (a0[0] + a1[0]) / 2, (a0[1] + a1[1]) / 2 - 10, g.a > 0 ? `a = ${fmt(g.a)} ${U.acc}` : 'steady speed', { anchor: 'middle', color: '#1d2733', size: 11.5 });
+    }
+    const vt = g.task === 'release' ? (g.moving ? 'Slides down the slope' : 'Stays at rest') : g.task === 'hold' ? (g.P > 0 ? `Held by P = ${fmt(g.P)} ${F}` : 'Friction alone holds it') : `Pushed up by P = ${fmt(g.P)} ${F}`;
+    lbl(g0, 14, 22, vt, { color: g.task === 'release' && g.moving ? '#a3281f' : '#1e7a45', size: 13, weight: 800 });
+  }
+
   /* -------- ladder -------- */
   function drawLadder(svg, g, opt) {
     const { F } = g.c, th = g.th * DEG, L = g.L, A = [L * Math.cos(th), 0], B = [0, L * Math.sin(th)];
@@ -232,7 +313,7 @@
       const Wp = P(xA - g.xW, yL + hL); force(g0, Wp[0], Wp[1], 0, 1, 44, LCOL, opt.showP ? `W = ${fmt(g.W)} ${F}` : 'W', false, 0);
     } else {
       const bw = Lw * 0.36, bh = Lw * 0.4, x0 = xB - bw / 2, yb = t * (1 - x0 / Lw);
-      poly(g0, [P(x0, yb), P(x0 + bw, yb), P(x0 + bw, yb + bh), P(x0, yb + bh)], { fill: '#d9b58a', 'fill-opacity': 0.6, stroke: '#8a6a3f', 'stroke-width': 1.5 });
+      poly(g0, [P(x0, yb), P(x0 + bw, t * (1 - (x0 + bw) / Lw)), P(x0 + bw, yb + bh), P(x0, yb + bh)], { fill: '#d9b58a', 'fill-opacity': 0.6, stroke: '#8a6a3f', 'stroke-width': 1.5 });
       [x0 - Lw * 0.03, x0 + bw + Lw * 0.03].forEach((xg, i) => poly(g0, [P(xg, yB + bh * 0.1), P(xg, yB + bh * 1.6), [D.X(xg) + (i ? 8 : -8), D.Y(yB + bh * 1.6)], [D.X(xg) + (i ? 8 : -8), D.Y(yB + bh * 0.1)]], { fill: 'url(#hatchF)' }));
       const Wp = P(xB, yb + bh); force(g0, Wp[0], Wp[1], 0, 1, 40, LCOL, opt.showP ? `W = ${fmt(g.W)} ${F}` : 'W', false, 0);
     }
@@ -247,7 +328,7 @@
     force(g0, Cp[0] + 10, Cp[1] + 6, raise ? -1 : 1, 0, 40, FCOL, opt.showP ? `${fmt(g.muC * g.NC)} ${F}` : 'μN_C', true, 0);
     const Pp = P(0, t * 0.45), pull = g.P >= 0 ? !raise : raise;
     force(g0, Pp[0], Pp[1], pull ? -1 : 1, 0, 50, LCOL, opt.showP ? `P = ${fmt(Math.abs(g.P))} ${F}` : 'P', pull, 4);
-    lbl(g0, D.X(Lw * 0.62), D.Y(t * 0.12) - 2, `α = ${fmt(g.al)}°`, { color: '#5a6b75', size: 11 });
+    lbl(g0, D.X(Lw), D.Y(0) + 28, `α = ${fmt(g.al)}°`, { anchor: 'middle', color: '#1d2733', size: 11 });
   }
 
   /* -------- screw -------- */
@@ -326,57 +407,128 @@
     [1, -1].forEach((sg) => v.line([b, base.map((x, i) => x + c[i] * sg * hs * 0.4)], color, lw || 2.4));
   }
   M.draw3D = function (v, res, U, opt) {
-    const g = res.geo, F = g.c.F;
+    const g = res.geo, F = g.c.F, val = (k, txt) => (opt.showP ? `${k} = ${txt}` : k);
+    const GROUND = '#dfe4e8', GEDGE = '#4a5661', WOOD = '#d9b58a', WEDGE = '#8a6a3f', STEEL = '#c9d3da';
     if (g.kind === 'block') {
       const ph = g.phi * DEG, cp = Math.cos(ph), sp = Math.sin(ph), R = (u, w) => [u * cp - w * sp, u * sp + w * cp], e = Math.max(g.b, g.H), z = g.b * 0.6, ext = g.b * 0.9 + e * 0.6;
       v._hs = e * 0.08;
-      const a = R(-ext, 0), b = R(ext, 0);
-      v.extrude([a, b, [b[0], Math.min(a[1], b[1]) - e * 0.1], [a[0], Math.min(a[1], b[1]) - e * 0.1]], -z * 1.4, z * 1.4, '#cfd8de', 1, '#8c99a3');
-      v.extrude([R(-g.b / 2, 0), R(g.b / 2, 0), R(g.b / 2, g.H), R(-g.b / 2, g.H)], -z / 2, z / 2, '#d9b58a', 1, '#8a6a3f');
-      const G = R(0, g.H / 2); arrow3(v, [G[0], G[1], z / 2], [G[0], G[1] - e * 0.45, z / 2], LCOL, 2.4); v.label([G[0], G[1] - e * 0.5, z / 2], opt.showP ? `W = ${fmt(g.W)} ${F}` : 'W', LCOL);
-      const o = R(Math.max(-g.b / 2, Math.min(g.b / 2, g.x)), 0), nrm = R(0, 1);
-      arrow3(v, [o[0] - nrm[0] * e * 0.4, o[1] - nrm[1] * e * 0.4, z / 2 + 0.01], [o[0], o[1], z / 2 + 0.01], RCOL, 2.4); v.label([o[0] - nrm[0] * e * 0.45, o[1] - nrm[1] * e * 0.45, z / 2], 'N', RCOL);
-      if (Math.abs(g.P) > 0) { const at = R(-g.b / 2, g.hP), d = R(Math.cos(g.psi * DEG), Math.sin(g.psi * DEG)); arrow3(v, [at[0] - d[0] * e * 0.5, at[1] - d[1] * e * 0.5, 0], [at[0], at[1], 0], LCOL, 2.6); v.label([at[0] - d[0] * e * 0.55, at[1] - d[1] * e * 0.55, 0], 'P', LCOL); }
+      const a = R(-ext, 0), b = R(ext, 0), yb = Math.min(a[1], b[1]) - e * 0.1;
+      v.extrude([a, b, [b[0], yb], [a[0], yb]], -z * 1.4, z * 1.4, GROUND, 1, GEDGE, { layer: -1 });
+      v.extrude([R(-g.b / 2, 0), R(g.b / 2, 0), R(g.b / 2, g.H), R(-g.b / 2, g.H)], -z / 2, z / 2, WOOD, 1, WEDGE);
+      const G = R(0, g.H / 2); arrow3(v, [G[0], G[1], 0], [G[0], G[1] - e * 0.45, 0], LCOL, 2.4); v.label([G[0], G[1] - e * 0.5, 0], val('W', `${fmt(g.W)} ${F}`), LCOL);
+      const zf = z / 2 + 0.002, o = R(Math.max(-g.b / 2, Math.min(g.b / 2, g.x)), 0), nrm = R(0, 1), tg = R(1, 0);
+      arrow3(v, [o[0] - nrm[0] * e * 0.4, o[1] - nrm[1] * e * 0.4, zf], [o[0], o[1], zf], RCOL, 2.4); v.label([o[0] - nrm[0] * e * 0.45, o[1] - nrm[1] * e * 0.45, zf], val('N', `${fmt(g.N)} ${F}`), RCOL);
+      if (Math.abs(g.Ff) > 1e-12) { const sg = -Math.sign(g.Ff); arrow3(v, [o[0], o[1], zf], [o[0] + sg * tg[0] * e * 0.4, o[1] + sg * tg[1] * e * 0.4, zf], FCOL, 2.4); v.label([o[0] + sg * tg[0] * e * 0.45, o[1] + sg * tg[1] * e * 0.45, zf], val('F', `${fmt(Math.abs(g.Ff))} ${F}`), FCOL); }
+      if (Math.abs(g.P) > 0) { const at = R(-g.b / 2, g.hP), d = R(Math.cos(g.psi * DEG), Math.sin(g.psi * DEG)); arrow3(v, [at[0] - d[0] * e * 0.5, at[1] - d[1] * e * 0.5, 0], [at[0], at[1], 0], LCOL, 2.6); v.label([at[0] - d[0] * e * 0.55, at[1] - d[1] * e * 0.55, 0], val('P', `${fmt(Math.abs(g.P))} ${F}`), LCOL); }
+      v.autoBounds(); return;
+    }
+    if (g.kind === 'incline') {
+      const ph = g.phi * DEG, cp = Math.cos(ph), sp = Math.sin(ph), R = (u, w) => [u * cp - w * sp, u * sp + w * cp], bs = 0.17, z = 0.3, zb = 0.1, top = R(1, 0);
+      v._hs = 0.045;
+      v.box(-0.3, -0.04, -z * 1.3, top[0] + 0.12, 0, z * 1.3, GROUND, 1, GEDGE, { layer: -1 });
+      v.extrude([[0, 0], [top[0], 0], top], -z, z, '#e3e9ed', 1, GEDGE);
+      const sc = inclinePos(g);
+      v.extrude([R(sc - bs / 2, 0), R(sc + bs / 2, 0), R(sc + bs / 2, bs), R(sc - bs / 2, bs)], -zb, zb, WOOD, 1, WEDGE);
+      const G = R(sc, bs / 2), b0 = R(sc, 0), n = R(0, 1), t = R(1, 0), zf = zb + 0.002;
+      arrow3(v, [G[0], G[1], 0], [G[0], G[1] - 0.25, 0], LCOL); v.label([G[0], G[1] - 0.28, 0], val('W', `${fmt(g.W)} ${F}`), LCOL);
+      arrow3(v, [b0[0] - n[0] * 0.22, b0[1] - n[1] * 0.22, zf], [b0[0], b0[1], zf], RCOL); v.label([b0[0] - n[0] * 0.25, b0[1] - n[1] * 0.25, zf], val('N', `${fmt(g.N)} ${F}`), RCOL);
+      if (g.Ff > 1e-12) { const sg = g.fUp ? 1 : -1, f0 = R(sc + sg * bs * 0.5, 0); arrow3(v, [f0[0], f0[1], zf], [f0[0] + sg * t[0] * 0.24, f0[1] + sg * t[1] * 0.24, zf], FCOL); v.label([f0[0] + sg * t[0] * 0.27, f0[1] + sg * t[1] * 0.27, zf], val('F', `${fmt(g.Ff)} ${F}`), FCOL); }
+      if (g.task !== 'release' && g.P > 0) {
+        const d = R(Math.cos(g.psi * DEG), Math.sin(g.psi * DEG));
+        if (g.psi > 0) { const at = R(sc + bs / 2, bs / 2); arrow3(v, [at[0], at[1], 0], [at[0] + d[0] * 0.28, at[1] + d[1] * 0.28, 0], LCOL, 2.6); v.label([at[0] + d[0] * 0.3, at[1] + d[1] * 0.3, 0], val('P', `${fmt(g.P)} ${F}`), LCOL); }
+        else { const at = R(sc - bs / 2, bs / 2); arrow3(v, [at[0] - d[0] * 0.28, at[1] - d[1] * 0.28, 0], [at[0], at[1], 0], LCOL, 2.6); v.label([at[0] - d[0] * 0.32, at[1] - d[1] * 0.32, 0], val('P', `${fmt(g.P)} ${F}`), LCOL); }
+      }
       v.autoBounds(); return;
     }
     if (g.kind === 'ladder') {
       const th = g.th * DEG, L = g.L, A = [L * Math.cos(th), 0], B = [0, L * Math.sin(th)], w = L * 0.12; v._hs = L * 0.05;
-      v.box(-L * 0.04, 0, -L * 0.35, 0, B[1] * 1.2, L * 0.35, '#dfe4e8', 1, '#8c99a3');
-      v.box(-L * 0.04, -L * 0.03, -L * 0.35, A[0] * 1.3, 0, L * 0.35, '#cfd8de', 1, '#8c99a3');
-      [-w, w].forEach((zz) => v.line([[A[0], A[1], zz], [B[0], B[1], zz]], '#8a6a3f', 4));
-      for (let k = 1; k < 10; k++) { const t = k / 10; v.line([[A[0] * (1 - t), B[1] * t, -w], [A[0] * (1 - t), B[1] * t, w]], '#8a6a3f', 2); }
-      const m = [A[0] / 2, B[1] / 2, 0]; arrow3(v, m, [m[0], m[1] - L * 0.25, 0], LCOL, 2.4); v.label([m[0], m[1] - L * 0.28, 0], 'W', LCOL);
-      arrow3(v, [A[0], -L * 0.25, 0], [A[0], 0, 0], RCOL, 2.4); v.label([A[0], -L * 0.28, 0], 'N_A', RCOL);
-      arrow3(v, [B[0] + L * 0.01, B[1], 0], [B[0] + L * 0.25, B[1], 0], RCOL, 2.4); v.label([B[0] + L * 0.28, B[1], 0], 'N_B', RCOL);
+      v.box(-L * 0.04, 0, -L * 0.35, 0, B[1] * 1.2, L * 0.35, GROUND, 1, GEDGE);
+      v.box(-L * 0.04, -L * 0.03, -L * 0.35, A[0] * 1.3, 0, L * 0.35, '#cfd8de', 1, GEDGE, { layer: -1 });
+      [-w, w].forEach((zz) => v.line([[A[0], A[1], zz], [B[0], B[1], zz]], WEDGE, 4));
+      for (let k = 1; k < 10; k++) { const t = k / 10; v.line([[A[0] * (1 - t), B[1] * t, -w], [A[0] * (1 - t), B[1] * t, w]], WEDGE, 2); }
+      const m = [A[0] / 2, B[1] / 2, 0]; arrow3(v, m, [m[0], m[1] - L * 0.25, 0], LCOL, 2.4); v.label([m[0], m[1] - L * 0.28, 0], val('W', `${fmt(g.W)} ${F}`), LCOL);
+      arrow3(v, [A[0], -L * 0.25, 0], [A[0], 0, 0], RCOL, 2.4); v.label([A[0], -L * 0.28, 0], val('N_A', `${fmt(g.NA)} ${F}`), RCOL);
+      if (g.FA > 0) { arrow3(v, [A[0] + L * 0.02, 0.01, w], [A[0] - L * 0.22, 0.01, w], FCOL, 2.4); v.label([A[0] - L * 0.3, 0.01, w], val('F_A', `${fmt(g.FA)} ${F}`), FCOL); }
+      arrow3(v, [B[0] + L * 0.01, B[1], 0], [B[0] + L * 0.25, B[1], 0], RCOL, 2.4); v.label([B[0] + L * 0.28, B[1], 0], val('N_B', `${fmt(g.NB)} ${F}`), RCOL);
+      if (g.FB > 0) { arrow3(v, [B[0] + 0.01, B[1] - L * 0.02, w], [B[0] + 0.01, B[1] + L * 0.2, w], FCOL, 2.4); v.label([B[0], B[1] + L * 0.23, w], val('F_B', `${fmt(g.FB)} ${F}`), FCOL); }
       v.autoBounds(); return;
     }
     if (g.kind === 'wedge') {
-      const ta = Math.tan(g.al * DEG), Lw = 1, t = Lw * Math.max(ta, 0.05), z = 0.35; v._hs = 0.06;
-      v.box(-0.6, -0.05, -0.6, 1.6, 0, 0.6, '#cfd8de', 1, '#8c99a3');
-      v.extrude([[0, 0], [Lw, 0], [0, t]], -z, z, '#c9d3da', 1, '#4a5661');
-      if (g.load === 'lever') { v.box(-0.6, t * 0.5, -z * 0.8, 0.7, t * 0.5 + 0.1, z * 0.8, '#d9b58a', 1, '#8a6a3f'); v.box(-0.58, 0, -0.08, -0.48, t * 0.5, 0.08, '#b9c4cc', 1, '#5a6b75'); }
-      else v.box(0.32, t * 0.5, -z * 0.7, 0.68, t * 0.5 + 0.4, z * 0.7, '#d9b58a', 1, '#8a6a3f');
-      const raise = g.task === 'raise'; arrow3(v, raise ? [-0.45, t * 0.4, 0] : [0, t * 0.4, 0], raise ? [0, t * 0.4, 0] : [-0.45, t * 0.4, 0], LCOL, 2.6); v.label([-0.5, t * 0.4, 0], 'P', LCOL);
+      // the same layout as the 2D diagram: thick end at the left, face falling to the right, load resting on the face at B
+      const lever = g.load === 'lever', ta = Math.tan(g.al * DEG), Lw = 1, t = Lw * Math.max(ta, 0.2), sa = Math.sin(g.al * DEG), ca = Math.cos(g.al * DEG);
+      const k = lever ? 1 / (0.55 * g.a) : 1, a = lever ? g.a * k : 0, xB = Lw * 0.5, yB = t * 0.5, xA = xB + a, hL = (lever ? a : Lw) * 0.08;
+      const zw = 0.3, xmin = -Lw * 0.6, xmax = lever ? xA + a * 0.15 : Lw * 1.5, face = (x) => t * (1 - x / Lw);
+      v._hs = 0.06;
+      v.box(xmin, -0.05, -0.5, xmax, 0, 0.5, GROUND, 1, GEDGE, { layer: -1 });
+      v.extrude([[0, 0], [Lw, 0], [0, t]], -zw, zw, STEEL, 1, GEDGE);
+      let topW;
+      if (lever) {
+        const zl = 0.12;
+        v.box(xB, yB, -zl, xA + a * 0.06, yB + hL, zl, WOOD, 1, WEDGE);
+        v.extrude([[xA - 0.1, 0], [xA + 0.1, 0], [xA + 0.025, yB - 0.01], [xA - 0.025, yB - 0.01]], -0.09, 0.09, '#b9c4cc', 1, GEDGE);
+        v.line([[xA, yB, -zl - 0.06], [xA, yB, zl + 0.06]], '#1d2733', 4);
+        v.label([xA + 0.03, yB + hL + 0.02, zl], 'A', '#1d2733');
+        const xw = xA - g.xW * k; topW = [xw, yB + hL, 0];
+      } else {
+        const bw = Lw * 0.36, bh = Lw * 0.4, x0 = xB - bw / 2, yt = face(x0) + bh, zb = 0.2;
+        v.extrude([[x0, face(x0)], [x0 + bw, face(x0 + bw)], [x0 + bw, yt], [x0, yt]], -zb, zb, WOOD, 1, WEDGE);
+        [[x0 - 0.06, x0 - 0.012], [x0 + bw + 0.012, x0 + bw + 0.06]].forEach(([u0, u1]) => v.box(u0, yB + bh * 0.1, -zw, u1, yB + bh * 1.6, zw, '#b9c4cc', 0.45, GEDGE));
+        topW = [xB, yt, 0];
+      }
+      arrow3(v, [topW[0], topW[1] + 0.4, topW[2]], topW, LCOL, 2.6); v.label([topW[0], topW[1] + 0.44, 0], val('W', `${fmt(g.W)} ${F}`), LCOL);
+      // forces on the wedge at the front edge: N_B and friction at B, N_C, and the push or pull P at the thick end
+      const zf = zw + 0.002, raise = g.task === 'raise', tf = raise ? [-ca, sa] : [ca, -sa];
+      arrow3(v, [xB + sa * 0.3, yB + ca * 0.3, zf], [xB, yB, zf], RCOL); v.label([xB + sa * 0.33, yB + ca * 0.33, zf], val('N_B', `${fmt(g.NB)} ${F}`), RCOL);
+      arrow3(v, [xB, yB, zf], [xB + tf[0] * 0.26, yB + tf[1] * 0.26, zf], FCOL); v.label([xB + tf[0] * 0.3, yB + tf[1] * 0.3 + 0.03, zf], 'μN_B', FCOL);
+      v.label([xB - 0.02, yB - 0.06, zf], 'B', '#1d2733');
+      arrow3(v, [Lw * 0.22, -0.3, zf], [Lw * 0.22, 0, zf], RCOL); v.label([Lw * 0.22, -0.34, zf], val('N_C', `${fmt(g.NC)} ${F}`), RCOL); v.label([Lw * 0.08, -0.02, zf], 'C', '#1d2733');
+      const pull = g.P >= 0 ? !raise : raise, yP = t * 0.45;
+      if (pull) arrow3(v, [0, yP, 0], [-0.45, yP, 0], LCOL, 2.8); else arrow3(v, [-0.45, yP, 0], [-0.005, yP, 0], LCOL, 2.8);
+      v.label([-0.55, yP + 0.03, 0], val('P', `${fmt(Math.abs(g.P))} ${F}`), LCOL);
       v.autoBounds(); return;
     }
     if (g.kind === 'screw') {
-      const r = 1, h = 4, turns = 6, pts = []; v._hs = 0.25;
-      v.lathe([[0, 0], [r * 0.92, 0], [r * 0.92, h], [0, h]], '#c9d3da', 1, null, 36);
-      for (let i = 0; i <= turns * 48; i++) { const a = (i / 48) * 2 * Math.PI, y = (i / (turns * 48)) * h * 0.95; pts.push([r * Math.cos(a), y, r * Math.sin(a)]); }
-      v.line(pts, '#4a5661', 1.6);
-      v.box(-1.4, h, -1.4, 1.4, h + 0.4, 1.4, '#d9b58a', 1, '#8a6a3f');
-      arrow3(v, [0, h + 2.2, 0], [0, h + 0.45, 0], LCOL, 2.6); v.label([0.2, h + 2.3, 0], opt.showP ? `W = ${fmt(g.W)} ${F}` : 'W', LCOL);
-      v.circle(0, h * 0.5, 0, 2, FCOL, 2.2); v.label([2.1, h * 0.5, 0], opt.showP ? `M = ${fmt(g.M)} ${g.c.FL}` : 'M', FCOL);
+      // jack: base, a square-threaded screw (pitch drawn from the lead angle), the load plate and the turning moment
+      const r = 1, ri = 0.78, ro = 1.18, h = 3.6, pitch = Math.max(0.32, Math.min(1, 2 * Math.PI * r * Math.tan(g.th * DEG))), tw = pitch * 0.5, n = 40;
+      v._hs = 0.22;
+      v.lathe([[0, -1.1], [2.2, -1.1], [1.55, 0.15], [0, 0.15]], '#b9c4cc', 1, null, 40);
+      v.lathe([[0, 0], [ri, 0], [ri, h], [0, h]], STEEL, 1, null, 36);
+      const turns = Math.floor((h - 0.3) / pitch);
+      for (let i = 0; i < turns * n; i++) {
+        const a0 = (i / n) * 2 * Math.PI, a1 = ((i + 1) / n) * 2 * Math.PI, y0 = 0.15 + (i / n) * pitch, y1 = 0.15 + ((i + 1) / n) * pitch;
+        const P = (rr, a, y) => [rr * Math.cos(a), y, rr * Math.sin(a)];
+        v.face([P(ro, a0, y0), P(ro, a1, y1), P(ro, a1, y1 + tw), P(ro, a0, y0 + tw)], '#aebbc4', 1, null);
+        v.face([P(ri, a0, y0 + tw), P(ro, a0, y0 + tw), P(ro, a1, y1 + tw), P(ri, a1, y1 + tw)], '#d5dee4', 1, null);
+        v.face([P(ri, a0, y0), P(ro, a0, y0), P(ro, a1, y1), P(ri, a1, y1)], '#9fadb7', 1, null);
+      }
+      v.box(-1.5, h, -1.5, 1.5, h + 0.35, 1.5, WOOD, 1, WEDGE);
+      arrow3(v, [0, h + 2.2, 0], [0, h + 0.4, 0], LCOL, 2.6); v.label([0.2, h + 2.3, 0], val('W', `${fmt(g.W)} ${F}`), LCOL);
+      const yM = h * 0.55, rm = 2.1, arc = [], sgn = g.task === 'raise' ? 1 : -1;
+      for (let i = 0; i <= 40; i++) { const a = sgn * (i / 40) * 1.6 * Math.PI; arc.push([rm * Math.cos(a), yM, rm * Math.sin(a)]); }
+      v.line(arc, FCOL, 2.4); arrow3(v, arc[arc.length - 3], arc[arc.length - 1], FCOL, 2.4);
+      v.label([rm + 0.1, yM, 0], val('M', `${fmt(g.M)} ${g.c.FL}`), FCOL);
       v.autoBounds(); return;
     }
-    // belt
-    const R = 1;
+    // belt: each drum with the belt wrapped over its contact angle and the tensions on the two free ends
+    const R = 1, rb = 1.04, zb = 0.28;
+    v._hs = 0.16;
     g.drums.forEach((d, i) => {
-      const cx = i * 3, ring = []; for (let k = 0; k <= 36; k++) { const a = (k / 36) * 2 * Math.PI; ring.push([cx + R * Math.cos(a), R * Math.sin(a)]); }
-      v.extrude(ring, -0.5, 0.5, '#dfe5ea', 1, null);
-      const vis = Math.min(d.deg, 359.5), a0 = 90 - vis / 2, arc = [];
-      for (let k = 0; k <= 30; k++) { const a = (a0 + (vis * k) / 30) * DEG; arc.push([cx + 1.03 * Math.cos(a), 1.03 * Math.sin(a), 0]); }
-      v.line(arc, '#2c3e50', 4);
+      const cx = i * 3.6, ring = []; for (let k = 0; k <= 48; k++) { const a = (k / 48) * 2 * Math.PI; ring.push([cx + R * Math.cos(a), R * Math.sin(a)]); }
+      v.extrude(ring, -0.45, 0.45, '#dfe5ea', 1, null);
+      v.line([[cx, 0, -0.7], [cx, 0, 0.7]], '#1d2733', 4);
+      const vis = Math.min(d.deg, 359.5), a0 = 90 + vis / 2, a1 = 90 - vis / 2, nseg = Math.max(6, Math.round(vis / 6));
+      for (let k = 0; k < nseg; k++) {
+        const p = (a1 + (vis * k) / nseg) * DEG, q = (a1 + (vis * (k + 1)) / nseg) * DEG;
+        v.face([[cx + rb * Math.cos(p), rb * Math.sin(p), -zb], [cx + rb * Math.cos(q), rb * Math.sin(q), -zb], [cx + rb * Math.cos(q), rb * Math.sin(q), zb], [cx + rb * Math.cos(p), rb * Math.sin(p), zb]], '#2c3e50', 1, null);
+      }
+      [[a0, 1], [a1, -1]].forEach(([a, sg], kk) => {
+        const ar = a * DEG, px = cx + rb * Math.cos(ar), py = rb * Math.sin(ar), tx = -Math.sin(ar) * sg, ty = Math.cos(ar) * sg, Lt = 1.1;
+        v.face([[px, py, -zb], [px + tx * Lt, py + ty * Lt, -zb], [px + tx * Lt, py + ty * Lt, zb], [px, py, zb]], '#2c3e50', 1, null);
+        const big = kk === 0, Tv = g.hi ? (kk === 0 ? g.Ts[i] : g.Ts[i + 1]) : (kk === 0 ? g.Ts[i + 1] : g.Ts[i]);
+        arrow3(v, [px + tx * Lt * 0.6, py + ty * Lt * 0.6, zb + 0.01], [px + tx * (Lt + 0.5), py + ty * (Lt + 0.5), zb + 0.01], big ? LCOL : RCOL, 2.6);
+        v.label([px + tx * (Lt + 0.6), py + ty * (Lt + 0.6), zb], opt.showP ? `${fmt(Tv)} ${F}` : (big ? 'T₂' : 'T₁'), big ? LCOL : RCOL);
+      });
+      v.label([cx - 0.3, -R - 0.35, 0.45], `Drum ${i + 1}`, '#1d2733');
     });
     v.autoBounds();
   };
@@ -393,6 +545,15 @@
     { name: 'Test: closed form, block pushed at 0.8 m tips before it slips', units: 'SI', state: B({ wBy: 'force', W: 500, b: 0.6, H: 1, phi: 0, mu: 0.4, task: 'findP', psi: 0, hP: 0.8 }),
       expect: [{ k: 'P to tip', v: 187.5 }, { k: 'P to slip', v: 200 }] },
     { name: 'Block pushed up a 20° slope', units: 'SI', state: { mode: 'block', fu: 'kN', bk: { wBy: 'force', W: 2, b: 0.5, H: 0.8, phi: 20, mu: 0.35, task: 'findP', psi: 10, hP: 0.3 } } },
+    { name: 'Test: closed form, 20 kg block released on a 30° slope slides 3 m', units: 'SI', state: { mode: 'incline', fu: 'N', ic: { wBy: 'mass', m: 20, phi: 30, mus: 0.3, muk: 0.25, task: 'release', d: 3 } },
+      expect: [{ k: 'Acceleration down the slope a', v: 2.7811 }, { k: 'Time to slide 3 m', v: 1.4688 }, { k: 'Speed after that distance', v: 4.0849 }, { k: 'Normal force N', v: 169.91 }] },
+    { name: 'Test: Dynamics F13-1, 20 kg crate pulled up a 30° slope at 1.333 m/s²', units: 'SI', state: { mode: 'incline', fu: 'N', ic: { wBy: 'mass', m: 20, phi: 30, mus: 0.3, muk: 0.3, task: 'up', psi: 0, acc: 1.333333 } },
+      expect: [{ k: 'P to keep it moving up', v: 175.74 }, { k: 'Normal force N', v: 169.91 }] },
+    { name: 'Test: Dynamics F14-10, 20 kg crate pushed up a 30° slope at steady speed', units: 'SI', state: { mode: 'incline', fu: 'N', ic: { wBy: 'mass', m: 20, phi: 30, mus: 0.25, muk: 0.2, task: 'up', psi: 0, acc: 0 } },
+      expect: [{ k: 'P to keep it moving up', v: 132.08 }, { k: 'Kinetic friction F', v: 33.98 }] },
+    { name: 'Test: closed form, force to hold a 20 kg block on a 30° slope', units: 'SI', state: { mode: 'incline', fu: 'N', ic: { wBy: 'mass', m: 20, phi: 30, mus: 0.3, muk: 0.25, task: 'hold', psi: 0 } },
+      expect: [{ k: 'P to hold the block', v: 47.126 }, { k: 'Largest P before it slides up', v: 149.07 }] },
+    { name: 'Crate held on a 40° ramp by a rope at 20°', units: 'US', state: { mode: 'incline', fu: 'lb', ic: { wBy: 'force', W: 150, phi: 40, mus: 0.35, muk: 0.3, task: 'hold', psi: 20 } } },
     { name: 'Test: Book Example 8.3, smallest angle of a ladder on a smooth wall', units: 'SI', state: { mode: 'ladder', fu: 'N', ld: { wBy: 'mass', m: 10, L: 4, muA: 0.3, muB: 0, task: 'minAngle', person: false } },
       expect: [{ k: 'Smallest angle θ (from the floor)', v: 59.04 }, { k: 'N_A', v: 98.1 }, { k: 'F_A', v: 29.43 }, { k: 'N_B', v: 29.43 }] },
     { name: 'Ladder at 70° with a person three-quarters up, rough wall', units: 'US', state: { mode: 'ladder', fu: 'lb', ld: { wBy: 'force', W: 40, L: 16, muA: 0.25, muB: 0.2, task: 'check', th: 70, person: true, wpBy: 'force', Wp: 180, s: 12 } } },

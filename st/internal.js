@@ -22,10 +22,10 @@
       mode: 'diagrams', fu: 'kN',
       L: 9, supports: [{ type: 'pin', x: 0 }, { type: 'roller', x: 9 }],
       loads: [{ kind: 'point', x: 3, P: 6, ang: 90 }, { kind: 'dist', x1: 3, x2: 9, w1: 2, w2: 2 }],
-      hinges: [], cut: 4.5, side: 'R', defl: true, play: 'cut',
+      hinges: [], cut: 4.5, side: 'R', defl: true, play: 'deflect',
       cab: { span: 18, hB: 0, loads: [{ x: 3, P: 4 }, { x: 8, P: 15 }, { x: 16, P: 3 }], known: 'sag', at: 2, sag: 12, FH: 6 },
       par: { L: 100, level: true, hA: 10, hB: 10, w0: 5, given: 'sag', Tmax: 700, len: 103 },
-      cat: { L: 20, h: 6, w0: 5, given: 'sag', len: 24 },
+      cat: { L: 20, h: 6, w0: 5, given: 'sag', len: 24, level: true, hA: 4, hB: 9 },
     };
   }
   const beamModel = (st) => ({ L: st.L, supports: st.supports, loads: st.loads, hinges: st.hinges });
@@ -231,7 +231,7 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* Cable under its own weight (catenary), level supports              */
+  /* Cable under its own weight (catenary), level or uneven supports    */
   /* ------------------------------------------------------------------ */
   function catenary(st, U) {
     const p = st.cat, F = st.fu, Lu = U.len, WL = `${F}/${Lu}`, S = Steps();
@@ -240,6 +240,7 @@
     if (!(w > 0)) return fail('The weight per unit length w₀ must be greater than zero.');
     let c, h;
     S.add({ t: 'Shape of the cable', n: 'Origin at the lowest point. The weight is uniform along the cable itself, which gives a catenary.', f: 'y = (F_H / w₀)·[cosh(w₀x / F_H) − 1];   s = (F_H / w₀)·sinh(w₀x / F_H)' });
+    if (p.level === false) return catenaryUneven(p, F, Lu, WL, S, L, w);
     if (p.given === 'len') {
       if (!(p.len > L)) return fail(`The cable must be longer than the span (${fmt(L)} ${Lu}).`);
       if (p.len > 20 * L) return fail('The cable is more than 20 times the span. Enter a shorter cable.');
@@ -272,6 +273,34 @@
     return { ok: true, err: [], warn: [], status: { cls: 'ok', text: 'OK' }, out, steps: S.list, geo: { kind: 'catenary', L, hA: h, hB: h, xA: L / 2, FH, w, y, T, Tmax, F, Lu, WL, len, c } };
   }
 
+  /** Catenary between supports at different levels: the lowest point is hA below A and hB below B. */
+  function catenaryUneven(p, F, Lu, WL, S, L, w) {
+    const hA = +p.hA, hB = +p.hB;
+    if (!(hA > 0) || !(hB > 0)) return fail('Enter how far the lowest point is below each support (both greater than zero).');
+    if (Math.max(hA, hB) > 20 * L) return fail('The sag is more than 20 times the span. Enter a smaller sag.');
+    const xOf = (cc, hh) => cc * Math.acosh(1 + hh / cc);
+    const c = Math.exp(bisect((lc) => xOf(Math.exp(lc), hA) + xOf(Math.exp(lc), hB) - L, Math.log(L / 1e5), Math.log(L * 1e7)));
+    const xA = xOf(c, hA), xB = L - xA, FH = c * w;
+    S.add({ t: 'Lowest point and horizontal force', n: `The supports are at different levels, so the lowest point is not at midspan. Both supports lie on the same catenary: h_A = c[cosh(x_A/c) − 1] and h_B = c[cosh(x_B/c) − 1] with x_A + x_B = L and c = F_H / w₀. Solved for c by trial and error.`,
+      f: 'x = c·cosh⁻¹(1 + h/c);   x_A + x_B = L', s: `c·cosh⁻¹(1 + ${fmt(hA)}/c) + c·cosh⁻¹(1 + ${fmt(hB)}/c) = ${fmt(L)}`, r: `c = ${fmt(c)} ${Lu},  x_A = ${fmt(xA)} ${Lu},  x_B = ${fmt(xB)} ${Lu},  F_H = c·w₀ = ${fmt(FH)} ${F}` });
+    S.add({ t: 'Equation of the curve', f: 'y = c·[cosh(x/c) − 1], x from the lowest point', r: `y = ${fmt(c)}·[cosh(${fmt(1 / c)}x) − 1] ${Lu}` });
+    const sA = c * Math.sinh(xA / c), sB = c * Math.sinh(xB / c), len = sA + sB, TA = w * (c + hA), TB = w * (c + hB);
+    S.add({ t: 'Length of the cable', f: 'ℒ = c·sinh(x_A/c) + c·sinh(x_B/c)', s: `ℒ = ${fmt(c)}·sinh(${fmt(xA)}/${fmt(c)}) + ${fmt(c)}·sinh(${fmt(xB)}/${fmt(c)}) = ${fmt(sA)} + ${fmt(sB)}`, r: `ℒ = ${fmt(len)} ${Lu}` });
+    const thA = Math.atan(sA / c) * RAD, thB = Math.atan(sB / c) * RAD, Tmax = Math.max(TA, TB), at = TA >= TB ? 'support A' : 'support B';
+    S.add({ t: 'Tension at the supports', n: 'T = F_H cosh(x/c) = w₀(c + y), so the tension is largest at the higher support, where the cable is steepest.', f: 'T = w₀(c + h);   tan θ = sinh(x/c)', s: `T_A = ${fmt(w)}(${fmt(c)} + ${fmt(hA)});   T_B = ${fmt(w)}(${fmt(c)} + ${fmt(hB)})`, r: `T_A = ${fmt(TA)} ${F} at ${fmt(thA)}°,  T_B = ${fmt(TB)} ${F} at ${fmt(thB)}°;  T_max = ${fmt(Tmax)} ${F} at ${at}` });
+    const out = [
+      { k: 'Horizontal force F_H (tension at the lowest point)', v: FH, u: F, hl: true },
+      { k: 'Maximum tension T_max', v: Tmax, u: F, hl: true },
+      { k: 'Tension at A', v: TA, u: F }, { k: 'Tension at B', v: TB, u: F },
+      { k: 'Lowest point, distance from A', v: xA, u: Lu },
+      { k: 'Cable length', v: len, u: Lu },
+      { k: 'Total weight of the cable', v: w * len, u: F },
+      { k: 'Catenary constant F_H / w₀', v: c, u: Lu },
+    ];
+    const y = (x) => c * (Math.cosh((x - xA) / c) - 1) - hA, T = (x) => FH * Math.cosh((x - xA) / c);
+    return { ok: true, err: [], warn: [], status: { cls: 'ok', text: 'OK' }, out, steps: S.list, geo: { kind: 'catenary', L, hA, hB, xA, FH, w, y, T, Tmax, TA, TB, F, Lu, WL, len, c } };
+  }
+
   /** Convert every input when the viewer switches between SI and U.S. Customary, so the problem stays the same. */
   function convertState(st, from, to) {
     if (from === to) return st;
@@ -290,7 +319,7 @@
     });
     const c = st.cab; c.span = Lc(c.span); c.hB = Lc(c.hB); c.sag = Lc(c.sag); c.FH = Fc(c.FH); c.loads.forEach((q) => { q.x = Lc(q.x); q.P = Fc(q.P); });
     const p = st.par; p.L = Lc(p.L); p.hA = Lc(p.hA); p.hB = Lc(p.hB); p.w0 = Wc(p.w0); p.Tmax = Fc(p.Tmax); p.len = Lc(p.len);
-    const k = st.cat; k.L = Lc(k.L); k.h = Lc(k.h); k.w0 = Wc(k.w0); k.len = Lc(k.len);
+    const k = st.cat; k.L = Lc(k.L); k.h = Lc(k.h); k.w0 = Wc(k.w0); k.len = Lc(k.len); if (k.hA !== undefined) { k.hA = Lc(k.hA); k.hB = Lc(k.hB); }
     return st;
   }
 

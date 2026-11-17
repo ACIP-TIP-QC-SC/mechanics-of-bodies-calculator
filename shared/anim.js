@@ -45,5 +45,23 @@
     sel.addEventListener('change', () => { speed = parseFloat(sel.value) || 1; });
     return A;
   }
+  /* Deflection "gif", shared by every module that shows a deflected shape: 10 s a loop at 1×,
+   * 4 s from the straight member to the deflected shape, a 1 s hold, 4 s back and a 1 s hold.
+   * It keeps the fraction of the full deflection in state._k; Reset clears it, which gives the static view. */
+  const ease = (t) => t * t * (3 - 2 * t);
+  Anim.deflK = (u) => (u < 0.4 ? ease(u / 0.4) : u < 0.5 ? 1 : u < 0.9 ? ease((0.9 - u) / 0.4) : 0);
+  Anim.deflection = (state) => ({
+    duration: 10, loop: true,
+    frame(u) { const st = state(); if (u <= 0) delete st._k; else st._k = Anim.deflK(u); },
+    label() { const k = state()._k; return k === undefined ? 'full deflected shape' : `deflection ${Math.round(k * 100)} % of full`; },
+  });
+  /** Contour colour for a deflection ratio t in [0, 1]: blue (none) through green and yellow to red (largest). */
+  const STOPS = [[0, [44, 123, 182]], [0.25, [0, 166, 202]], [0.5, [0, 204, 140]], [0.7, [170, 220, 80]], [0.85, [249, 208, 87]], [1, [215, 25, 28]]];
+  Anim.contour = (t) => {
+    t = Math.max(0, Math.min(1, t || 0));
+    let i = 1; while (i < STOPS.length - 1 && t > STOPS[i][0]) i++;
+    const [t0, a] = STOPS[i - 1], [t1, b] = STOPS[i], f = (t - t0) / (t1 - t0 || 1);
+    return '#' + a.map((v, k) => Math.round(v + (b[k] - v) * f).toString(16).padStart(2, '0')).join('');
+  };
   root.Anim = Anim;
 })(window);

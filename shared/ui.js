@@ -143,7 +143,7 @@
   }
   /* Diagram colours. Diagrams are always drawn on the light sheet, in light and dark mode. */
   const COL = {
-    ink: '#1d2733', body: '#b9c2cb', bodyEdge: '#4a5661', support: '#6b7785', ground: '#7f8c8d',
+    ink: '#1d2733', axis: '#111111', body: '#b9c2cb', bodyEdge: '#4a5661', support: '#6b7785', ground: '#7f8c8d',
     load: '#c0392b', react: '#1e7a45', couple: '#8e44ad', dim: '#34495e', accent: '#d4612a',
     shear: '#c0563a', moment: '#2f7fc1', axial: '#16a085', cable: '#2c3e50', tension: '#8e44ad', solid: '#9aa3ad',
   };

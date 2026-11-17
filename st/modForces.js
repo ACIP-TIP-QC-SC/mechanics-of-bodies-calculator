@@ -120,10 +120,10 @@
     dist: 'The green arrow is the resultant. It acts through the centroid of the total load area.',
   }[mode()]);
   M.legend = () => ({
-    coplanar: [[FC[0], 'Forces'], [RCOL, 'Resultant F_R'], ['#5a6b75', 'Tip-to-tail chain', 'ln']],
+    coplanar: [[FC[0], 'Forces'], [RCOL, 'Resultant F_R'], [COL.axis, 'Tip-to-tail chain', 'ln']],
     vector3d: [[FC[0], 'Forces'], [RCOL, 'Resultant']],
     dot: [[FC[0], 'Force F'], ['#34495e', 'Line PQ', 'ln'], [ACOL, 'Component along PQ']],
-    moment: [[FC[0], 'Forces'], ['#5a6b75', 'Position vectors r', 'ln'], [MCOL, 'Moment M_O'], [ACOL, 'Axis', 'ln']],
+    moment: [[FC[0], 'Forces'], [COL.axis, 'Position vectors r', 'ln'], [MCOL, 'Moment M_O'], [ACOL, 'Axis', 'ln']],
     reduce: [[COL.load, 'Given forces and couples'], [RCOL, 'Equivalent at O'], [MCOL, 'Single resultant', 'ln']],
     reduce3d: [[FC[0], 'Forces'], [RCOL, 'Resultant F_R'], [MCOL, 'Couple moment']],
     dist: [[COL.load, 'Distributed load', 'sq'], [RCOL, 'Resultant F_R']],
@@ -147,8 +147,8 @@
     if (label) D.text([x, y - 30], label, { px: true, anchor: 'middle', color, size: 12, weight: 700 });
   }
   function axes2(D, b, names) {
-    D.line([b.xmin, 0], [b.xmax, 0], { stroke: '#8c99a3', sw: 1 }); D.line([0, b.ymin], [0, b.ymax], { stroke: '#8c99a3', sw: 1 });
-    D.head(D.X(b.xmax), D.Y(0), 1, 0, '#8c99a3', 8); D.head(D.X(0), D.Y(b.ymax), 0, -1, '#8c99a3', 8);
+    D.line([b.xmin, 0], [b.xmax, 0], { stroke: COL.axis, sw: 1.1 }); D.line([0, b.ymin], [0, b.ymax], { stroke: COL.axis, sw: 1.1 });
+    D.head(D.X(b.xmax), D.Y(0), 1, 0, COL.axis, 8); D.head(D.X(0), D.Y(b.ymax), 0, -1, COL.axis, 8);
     D.text([b.xmax, 0], names[0], { dx: -2, dy: 15, anchor: 'end', color: '#5a6b75', weight: 700 }); D.text([0, b.ymax], names[1], { dx: 8, dy: 10, color: '#5a6b75', weight: 700 });
   }
   const bbox = (pts, padFrac) => {
@@ -169,7 +169,7 @@
     const b = bbox(g.vecs.concat(chain, [[0, 0], g.R]), 0.2);
     const D = UI.Draw2D(svg, b, { pad: 40 });
     axes2(D, b, ['x', 'y']);
-    for (let i = 0; i < g.vecs.length; i++) D.arrow(chain[i], chain[i + 1], { color: '#5a6b75', w: 1.4, dash: '6 4', head: 8 });
+    for (let i = 0; i < g.vecs.length; i++) D.arrow(chain[i], chain[i + 1], { color: COL.axis, w: 1.4, dash: '6 4', head: 8 });
     g.vecs.forEach((v, i) => D.arrow([0, 0], v, { color: FC[i % FC.length], w: 2.4, label: opt.showP ? `F${i + 1} = ${fmt(Math.hypot(...v))} ${F}` : `F${i + 1}`, lp: 'head', size: 12 }));
     if (g.FR > 0) D.arrow([0, 0], g.R, { color: RCOL, w: 4, head: 14, label: opt.showP ? `F_R = ${fmt(g.FR)} ${F} at ${fmt(g.th)}°` : 'F_R', lp: 'head', size: 13 });
     D.dot([0, 0], '#1d2733', 'O', { r: 3.5, dx: -14, dy: 14 });
@@ -189,7 +189,7 @@
         const d = Math.hypot(foot[0] - O[0], foot[1] - O[1]);
         if (d > e * 1e-3) { D.line([O[0], O[1]], foot, { stroke: MCOL, sw: 1.4 }); if (opt.showP) D.text([(O[0] + foot[0]) / 2, (O[1] + foot[1]) / 2], `d = ${fmt(d)} ${Lu}`, { dx: 6, dy: -4, color: MCOL, size: 11.5 }); }
       }
-      D.line([O[0], O[1]], [r.p[0], r.p[1]], { stroke: '#5a6b75', sw: 1.2, dash: '6 4' });
+      D.line([O[0], O[1]], [r.p[0], r.p[1]], { stroke: COL.axis, sw: 1.2, dash: '6 4' });
       D.arrow([r.p[0] - r.v[0] * k, r.p[1] - r.v[1] * k], [r.p[0], r.p[1]], { color: col, w: 2.8, head: 12, label: opt.showP ? `F${i + 1} = ${fmt(fm)} ${F}` : `F${i + 1}`, size: 12 });
     });
     D.dot([O[0], O[1]], '#1d2733', 'O', { r: 4, dx: -14, dy: 16 });
@@ -274,7 +274,7 @@
       items.push({ a: g.A, b: add(g.A, mul(g.u, g.Fpar * k)), color: ACOL, w: 3, label: lab('F_∥', g.Fpar, F) });
     } else if (g.kind === 'moment') {
       const e = Math.max(...g.rows.map((r) => mag(sub(r.p, g.O))), 1), Fm = Math.max(...g.rows.map((r) => mag(r.v)), 1e-300), k = (0.45 * e) / Fm;
-      g.rows.forEach((r, i) => { items.push({ a: g.O, b: r.p, kind: 'line', color: '#5a6b75', w: 1.2, dash: '6 4' }); items.push({ a: r.p, b: add(r.p, mul(r.v, k)), color: FC[i % FC.length], w: 2.8, label: lab(`F${i + 1}`, mag(r.v), F) }); });
+      g.rows.forEach((r, i) => { items.push({ a: g.O, b: r.p, kind: 'line', color: COL.axis, w: 1.2, dash: '6 4' }); items.push({ a: r.p, b: add(r.p, mul(r.v, k)), color: FC[i % FC.length], w: 2.8, label: lab(`F${i + 1}`, mag(r.v), F) }); });
       const MOm = mag(g.MO); if (MOm > 0) items.push({ a: g.O, b: add(g.O, mul(g.MO, (0.5 * e) / MOm)), kind: 'moment', color: MCOL, w: 2.8, label: lab('M_O', MOm, FL) });
       items.push({ a: g.O, kind: 'dot', color: '#1d2733', label: 'O' });
       if (g.axis) items.push({ a: sub(g.axis.P, mul(g.axis.u, e * 0.3)), b: add(g.axis.Q, mul(g.axis.u, e * 0.3)), color: ACOL, w: 1.6, dash: '10 4 2 4', label: lab('M_a', g.axis.Ma, FL) });
@@ -303,10 +303,10 @@
   }
   function axes3(v, e, flat) {
     const L = e * 0.75;
-    arrow3(v, [0, 0, 0], [L, 0, 0], '#8c99a3', 1.2); v.label([L * 1.07, 0, 0], 'x', '#5a6b75');
-    if (flat) { arrow3(v, [0, 0, 0], [0, L, 0], '#8c99a3', 1.2); v.label([0, L * 1.07, 0], 'y', '#5a6b75'); return; }
-    arrow3(v, [0, 0, 0], V([0, L, 0]), '#8c99a3', 1.2); v.label(V([0, L * 1.07, 0]), 'y', '#5a6b75');
-    arrow3(v, [0, 0, 0], V([0, 0, L]), '#8c99a3', 1.2); v.label(V([0, 0, L * 1.07]), 'z', '#5a6b75');
+    arrow3(v, [0, 0, 0], [L, 0, 0], COL.axis, 1.3); v.label([L * 1.07, 0, 0], 'x', COL.axis);
+    if (flat) { arrow3(v, [0, 0, 0], [0, L, 0], COL.axis, 1.3); v.label([0, L * 1.07, 0], 'y', COL.axis); return; }
+    arrow3(v, [0, 0, 0], V([0, L, 0]), COL.axis, 1.3); v.label(V([0, L * 1.07, 0]), 'y', COL.axis);
+    arrow3(v, [0, 0, 0], V([0, 0, L]), COL.axis, 1.3); v.label(V([0, 0, L * 1.07]), 'z', COL.axis);
   }
   M.draw3D = function (v, res, U, opt) {
     const g = res.geo, { F, FL } = g.c, lab = (n, val, u) => (opt.showP ? `${n} = ${fmt(val)} ${u}` : n);
@@ -358,7 +358,7 @@
       v.line([V(add(g.A, mul(g.Fv, k))), V(tip)], '#b0bcc4', 1, [3, 3]);
     } else {
       const rows = g.rows, Fm = Math.max(...rows.map((r) => mag(r.v)), g.FRv ? mag(g.FRv) : 0, 1e-300), k = (0.45 * e) / Fm;
-      rows.forEach((r, i) => { v.line([V(g.O), V(r.p)], '#8c99a3', 1.2, [6, 4]); arrow3(v, V(r.p), V(add(r.p, mul(r.v, k))), FC[i % FC.length], 2.8); v.label(V(add(r.p, mul(r.v, k))), lab(`F${i + 1}`, mag(r.v), F), FC[i % FC.length]); });
+      rows.forEach((r, i) => { v.line([V(g.O), V(r.p)], COL.axis, 1.2, [6, 4]); arrow3(v, V(r.p), V(add(r.p, mul(r.v, k))), FC[i % FC.length], 2.8); v.label(V(add(r.p, mul(r.v, k))), lab(`F${i + 1}`, mag(r.v), F), FC[i % FC.length]); });
       const Mv = g.kind === 'moment' ? g.MO : g.MRv, Mm = mag(Mv);
       if (Mm > 0) { const tip = add(g.O, mul(Mv, (0.5 * e) / Mm)); arrow3(v, V(g.O), V(tip), MCOL, 2.8, true); v.label(V(tip), lab(g.kind === 'moment' ? 'M_O' : '(M_R)_O', Mm, FL), MCOL); }
       if (g.kind === 'reduce3d' && mag(g.FRv) > 0) { const tip = add(g.O, mul(g.FRv, k)); arrow3(v, V(g.O), V(tip), RCOL, 3.6); v.label(V(tip), lab('F_R', mag(g.FRv), F), RCOL); }

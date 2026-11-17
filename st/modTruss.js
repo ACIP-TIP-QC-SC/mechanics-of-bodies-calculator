@@ -75,12 +75,7 @@
   M.hint = () => 'Blue members are in tension, red in compression; the thicker the line, the larger the force. Click a joint to see its free-body diagram. Drag the orange section line to cut other members.' + (showDefl() ? ' The dashed teal truss is the deflected shape, exaggerated; press Play to watch it deflect.' : '');
   M.legend = () => [[TCOL, 'Tension', 'ln'], [CCOL, 'Compression', 'ln'], [ZCOL, 'Zero-force', 'ln'], [LCOL, 'Loads'], [RCOL, 'Reactions']].concat(showDefl() ? [[DCOL, 'Deflected shape', 'ln']] : [], S().cutOn !== false ? [[CUTC, 'Section', 'ln']] : []);
 
-  const ease = (u) => u * u * (3 - 2 * u);
-  const deflect = {
-    duration: 4, loop: false,
-    frame(u) { S()._k = u <= 0 ? 1 : ease(u); },
-    label() { return `deflection at ${Math.round(defK() * 100)} % of full`; },
-  };
+  const deflect = root.Anim.deflection(S);
   const defK = () => (S()._k === undefined ? 1 : S()._k);
   M.anim = () => (showDefl() ? deflect : null);
 
@@ -133,10 +128,13 @@
     const b = { xmin: Math.min(...xs) - e * mx, xmax: Math.max(...xs) + e * mx, ymin: Math.min(...ys) - e * 0.12, ymax: Math.max(...ys) + e * 0.12 };
     const D = UI.Draw2D(svg, b, { pad: 52, padB: sel >= 0 ? H * 0.44 : 0, padT: 8 }); hatch(svg);
     M._sc = D.sc; LW = W;
-    const g0 = D.root, P = (j) => [D.X(g.J[j].x), D.Y(g.J[j].y)];
+    // while Play runs, the truss itself moves to its (exaggerated) deflected position; the undeformed truss stays as a ghost
+    const moving = showDefl() && g.disp && st._k !== undefined, dmv = moving ? Math.max(...g.disp.map((d) => Math.hypot(d[0], d[1])), 1e-300) : 1, ampM = moving ? ((0.06 * e) / dmv) * st._k : 0;
+    const g0 = D.root, P0 = (j) => [D.X(g.J[j].x), D.Y(g.J[j].y)], P = moving ? (j) => [D.X(g.J[j].x + g.disp[j][0] * ampM), D.Y(g.J[j].y + g.disp[j][1] * ampM)] : P0;
     const cx = xs.reduce((a, v) => a + v, 0) / xs.length, cy = ys.reduce((a, v) => a + v, 0) / ys.length;
     // deflected shape behind
-    if (showDefl() && g.disp) {
+    if (moving) g.Mm.forEach((m) => { const a = P0(m.a), bb = P0(m.b); s('line', { x1: a[0], y1: a[1], x2: bb[0], y2: bb[1], stroke: '#9aa5ad', 'stroke-width': 1.6, 'stroke-dasharray': '5 4', opacity: 0.8 }, g0); });
+    else if (showDefl() && g.disp) {
       const dm = Math.max(...g.disp.map((d) => Math.hypot(d[0], d[1])), 1e-300), amp = (0.06 * e) / dm * defK();
       const Q = (j) => [D.X(g.J[j].x + g.disp[j][0] * amp), D.Y(g.J[j].y + g.disp[j][1] * amp)];
       g.Mm.forEach((m) => { const a = Q(m.a), bb = Q(m.b); s('line', { x1: a[0], y1: a[1], x2: bb[0], y2: bb[1], stroke: DCOL, 'stroke-width': 1.8, 'stroke-dasharray': '6 4', opacity: 0.9 }, g0); });
@@ -240,12 +238,15 @@
   }
   M.draw3D = function (v, res, U, opt) {
     const g = res.geo, F = g.c.F, ys = g.J.map((j) => j.y), e = Math.max(g.span, Math.max(...ys) - Math.min(...ys), 1e-9), t = e * 0.012;
-    const xm = (Math.min(...g.J.map((j) => j.x)) + Math.max(...g.J.map((j) => j.x))) / 2, P = (i, dz) => [g.J[i].x - xm, g.J[i].y, dz || 0];
+    const moving = showDefl() && g.disp && S()._k !== undefined, dmv = moving ? Math.max(...g.disp.map((d) => Math.hypot(d[0], d[1])), 1e-300) : 1, ampM = moving ? ((0.06 * e) / dmv) * S()._k : 0;
+    const xm = (Math.min(...g.J.map((j) => j.x)) + Math.max(...g.J.map((j) => j.x))) / 2, P0 = (i, dz) => [g.J[i].x - xm, g.J[i].y, dz || 0];
+    const P = moving ? (i, dz) => [g.J[i].x - xm + g.disp[i][0] * ampM, g.J[i].y + g.disp[i][1] * ampM, dz || 0] : P0;
     v._hs = e * 0.03;
     g.Mm.forEach((m) => v.line([P(m.a), P(m.b)], mcol(m), m.zero ? 1.4 : 2 + 4 * (Math.abs(m.F) / (g.fmax || 1)), m.zero ? [5, 4] : null));
     g.J.forEach((j, i) => { const p = P(i); v.box(p[0] - t, p[1] - t, -t * 2, p[0] + t, p[1] + t, t * 2, '#dfe5ea', 1, '#1d2733'); v.label([p[0], p[1] + t * 4, 0], j.name, '#1d2733'); });
     g.sup.forEach((sp) => { const p = P(sp.j), w = e * 0.035; v.box(p[0] - w, p[1] - w * 2.2, -w, p[0] + w, p[1] - t * 1.5, w, sp.type === 'pin' ? '#b9c4cc' : '#d5dde2', 1, '#5a6b75'); });
-    if (showDefl() && g.disp) {
+    if (moving) g.Mm.forEach((m) => v.line([P0(m.a), P0(m.b)], '#9aa5ad', 1.4, [5, 4]));
+    else if (showDefl() && g.disp) {
       const dm = Math.max(...g.disp.map((d) => Math.hypot(d[0], d[1])), 1e-300), amp = (0.06 * e) / dm * defK();
       const Q = (i) => [g.J[i].x - xm + g.disp[i][0] * amp, g.J[i].y + g.disp[i][1] * amp, 0];
       g.Mm.forEach((m) => v.line([Q(m.a), Q(m.b)], DCOL, 1.6, [6, 4]));

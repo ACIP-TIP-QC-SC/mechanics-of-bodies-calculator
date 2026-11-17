@@ -126,6 +126,13 @@ group('internal forces module', () => {
   close('7.13 F_H', out(r, 'Horizontal force F_H (tension at the lowest point)'), 45.9); close('7.13 length', out(r, 'Cable length'), 24.2); close('7.13 T_max', out(r, 'Maximum tension T_max'), 75.9);
   const r5 = Internal.solve(st({ mode: 'catenary', fu: 'N', cat: { given: 'len', len: out(r, 'Cable length') } }), U.SI);
   close('catenary: sag from length', out(r5, 'Sag h'), 6, 1e-6);
+  // catenary between uneven supports: c = 10, x_A = 6, x_B = 10 gives h_A = 10(cosh 0.6 − 1), h_B = 10(cosh 1 − 1)
+  const cu = { L: 16, w0: 5, level: false, hA: 10 * (Math.cosh(0.6) - 1), hB: 10 * (Math.cosh(1) - 1) };
+  r = Internal.solve(st({ mode: 'catenary', fu: 'N', cat: cu }), U.SI);
+  close('uneven catenary: c', out(r, 'Catenary constant F_H / w₀'), 10, 1e-7); close('uneven catenary: x_A', out(r, 'Lowest point, distance from A'), 6, 1e-7);
+  close('uneven catenary: T_B = w(c + h_B)', out(r, 'Tension at B'), 5 * (10 + cu.hB), 1e-7); close('uneven catenary: length', out(r, 'Cable length'), 10 * (Math.sinh(0.6) + Math.sinh(1)), 1e-7);
+  close('uneven catenary: B sits h_B − h_A above A', r.geo.y(16), cu.hB - cu.hA, 1e-7);
+  { const sU = Internal.convertState(st({ mode: 'catenary', fu: 'N', cat: Object.assign({}, cu) }), 'SI', 'US'); close('uneven catenary: units', Core.convert(out(Internal.solve(sU, U.US), 'Tension at B'), sU.fu, 'N'), 5 * (10 + cu.hB), 1e-4); }
   // switching units keeps the same problem: 31.18 kN·m = 22.99 kip·ft
   const sv = st({ L: 9, supports: SS(9), loads: [{ kind: 'dist', x1: 0, x2: 9, w1: 0, w2: 6 }] });
   Internal.convertState(sv, 'SI', 'US');
@@ -279,6 +286,17 @@ group('friction module', () => {
   const Pt = out(Friction.solve(mk({ bk: Object.assign({ task: 'findP' }, q) }), SI), 'P to tip');
   close('tip force consistent', out(Friction.solve(mk({ bk: Object.assign({ task: 'check', P: Pt }, q) }), SI), 'Position of N, x'), 0.3);
   truthy('lift-off fails', !Friction.solve(mk({ bk: { task: 'check', P: 600, psi: 60 } }), SI).ok);
+  // block on an incline: released (μk while sliding), held, pushed up (Dynamics F13-1 and F14-10)
+  r = Friction.solve(mk({ mode: 'incline' }), SI);
+  close('incline a', out(r, 'Acceleration down the slope a'), 9.81 * (0.5 - 0.25 * Math.cos(Math.PI / 6))); truthy('incline slides', /Slides down/.test(r.status.text));
+  truthy('incline stays below repose', /Stays at rest/.test(Friction.solve(mk({ mode: 'incline', ic: { phi: 15 } }), SI).status.text));
+  close('F13-1 T', out(Friction.solve(mk({ mode: 'incline', ic: { task: 'up', muk: 0.3, acc: 4 / 3 } }), SI), 'P to keep it moving up'), 175.74);
+  close('F14-10 F', out(Friction.solve(mk({ mode: 'incline', ic: { task: 'up', muk: 0.2, acc: 0 } }), SI), 'P to keep it moving up'), 132.08);
+  r = Friction.solve(mk({ mode: 'incline', ic: { task: 'hold', psi: 20 } }), SI);
+  { const P = out(r, 'P to hold the block'), N = out(r, 'Normal force N'); close('hold: ΣF along the slope', P * Math.cos(20 * Math.PI / 180) - 196.2 * 0.5 + 0.3 * N, 0, 1e-6); }
+  close('hold not needed', out(Friction.solve(mk({ mode: 'incline', ic: { task: 'hold', phi: 10 } }), SI), 'P to hold the block'), 0);
+  { const a = Friction.solve(mk({ mode: 'incline', ic: { task: 'up', acc: 2 } }), SI), st = Friction.convertState(mk({ mode: 'incline', ic: { task: 'up', acc: 2 } }), 'SI', 'US');
+    close('incline units round trip', out(Friction.solve(Friction.convertState(st, 'US', 'SI'), SI), 'P to keep it moving up'), out(a, 'P to keep it moving up'), 1e-6); }
   // Example 8.3 ladder
   r = Friction.solve(mk({ mode: 'ladder' }), SI);
   close('8.3 θ', out(r, 'Smallest angle θ (from the floor)'), 59.04); close('8.3 N_A', out(r, 'N_A'), 98.1); close('8.3 N_B', out(r, 'N_B'), 29.43);

@@ -247,8 +247,8 @@
     const corners = [[24, SH - 24], [SW - 70, SH - 24], [24, 64], [SW - 70, 64]];
     const far = (c) => Math.min(...busy.map((q) => Math.hypot(q[0] - c[0], q[1] - c[1])));
     const [ox, oy] = corners.reduce((a, c) => (far(c) > far(a) + 1 ? c : a));
-    arrowPx(g0, ox, oy, ox + 34, oy, '#8c99a3', 1.3, 7); arrowPx(g0, ox, oy, ox, oy - 34, '#8c99a3', 1.3, 7);
-    T(g0, ox + 38, oy + 4, 'x', { color: '#5a6b75', size: 11 }); T(g0, ox - 3, oy - 38, 'y', { color: '#5a6b75', size: 11 });
+    arrowPx(g0, ox, oy, ox + 34, oy, COL.axis, 1.4, 7); arrowPx(g0, ox, oy, ox, oy - 34, COL.axis, 1.4, 7);
+    T(g0, ox + 38, oy + 4, 'x', { color: COL.axis, size: 11 }); T(g0, ox - 3, oy - 38, 'y', { color: COL.axis, size: 11 });
   }
 
   M.draw2D = function (svg, res, U, opt) {
@@ -293,7 +293,7 @@
       const W = g.K.find((k) => k.name === 'W'), a = V(A), h = ext * 0.14;
       if (W) { v.line([a, [a[0], a[1] - ext * 0.35, a[2]]], '#2c3e50', 2); v.box(a[0] - h, a[1] - ext * 0.35 - 2 * h, a[2] - h, a[0] + h, a[1] - ext * 0.35, a[2] + h, '#d9b58a', 1, '#8a6a3f'); v.label([a[0] + h, a[1] - ext * 0.35 - h, a[2] + h], lab('W', -W.v[2], F), LCOL); }
       g.K.filter((k) => k.name !== 'W').forEach((k) => { const m = Math.hypot(...k.v) || 1, tip = A.map((x, i) => x + (k.v[i] / m) * ext * 0.5); arrow3(v, V(A), V(tip), LCOL, 2.6); v.label(V(tip), lab(k.name, m, F), LCOL); });
-      const L = ext * 0.5; [[[L, 0, 0], 'x'], [[0, L, 0], 'y'], [[0, 0, L], 'z']].forEach(([p, n]) => { arrow3(v, V(A), V(A.map((x, i) => x + p[i])), '#8c99a3', 1.1); v.label(V(A.map((x, i) => x + p[i] * 1.08)), n, '#5a6b75'); });
+      const L = ext * 0.5; [[[L, 0, 0], 'x'], [[0, L, 0], 'y'], [[0, 0, L], 'z']].forEach(([p, n]) => { arrow3(v, V(A), V(A.map((x, i) => x + p[i])), COL.axis, 1.3); v.label(V(A.map((x, i) => x + p[i] * 1.08)), n, COL.axis); });
       v.label(a, 'A', '#1d2733');
       v.autoBounds(); return;
     }

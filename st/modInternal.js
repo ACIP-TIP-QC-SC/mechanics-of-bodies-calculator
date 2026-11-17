@@ -64,7 +64,7 @@
       sec = C.section(c, 'Deflected shape');
       C.toggle(sec, { label: 'Show the deflected shape', get: () => st.defl !== false, set: (v) => { st.defl = v; if (!v) st.play = 'cut'; } });
       if (st.defl !== false) {
-        C.seg(sec, { label: 'Play animates', get: () => st.play || 'cut', set: (v) => { st.play = v; delete st._k; }, options: [['cut', 'The moving cut'], ['deflect', 'The beam deflecting']] });
+        C.seg(sec, { label: 'Play animates', get: () => st.play || 'deflect', set: (v) => { st.play = v; delete st._k; }, options: [['deflect', 'The beam deflecting'], ['cut', 'The moving cut']] });
         C.note(sec, 'The shape is exaggerated and assumes the same EI along the whole beam. Results list EI × deflection, so divide by EI for the actual deflection.');
       }
       sec = C.section(c, 'Cut');
@@ -77,7 +77,8 @@
       const cb = st.cab;
       sec = C.section(c, 'Supports');
       C.slider(sec, { label: 'Span (A to the far support)', min: 1, max: M.units === 'US' ? 300 : 100, step: 0.5, get: () => cb.span, set: (v) => (cb.span = v), unit: Lu });
-      C.num(sec, { label: 'Far support above A (negative = below)', get: () => cb.hB, set: (v) => (cb.hB = v), unit: Lu });
+      C.toggle(sec, { label: 'Supports at the same level', get: () => cb.level !== false && !cb.hB, set: (v) => { cb.level = v; if (v) cb.hB = 0; else if (!cb.hB) cb.hB = tidy(cb.span * 0.15); } });
+      if (cb.level === false || cb.hB) C.num(sec, { label: 'Far support above A (negative = below)', get: () => cb.hB, set: (v) => (cb.hB = v), unit: Lu });
       sec = C.section(c, 'Loads, from left to right');
       C.list(sec, { items: cb.loads, max: 5, min: 1, color: () => KCOL.point, title: (it, i) => 'Load at point ' + 'BCDEFG'[i],
         fields: () => [{ key: 'x', label: 'Distance from A', unit: Lu }, { key: 'P', label: 'Force (down)', unit: F }], add: [['Load', () => ({ x: tidy(cb.span * 0.9), P: 5 })]] });
@@ -105,12 +106,18 @@
     } else {
       const k = st.cat;
       sec = C.section(c, 'Cable');
-      C.note(sec, 'Supports at the same level. The weight acts along the length of the cable.');
+      C.note(sec, 'The weight acts along the length of the cable.');
       C.slider(sec, { label: 'Span L', min: 1, max: M.units === 'US' ? 3000 : 1000, step: 1, get: () => k.L, set: (v) => (k.L = v), unit: Lu });
       C.num(sec, { label: 'Weight per unit length w₀', get: () => k.w0, set: (v) => (k.w0 = v), unit: `${F}/${Lu}` });
-      C.seg(sec, { label: 'Known quantity', get: () => k.given, set: (v) => (k.given = v), options: [['sag', 'Sag h'], ['len', 'Cable length']] });
-      if (k.given === 'sag') C.num(sec, { label: 'Sag h', get: () => k.h, set: (v) => (k.h = v), unit: Lu });
-      else C.num(sec, { label: 'Cable length', get: () => k.len, set: (v) => (k.len = v), unit: Lu });
+      C.toggle(sec, { label: 'Supports at the same level', get: () => k.level !== false, set: (v) => (k.level = v) });
+      if (k.level === false) {
+        C.num(sec, { label: 'Lowest point below A', get: () => k.hA, set: (v) => (k.hA = v), unit: Lu });
+        C.num(sec, { label: 'Lowest point below B', get: () => k.hB, set: (v) => (k.hB = v), unit: Lu });
+      } else {
+        C.seg(sec, { label: 'Known quantity', get: () => k.given, set: (v) => (k.given = v), options: [['sag', 'Sag h'], ['len', 'Cable length']] });
+        if (k.given === 'sag') C.num(sec, { label: 'Sag h', get: () => k.h, set: (v) => (k.h = v), unit: Lu });
+        else C.num(sec, { label: 'Cable length', get: () => k.len, set: (v) => (k.len = v), unit: Lu });
+      }
     }
   };
 
@@ -132,16 +139,11 @@
     frame(u) { const st = S(); st.cut = tidy((Math.round(u * 400) / 400) * st.L); st.side = 'R'; },
     label() { const st = S(); return `cut at x = ${fmt(st.cut)} ${Core.UNITS[M.units].len}`; },
   };
-  /* Play grows the deflected shape from the straight beam. Paused at the start it shows the full shape. */
+  /* Play bends the beam from straight to its deflected shape and back, like a 10 s gif (shared with every deflection module). */
   const DCOL = '#0f8a7e';
-  const ease = (u) => u * u * (3 - 2 * u);
-  const deflect = {
-    duration: 4, loop: false,
-    frame(u) { S()._k = u <= 0 ? 1 : ease(u); },
-    label() { return `deflection at ${Math.round(defK() * 100)} % of full`; },
-  };
+  const deflect = root.Anim.deflection(S);
   const defK = () => (S()._k === undefined ? 1 : S()._k);
-  M.anim = () => (isBeam() ? (showDefl() && S().play === 'deflect' ? deflect : sweep) : null);
+  M.anim = () => (isBeam() ? (showDefl() && S().play !== 'cut' ? deflect : sweep) : null);
 
   M.onDrag = function (p, phase, res) {
     if (!isBeam() || res.geo.kind !== 'beam') return false;
@@ -186,7 +188,10 @@
     const ml = 66, mr = wallR ? 70 : 30, pw = W - ml - mr;
     const X = (x) => ml + (x / L) * pw;
     svg._inv = (sx, sy) => [((sx - ml) / pw) * L, sy];
-    const dOn = showDefl() && b.defl && !b.defl.flat, kD = S().play === 'deflect' ? defK() : 1;
+    const dOn = showDefl() && b.defl && !b.defl.flat, kD = S().play !== 'cut' ? defK() : 1;
+    // while Play runs the beam drawing itself bends (exaggerated, at most 16 px), coloured by the size of the deflection
+    const bend = dOn && S().play !== 'cut' && S()._k !== undefined, vmax = dOn ? Math.abs(b.defl.max.y) || 1 : 1;
+    const dp = (x) => (bend ? (-b.defl.y(x) / vmax) * 16 * kD : 0);
     const nP = (b.hasAxial ? 3 : 2) + (dOn ? 1 : 0);
     const topH = Math.max(168, Math.min(H * (dOn ? 0.32 : 0.38), 250));
     const gap = 12, bot = 24;
@@ -200,12 +205,14 @@
     b.dists.forEach((d) => {
       const up = d.w1 < 0 || d.w2 < 0, sg = up ? 1 : -1, y0 = yb + sg * bt;
       const hh = (w) => (w ? 12 + 26 * (Math.abs(w) / wmax) : 0);
-      const xa = X(d.x1), xb = X(d.x2), ha = hh(d.w1), hb2 = hh(d.w2);
-      s('polygon', { points: `${xa},${y0} ${xa},${y0 + sg * ha} ${xb},${y0 + sg * hb2} ${xb},${y0}`, fill: COL.load, 'fill-opacity': 0.13, stroke: COL.load, 'stroke-width': 1.3 }, root0);
+      const xa = X(d.x1), xb = X(d.x2), ha = hh(d.w1), hb2 = hh(d.w2), wx = (px) => ((px - ml) / pw) * L;
+      const ns = 24, topP = [], botP = [];
+      for (let i = 0; i <= ns; i++) { const xx = xa + ((xb - xa) * i) / ns, hx = ha + ((hb2 - ha) * i) / ns, o = dp(wx(xx)); topP.push(`${xx},${y0 + sg * hx + o}`); botP.unshift(`${xx},${y0 + o}`); }
+      s('polygon', { points: topP.concat(botP).join(' '), fill: COL.load, 'fill-opacity': 0.13, stroke: COL.load, 'stroke-width': 1.3 }, root0);
       const n = Math.max(2, Math.round((xb - xa) / 20));
       for (let i = 0; i <= n; i++) {
-        const xx = xa + ((xb - xa) * i) / n, hx = ha + ((hb2 - ha) * i) / n;
-        if (hx > 9) arrow(root0, xx, y0 + sg * hx, xx, y0, COL.load, 1.3, 6);
+        const xx = xa + ((xb - xa) * i) / n, hx = ha + ((hb2 - ha) * i) / n, o = dp(wx(xx));
+        if (hx > 9) arrow(root0, xx, y0 + sg * hx + o, xx, y0 + o, COL.load, 1.3, 6);
       }
       if (opt.showP) {
         const ty = (hx) => y0 + sg * (hx + 5) + (up ? 10 : 0);
@@ -217,7 +224,17 @@
       }
     });
     /* --- beam --- */
-    s('rect', { x: X(0), y: yb - bt, width: pw, height: 2 * bt, fill: COL.body, stroke: COL.bodyEdge, 'stroke-width': 1.4, rx: 1.5 }, root0);
+    if (!bend) s('rect', { x: X(0), y: yb - bt, width: pw, height: 2 * bt, fill: COL.body, stroke: COL.bodyEdge, 'stroke-width': 1.4, rx: 1.5 }, root0);
+    else {
+      s('rect', { x: X(0), y: yb - bt, width: pw, height: 2 * bt, fill: 'none', stroke: COL.bodyEdge, 'stroke-width': 1, 'stroke-dasharray': '4 3', opacity: 0.5 }, root0);
+      const nb = 60, top = [], bo = [];
+      for (let i = 0; i < nb; i++) {
+        const x0 = (L * i) / nb, x1 = (L * (i + 1)) / nb, c = root.Anim.contour((kD * Math.abs(b.defl.y((x0 + x1) / 2))) / vmax);
+        s('polygon', { points: `${X(x0)},${yb - bt + dp(x0)} ${X(x1) + 0.4},${yb - bt + dp(x1)} ${X(x1) + 0.4},${yb + bt + dp(x1)} ${X(x0)},${yb + bt + dp(x0)}`, fill: c, stroke: 'none' }, root0);
+      }
+      for (let i = 0; i <= nb; i++) { const x = (L * i) / nb; top.push(`${X(x)},${yb - bt + dp(x)}`); bo.unshift(`${X(x)},${yb + bt + dp(x)}`); }
+      s('polygon', { points: top.concat(bo).join(' '), fill: 'none', stroke: COL.bodyEdge, 'stroke-width': 1.4 }, root0);
+    }
     /* --- supports --- */
     const sy = yb + bt, supH = 22;
     b.sups.forEach((sp) => {
@@ -237,18 +254,18 @@
       if (wall) T(root0, x + (rEnd ? 7 : -7), yb - 38, sp.label, { anchor: 'middle', size: 13, weight: 700, color: COL.ink });
       else T(root0, x + (rEnd ? 18 : -18), sy + 15, sp.label, { anchor: rEnd ? 'start' : 'end', size: 13, weight: 700, color: COL.ink });
     });
-    b.hinges.forEach((xh) => s('circle', { cx: X(xh), cy: yb, r: 5, fill: '#fff', stroke: COL.ink, 'stroke-width': 1.6 }, root0));
+    b.hinges.forEach((xh) => s('circle', { cx: X(xh), cy: yb + dp(xh), r: 5, fill: '#fff', stroke: COL.ink, 'stroke-width': 1.6 }, root0));
     /* --- point forces and couples --- */
     b.acts.forEach((a) => {
       const x = X(a.x);
       if (a.Mz) {
         const ccw = a.Mz > 0;
-        arcArrow(root0, x, yb, 19, ccw ? -50 : 230, ccw ? 230 : -50, COL.couple);
+        arcArrow(root0, x, yb + dp(a.x), 19, ccw ? -50 : 230, ccw ? 230 : -50, COL.couple);
         if (opt.showP) T(root0, x, yb - 27, `${fmt(Math.abs(a.Mz))} ${FL}`, { anchor: x > W - mr - 50 ? 'end' : x < ml + 50 ? 'start' : 'middle', color: COL.couple });
         return;
       }
       const len = 34 + 22 * (Math.abs(a.P) / Pmax), m = Math.hypot(a.Fx, a.Fy) || 1, ux = a.Fx / m, uy = -a.Fy / m;
-      const tipY = a.Fy > 0 ? yb + bt : yb - bt;
+      const tipY = (a.Fy > 0 ? yb + bt : yb - bt) + dp(a.x);
       const tx = x - ux * len, ty = tipY - uy * len;
       arrow(root0, tx, ty, x, tipY, COL.load, 2.8, 11);
       if (opt.showP) T(root0, tx, ty + (uy >= 0 ? -6 : 14), `${fmt(Math.abs(a.P))} ${F}` + (a.Fx ? ` at ${fmt(a.ang)}°` : ''), { anchor: tx > W - mr - 50 ? 'end' : tx < ml + 40 ? 'start' : 'middle', color: COL.load, size: 12, weight: 700 });
@@ -471,17 +488,23 @@
   function drawBeam3D(v, res, U, opt) {
     const g = res.geo, b = g.beam, { F, FL } = g, L = b.L;
     const d = L / 22, w = L / 14, z0 = -w / 2, z1 = w / 2; v._hs = L / 28;
-    const dOn = showDefl() && b.defl && !b.defl.flat, kD = S().play === 'deflect' ? defK() : 1;
+    const dOn = showDefl() && b.defl && !b.defl.flat, kD = S().play !== 'cut' ? defK() : 1;
     const dsc = dOn ? ((L * 0.07) / Math.abs(b.defl.max.y)) * kD : 0, dy = (x) => (dOn ? b.defl.y(x) * dsc : 0);
+    // the beam is drawn as an I-beam; with the deflected shape on it is bent (exaggerated) and coloured
+    // by the size of the deflection, from blue (none) to red (largest), like a contour plot
+    const n = dOn ? 48 : 1, vmax = dOn ? Math.abs(b.defl.max.y) || 1 : 1, h2 = d / 2, b2 = w / 2, tf = d * 0.2, tw = w * 0.09;
+    const prof = [[-h2, -b2], [-h2, b2], [-h2 + tf, b2], [-h2 + tf, tw], [h2 - tf, tw], [h2 - tf, b2], [h2, b2], [h2, -b2], [h2 - tf, -b2], [h2 - tf, -tw], [-h2 + tf, -tw], [-h2 + tf, -b2]];
+    for (let i = 0; i < n; i++) {
+      const xa = (L * i) / n, xb = (L * (i + 1)) / n, ya = dy(xa), yb2 = dy(xb), c = dOn ? root.Anim.contour((kD * Math.abs(b.defl.y((xa + xb) / 2))) / vmax) : '#b9c2cb';
+      prof.forEach((p, k) => { const q = prof[(k + 1) % prof.length]; v.face([[xa, ya + p[0], p[1]], [xb, yb2 + p[0], p[1]], [xb, yb2 + q[0], q[1]], [xa, ya + q[0], q[1]]], c, 1, dOn ? null : '#4a5661', 0.6); });
+    }
+    [0, L].forEach((x) => v.face(prof.map((p) => [x, dy(x) + p[0], p[1]]), dOn ? root.Anim.contour((kD * Math.abs(b.defl.y(x))) / vmax) : '#b9c2cb', 1, '#4a5661'));
     if (dOn) {
-      // the beam itself is drawn bent (exaggerated); a thin dashed line keeps the straight axis
-      const n = 40;
-      for (let i = 0; i < n; i++) { const xa = (L * i) / n, xb = (L * (i + 1)) / n, ya = dy(xa), yb2 = dy(xb); v.extrude([[xa, ya - d / 2], [xa, ya + d / 2], [xb, yb2 + d / 2], [xb, yb2 - d / 2]], z0, z1, '#b9c2cb', 1, null, { sideStroke: null }); }
-      const cl = []; for (let i = 0; i <= n; i++) { const x = (L * i) / n; cl.push([x, dy(x), z1]); }
-      v.line(cl, DCOL, 3);
+      const cl = []; for (let i = 0; i <= 40; i++) { const x = (L * i) / 40; cl.push([x, dy(x) + h2, z1]); }
+      v.line(cl, '#1d2733', 1.2);
       v.line([[0, 0, z1], [L, 0, z1]], '#6b7785', 1.2, [5, 4]);
       if (opt.showP) v.label([b.defl.max.x, dy(b.defl.max.x) + (b.defl.max.y > 0 ? d : -d), z1], `EI·v = ${fmt(b.defl.max.y)} ${F}·${g.Lu}³`, DCOL);
-    } else v.box(0, -d / 2, z0, L, d / 2, z1, '#b9c2cb', 1, '#4a5661');
+    }
     b.sups.forEach((sp) => {
       if (sp.type === 'fixed') { const x0 = sp.x > L - 1e-9 ? L : sp.x < 1e-9 ? -d * 1.2 : sp.x - d * 0.6; v.box(x0, -d * 2.4, z0 * 1.8, x0 + d * 1.2, d * 2.4, z1 * 1.8, '#8d98a3', 1, '#4a5661'); }
       else if (sp.type === 'pin') v.extrude([[sp.x, -d / 2], [sp.x - d * 1.1, -d * 2.3], [sp.x + d * 1.1, -d * 2.3]], z0, z1, '#7fb394', 1, '#3c6b50');
@@ -540,7 +563,7 @@
     const t = L / 60, zc = g.kind === 'cableU' ? L / 12 : 0, yb = ymin - Hh * 0.45; v._hs = L / 30;
     const A = pts[0], B = pts[pts.length - 1];
     [[A, 0], [B, L]].forEach(([p, x]) => (zc ? [-zc, zc] : [0]).forEach((z) => v.box(x - t, yb, z - t, x + t, p[1] + t, z + t, '#8d98a3', 1, '#4a5661')));
-    v.face([[-L * 0.06, yb, -zc - L * 0.08], [L * 1.06, yb, -zc - L * 0.08], [L * 1.06, yb, zc + L * 0.08], [-L * 0.06, yb, zc + L * 0.08]], '#dfe6ea', 0.8, '#b8c2c9');
+    v.face([[-L * 0.06, yb, -zc - L * 0.08], [L * 1.06, yb, -zc - L * 0.08], [L * 1.06, yb, zc + L * 0.08], [-L * 0.06, yb, zc + L * 0.08]], '#dfe6ea', 0.8, '#b8c2c9', 1, -1);
     (zc ? [-zc, zc] : [0]).forEach((z) => v.line(pts.map((p) => [p[0], p[1], z]), '#2c3e50', 3.5));
     if (g.kind === 'cableU') {
       const yd = ymin - Hh * 0.2;
@@ -616,6 +639,11 @@
     { name: 'Test: catenary, 5 N/m cable over 20 m with a 6 m sag, T_max = 75.9 N', units: 'SI',
       state: { mode: 'catenary', fu: 'N', cat: { L: 20, h: 6, w0: 5, given: 'sag', len: 24 } },
       expect: [{ k: 'Maximum tension T_max', v: 75.9 }, { k: 'Horizontal force F_H (tension at the lowest point)', v: 45.9 }, { k: 'Cable length', v: 24.2 }] },
+    { name: 'Test: catenary between supports at different levels, lowest point 1.855 m below A and 5.431 m below B', units: 'SI',
+      state: { mode: 'catenary', fu: 'N', cat: { L: 16, w0: 5, level: false, hA: 1.854652182, hB: 5.430806348, h: 6, given: 'sag', len: 24 } },
+      expect: [{ k: 'Catenary constant F_H / w₀', v: 10 }, { k: 'Lowest point, distance from A', v: 6 }, { k: 'Horizontal force F_H (tension at the lowest point)', v: 50 }, { k: 'Maximum tension T_max', v: 77.154 }, { k: 'Cable length', v: 18.1186 }] },
+    { name: 'Cable with point loads hung from supports at different levels', units: 'SI',
+      state: { mode: 'cableP', fu: 'kN', cab: { span: 20, hB: 4, level: false, loads: [{ x: 5, P: 6 }, { x: 12, P: 8 }], known: 'sag', at: 1, sag: 5, FH: 6 } } },
   ];
 
   root.SInternal = M;

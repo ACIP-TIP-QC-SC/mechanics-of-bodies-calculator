@@ -2,6 +2,8 @@
  * STATICS · Friction (physics only; runs in the browser and in Node)
  * Hibbeler, Engineering Mechanics: Statics, Chapter 8, sections 8.1 to 8.5.
  *   block   block on a floor or incline pushed at a height: no motion, slip or tip (8.2)
+ *   incline block on an incline treated as a particle: does it slide down by itself, the force to hold it,
+ *           the force to push it up (μs to start, μk to keep it moving); sliding uses μk and ΣF = ma
  *   ladder  ladder against a wall: smallest angle, or the floor friction needed (8.2)
  *   wedge   wedge lifting a block in a guide or a lever pinned at one end (8.3)
  *   screw   square-threaded screw: M = W r tan(θ ± φs) (8.4)
@@ -18,6 +20,7 @@
     return {
       mode: 'block', fu: 'N',
       bk: { wBy: 'mass', m: 20, W: 196.2, b: 0.8, H: 0.6, phi: 0, mu: 0.3, task: 'check', P: 80, psi: -30, hP: 0.2 },
+      ic: { wBy: 'mass', m: 20, W: 196.2, phi: 30, mus: 0.3, muk: 0.25, task: 'release', psi: 0, acc: 0, d: 3 },
       ld: { wBy: 'mass', m: 10, W: 98.1, L: 4, muA: 0.3, muB: 0, task: 'minAngle', th: 65, person: false, mp: 75, Wp: 735.8, wpBy: 'mass', s: 3 },
       wd: { load: 'lever', wBy: 'mass', m: 500, W: 4905, al: 7, mu: 0.3, muC: 0.3, muG: 0, a: 1, xW: 0.5, task: 'lower' },
       sc: { W: 2000, r: 5, l: 2, mu: 0.25, n: 2, task: 'raise' },
@@ -37,6 +40,7 @@
 
   function solve(st, U) {
     const c = { F: st.fu, Lu: U.len, Ls: U.lenS, FL: `${st.fu}·${U.len}`, U };
+    if (st.mode === 'incline') return incline(st.ic, c);
     if (st.mode === 'ladder') return ladder(st.ld, c);
     if (st.mode === 'wedge') return wedge(st.wd, c);
     if (st.mode === 'screw') return screw(st.sc, c);
@@ -95,6 +99,77 @@
     const text = slips && tips ? 'Not in equilibrium: slips and tips' : slips ? 'Not in equilibrium: slips' : tips ? 'Not in equilibrium: tips' : 'In equilibrium: no slipping or tipping';
     const warn = []; if (!slips && Math.abs(Ff) > 0.95 * Fmax && Fmax > 0) warn.push(`F is ${fmt((100 * Math.abs(Ff)) / Fmax, 3)} % of the largest friction force, so slipping is close.`);
     return res(text, slips || tips ? 'warn' : 'ok', out, S, { kind: 'block', c, W, b, H, phi, mu, psi, hP, P, N, Ff, x, verdict: slips && tips ? 'both' : slips ? 'slip' : tips ? 'tip' : 'none' }, warn);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Block on an incline (particle): slide, hold or push up             */
+  /* ------------------------------------------------------------------ */
+  function incline(q, c) {
+    const { F, Lu, U } = c, err = [];
+    const w = weight(q, U, F), W = w.W, phi = +q.phi, ms = +q.mus, mk = +q.muk, psi = +q.psi || 0, acc = +q.acc || 0, d = +q.d;
+    if (!(W > 0)) err.push('The weight must be greater than zero.');
+    if (!(phi > 0 && phi < 90)) err.push('The slope angle must be between 0° and 90°.');
+    if (!(ms >= 0) || !(mk >= 0)) err.push('The coefficients of friction must be zero or more.');
+    if (q.task === 'release' && !(d > 0)) err.push('Enter the distance the block slides.');
+    if (q.task !== 'release' && !(psi > -90 && psi < 90)) err.push('The angle of P from the slope must be between −90° and 90°.');
+    if (q.task === 'up' && !(acc >= 0)) err.push('The acceleration up the slope must be zero or more.');
+    if (err.length) return fail(err);
+    const g = gOf(U), base = U.id === 'US' ? 'lb' : 'N', mass = Core.convert(W, F, base) / g, mU = U.id === 'US' ? 'slug' : 'kg';
+    const sp = Math.sin(phi * DEG), cp = Math.cos(phi * DEG), sv = Math.sin(psi * DEG), cv = Math.cos(psi * DEG);
+    const S = Steps(), out = [], warn = [], rep = Math.atan(ms) / DEG;
+    if (mk > ms) warn.push('μk is larger than μs; for dry surfaces μk is normally a little smaller than μs.');
+    S.add({ t: 'Free-body diagram', n: `The block is treated as a particle on a ${fmt(phi)}° slope (no tipping check). Axes: x along the slope (up the slope positive), y normal to it. The forces are the weight W, the normal force N, the friction force F along the slope${q.task === 'release' ? '' : ` and the force P at ${fmt(psi)}° from the slope (${psi > 0 ? 'pulling away from the surface' : psi < 0 ? 'pressing toward the surface' : 'parallel to the slope'})`}.`, r: w.how });
+    const geo = { kind: 'incline', c, W, phi, ms, mk, psi, task: q.task, d, rep };
+    if (q.task === 'release') {
+      const N = W * cp, need = W * sp, Fmax = ms * N, slides = need > Fmax * (1 + 1e-9);
+      S.add({ t: 'Sum of forces normal to the slope', f: '+↖ ΣF_y = 0', s: `N − ${fmt(W)} cos ${fmt(phi)}° = 0`, r: `N = ${fmt(N)} ${F}` });
+      S.add({ t: 'Friction needed to hold it', f: '+↗ ΣF_x = 0', s: `F − ${fmt(W)} sin ${fmt(phi)}° = 0`, r: `F = ${fmt(need)} ${F}` });
+      S.add({ t: 'Does it slide?', f: 'F_max = μs N;  slides if tan φ > μs', s: `F_max = ${fmt(ms)}(${fmt(N)}) = ${fmt(Fmax)} ${F};   tan ${fmt(phi)}° = ${fmt(sp / cp)}`, r: slides ? `${fmt(need)} > ${fmt(Fmax)}: the block slides down (the slope is steeper than the angle of repose ${fmt(rep)}°)` : `${fmt(need)} ≤ ${fmt(Fmax)}: the block stays at rest (angle of repose ${fmt(rep)}°)` });
+      if (!slides) {
+        out.push({ k: 'Friction needed F', v: need, u: F, hl: true }, { k: 'Largest friction μs N', v: Fmax, u: F }, { k: 'Normal force N', v: N, u: F }, { k: 'Angle of repose φs', v: rep, u: '°' });
+        return res('Stays at rest: friction holds the block', 'ok', out, S, Object.assign(geo, { N, Ff: need, fUp: true, a: 0, moving: false }), warn);
+      }
+      const Fk = mk * N, aa = g * (sp - mk * cp);
+      S.add({ t: 'Sliding: kinetic friction', f: 'F = μk N', s: `F = ${fmt(mk)}(${fmt(N)})`, r: `F = ${fmt(Fk)} ${F}, up the slope` });
+      if (!(aa > 0)) {
+        warn.push('Once moving, kinetic friction is enough to stop the block, so it does not keep sliding.');
+        out.push({ k: 'Acceleration down the slope a', v: 0, u: U.acc, hl: true }, { k: 'Normal force N', v: N, u: F }, { k: 'Angle of repose φs', v: rep, u: '°' });
+        return res('Starts to slip but kinetic friction stops it', 'warn', out, S, Object.assign(geo, { N, Ff: Fk, fUp: true, a: 0, moving: false }), warn);
+      }
+      S.add({ t: 'Equation of motion down the slope', f: '+↙ ΣF_x = m a  →  a = g(sin φ − μk cos φ)', s: `a = ${fmt(g)}(sin ${fmt(phi)}° − ${fmt(mk)} cos ${fmt(phi)}°)`, r: `a = ${fmt(aa)} ${U.acc}` });
+      const t = Math.sqrt((2 * d) / aa), v = aa * t;
+      S.add({ t: `Sliding ${fmt(d)} ${Lu} from rest`, f: 'd = ½ a t²;  v = a t', s: `t = √(2 · ${fmt(d)} / ${fmt(aa)});   v = ${fmt(aa)} · t`, r: `t = ${fmt(t)} s, v = ${fmt(v)} ${U.vel}` });
+      out.push({ k: 'Acceleration down the slope a', v: aa, u: U.acc, hl: true }, { k: `Time to slide ${fmt(d)} ${Lu}`, v: t, u: 's' }, { k: 'Speed after that distance', v, u: U.vel }, { k: 'Kinetic friction F', v: Fk, u: F }, { k: 'Normal force N', v: N, u: F }, { k: 'Angle of repose φs', v: rep, u: '°' });
+      return res(`Slides down: a = ${fmt(aa)} ${U.acc}`, 'warn', out, S, Object.assign(geo, { N, Ff: Fk, fUp: true, a: aa, t, v, moving: true }), warn);
+    }
+    const upMax = cv + ms * sv > 1e-12 ? (W * (sp + ms * cp)) / (cv + ms * sv) : Infinity;
+    if (q.task === 'hold') {
+      const stays = W * sp <= ms * W * cp * (1 + 1e-12);
+      if (stays) {
+        S.add({ t: 'Sum of forces normal to the slope (without P)', f: '+↖ ΣF_y = 0', s: `N − ${fmt(W)} cos ${fmt(phi)}° = 0`, r: `N = ${fmt(W * cp)} ${F}` });
+        S.add({ t: 'Is a force needed?', f: 'slides only if tan φ > μs', s: `tan ${fmt(phi)}° = ${fmt(sp / cp)} ≤ μs = ${fmt(ms)}`, r: 'Friction alone holds the block, so P = 0' });
+        out.push({ k: 'P to hold the block', v: 0, u: F, hl: true }, { k: 'Largest P before it slides up', v: isFinite(upMax) ? upMax : 0, u: isFinite(upMax) ? F : `${F} (never)` }, { k: 'Normal force N', v: W * cp, u: F }, { k: 'Angle of repose φs', v: rep, u: '°' });
+        return res('No force needed: friction holds the block', 'ok', out, S, Object.assign(geo, { P: 0, N: W * cp, Ff: W * sp, fUp: true, moving: false }), warn);
+      }
+      const den = cv - ms * sv;
+      if (!(den > 1e-12)) return fail(`P at ${fmt(psi)}° from the slope lifts the block off the surface faster than it holds it. Use a smaller angle.`);
+      const P = (W * (sp - ms * cp)) / den, N = W * cp - P * sv;
+      S.add({ t: 'About to slide down', n: 'The smallest P holds the block with friction at its largest value acting up the slope.', f: 'F = μs N', s: `+↖ ΣF_y: N − ${fmt(W)} cos ${fmt(phi)}° + P sin ${fmt(psi)}° = 0;   +↗ ΣF_x: P cos ${fmt(psi)}° − ${fmt(W)} sin ${fmt(phi)}° + ${fmt(ms)} N = 0`, r: `P = ${fmt(P)} ${F}, N = ${fmt(N)} ${F}` });
+      if (!(N > 0)) return fail('P lifts the block off the slope. Use a smaller angle for P.');
+      if (isFinite(upMax)) S.add({ t: 'About to slide up', n: 'The largest P before the block moves up the slope, with friction μs N acting down the slope.', f: 'P = W(sin φ + μs cos φ) / (cos ψ + μs sin ψ)', s: `P = ${fmt(W)}(sin ${fmt(phi)}° + ${fmt(ms)} cos ${fmt(phi)}°) / (cos ${fmt(psi)}° + ${fmt(ms)} sin ${fmt(psi)}°)`, r: `P = ${fmt(upMax)} ${F}` });
+      out.push({ k: 'P to hold the block', v: P, u: F, hl: true }, { k: 'Largest P before it slides up', v: isFinite(upMax) ? upMax : 0, u: isFinite(upMax) ? F : `${F} (never)` }, { k: 'Normal force N', v: N, u: F }, { k: 'Friction force F', v: ms * N, u: F });
+      return res(`Hold with P = ${fmt(P)} ${F}`, 'ok', out, S, Object.assign(geo, { P, N, Ff: ms * N, fUp: true, moving: false }), warn);
+    }
+    // push or pull it up the slope
+    if (!isFinite(upMax)) return fail(`P at ${fmt(psi)}° from the slope cannot move the block up. Use a smaller angle.`);
+    const Nst = W * cp - upMax * sv;
+    S.add({ t: 'Force to start it moving up', n: 'Motion up the slope is about to happen, so F = μs N acts down the slope.', f: '+↗ ΣF_x = 0;  +↖ ΣF_y = 0', s: `P cos ${fmt(psi)}° − ${fmt(W)} sin ${fmt(phi)}° − ${fmt(ms)} N = 0;   N − ${fmt(W)} cos ${fmt(phi)}° + P sin ${fmt(psi)}° = 0`, r: `P = ${fmt(upMax)} ${F}` });
+    if (!(Nst > 0)) return fail('P lifts the block off the slope before it moves. Use a smaller angle for P.');
+    const ma = Core.convert(mass * acc, base, F), den = cv + mk * sv, Pk = (W * (sp + mk * cp) + ma) / den, N = W * cp - Pk * sv;
+    S.add({ t: acc > 0 ? `Force to keep it accelerating up at ${fmt(acc)} ${U.acc}` : 'Force to keep it moving up at constant speed', n: 'Once it moves, kinetic friction F = μk N acts down the slope.', f: acc > 0 ? '+↗ ΣF_x = m a' : '+↗ ΣF_x = 0 (constant speed)', s: `P cos ${fmt(psi)}° − ${fmt(W)} sin ${fmt(phi)}° − ${fmt(mk)} N = ${acc > 0 ? `${fmt(mass)} ${mU} × ${fmt(acc)} = ${fmt(ma)} ${F}` : '0'};   N = ${fmt(W)} cos ${fmt(phi)}° − P sin ${fmt(psi)}°`, r: `P = ${fmt(Pk)} ${F}, N = ${fmt(N)} ${F}` });
+    if (!(N > 0)) return fail('P lifts the block off the slope. Use a smaller angle for P.');
+    out.push({ k: 'P to keep it moving up', v: Pk, u: F, hl: true }, { k: 'P to start it moving up', v: upMax, u: F }, { k: 'Normal force N', v: N, u: F }, { k: 'Kinetic friction F', v: mk * N, u: F });
+    return res(`Push up with P = ${fmt(Pk)} ${F}`, 'ok', out, S, Object.assign(geo, { P: Pk, N, Ff: mk * N, fUp: false, a: acc, moving: true }), warn);
   }
 
   /* ------------------------------------------------------------------ */
@@ -241,12 +316,12 @@
   /* ------------------------------------------------------------------ */
   /* Units                                                              */
   /* ------------------------------------------------------------------ */
-  const LEN = new Set(['b', 'H', 'hP', 'L', 's', 'a', 'xW']), SML = new Set(['r', 'l']), FOR = new Set(['W', 'P', 'Wp', 'T']), MAS = new Set(['m', 'mp']);
+  const LEN = new Set(['b', 'H', 'hP', 'L', 's', 'a', 'xW', 'd', 'acc']), SML = new Set(['r', 'l']), FOR = new Set(['W', 'P', 'Wp', 'T']), MAS = new Set(['m', 'mp']);
   function convertState(st, from, to) {
     if (from === to) return st;
     const { convert, twin, UNITS } = Core;
     const kL = convert(1, UNITS[from].len, UNITS[to].len), kS = convert(1, UNITS[from].lenS, UNITS[to].lenS), f1 = twin(st.fu, to), kF = convert(1, st.fu, f1), kM = convert(1, from === 'SI' ? 'kg' : 'slug', to === 'SI' ? 'kg' : 'slug');
-    ['bk', 'ld', 'wd', 'sc', 'bt'].forEach((g) => {
+    ['bk', 'ic', 'ld', 'wd', 'sc', 'bt'].forEach((g) => {
       const o = st[g]; if (!o) return;
       Object.keys(o).forEach((k) => {
         const v = o[k]; if (typeof v !== 'number') return;

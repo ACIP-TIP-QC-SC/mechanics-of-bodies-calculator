@@ -43,7 +43,8 @@
     clear() { this.faces = []; this.lines = []; this.labels = []; this.dims = []; }
 
     /* ---------- scene building ---------- */
-    face(pts, fill, alpha = 1, stroke = null, lw = 1) { this.faces.push({ pts, fill, alpha, stroke, lw }); }
+    /** layer: faces in a lower layer are always painted first (use -1 for floors and ground slabs). */
+    face(pts, fill, alpha = 1, stroke = null, lw = 1, layer = 0) { this.faces.push({ pts, fill, alpha, stroke, lw, layer }); }
     line(pts, color = '#222', lw = 1.5, dash = null) { this.lines.push({ pts, color, lw, dash }); }
     label(p, text, color = '#111') { this.labels.push({ p, text, color }); }
     /** Dimension line between 3D points a and b, shifted by the 3D offset vector `off`. */
@@ -62,21 +63,21 @@
         [P(x0, y0, z0), P(x1, y0, z0), P(x1, y0, z1), P(x0, y0, z1)], // bottom
         [P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1)], // top
       ];
-      f.forEach((q, i) => { if (opts.noTop && i === 5) return; this.face(q, fill, alpha, stroke); });
+      f.forEach((q, i) => { if (opts.noTop && i === 5) return; this.face(q, fill, alpha, stroke, 1, opts.layer || 0); });
     }
     /** Extrude a 2D polygon in the x–y plane between z0 and z1. */
     extrude(poly, z0, z1, fill, alpha = 1, stroke = null, opts = {}) {
       const n = poly.length;
       if (n < 2) return;
       if (opts.caps !== false && n >= 3) {
-        this.face(poly.map((p) => [p[0], p[1], z0]), fill, alpha, stroke);
-        this.face(poly.map((p) => [p[0], p[1], z1]), fill, alpha, stroke);
+        this.face(poly.map((p) => [p[0], p[1], z0]), fill, alpha, stroke, 1, opts.layer || 0);
+        this.face(poly.map((p) => [p[0], p[1], z1]), fill, alpha, stroke, 1, opts.layer || 0);
       }
       const m = opts.open ? n - 1 : n;
       for (let i = 0; i < m; i++) {
         const a = poly[i], b = poly[(i + 1) % n];
         if (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-9) continue;
-        this.face([[a[0], a[1], z0], [b[0], b[1], z0], [b[0], b[1], z1], [a[0], a[1], z1]], fill, alpha, opts.sideStroke === undefined ? stroke : opts.sideStroke);
+        this.face([[a[0], a[1], z0], [b[0], b[1], z0], [b[0], b[1], z1], [a[0], a[1], z1]], fill, alpha, opts.sideStroke === undefined ? stroke : opts.sideStroke, 1, opts.layer || 0);
       }
     }
     /** Extrude a polygon given in the x–z plane between heights y0 and y1. */
@@ -151,7 +152,7 @@
         const shade = 0.62 + 0.38 * Math.abs(dot(nrm, L));
         return { f, pp, z: zs / pp.length, shade };
       });
-      items.sort((a, b) => a.z - b.z);
+      items.sort((a, b) => (a.f.layer || 0) - (b.f.layer || 0) || a.z - b.z);
       for (const it of items) {
         const { f, pp, shade } = it;
         ctx.beginPath();
@@ -189,10 +190,15 @@
         ctx.fillStyle = d.color; ctx.textAlign = 'center'; ctx.fillText(d.text, mx, my + 4); ctx.textAlign = 'start';
       }
       ctx.font = '600 12px system-ui, sans-serif';
+      // labels: nudged up or down, a line at a time, so that no two of them sit on top of each other
+      const placed = [], hit = (x, y, w) => placed.some((r) => x < r.x + r.w + 3 && x + w + 3 > r.x && y - 12 < r.y && y > r.y - 12);
       for (const lb of this.labels) {
-        const q = this.project(lb.p);
-        ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.strokeText(lb.text, q[0] + 4, q[1] - 4);
-        ctx.fillStyle = lb.color; ctx.fillText(lb.text, q[0] + 4, q[1] - 4);
+        const q = this.project(lb.p), w = ctx.measureText(lb.text).width;
+        let x = Math.max(4, Math.min(q[0] + 4, cv.clientWidth - w - 4)), y = q[1] - 4;
+        for (let k = 1; k <= 8 && hit(x, y, w); k++) { const dy = Math.ceil(k / 2) * 14 * (k % 2 ? 1 : -1); if (!hit(x, q[1] - 4 + dy, w)) { y = q[1] - 4 + dy; break; } }
+        placed.push({ x, y, w });
+        ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.strokeText(lb.text, x, y);
+        ctx.fillStyle = lb.color; ctx.fillText(lb.text, x, y);
       }
       // axis gizmo
       const gx = 46, gy = h - 40, s = 26;

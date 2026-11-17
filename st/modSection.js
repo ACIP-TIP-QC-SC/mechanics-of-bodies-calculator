@@ -201,9 +201,9 @@
     sec.outlines.forEach((o) => { if (o.sign < 0) D.poly(o.pts, { fill: '#fbfcfd', stroke: EDGE, sw: 1.3, dash: '5 3' }); });
     // given axes through the origin
     const ax = ext * 0.14;
-    D.line([bounds.xmin + mg * 0.3, 0], [bounds.xmax - mg * 0.3, 0], { stroke: COL.dim, sw: 1.1 });
-    D.line([0, bounds.ymin + mg * 0.3], [0, bounds.ymax - mg * 0.3], { stroke: COL.dim, sw: 1.1 });
-    D.head(D.X(bounds.xmax - mg * 0.3), D.Y(0), 1, 0, COL.dim, 8); D.head(D.X(0), D.Y(bounds.ymax - mg * 0.3), 0, -1, COL.dim, 8);
+    D.line([bounds.xmin + mg * 0.3, 0], [bounds.xmax - mg * 0.3, 0], { stroke: COL.axis, sw: 1.1 });
+    D.line([0, bounds.ymin + mg * 0.3], [0, bounds.ymax - mg * 0.3], { stroke: COL.axis, sw: 1.1 });
+    D.head(D.X(bounds.xmax - mg * 0.3), D.Y(0), 1, 0, COL.axis, 8); D.head(D.X(0), D.Y(bounds.ymax - mg * 0.3), 0, -1, COL.axis, 8);
     D.text([bounds.xmax - mg * 0.3, 0], 'x', { dx: 4, dy: 14, color: COL.dim, weight: 700 }); D.text([0, bounds.ymax - mg * 0.3], 'y', { dx: 7, dy: 4, color: COL.dim, weight: 700 });
     D.text([0, 0], 'O', { dx: -12, dy: 14, color: COL.dim, size: 11 });
     // part numbers
@@ -232,8 +232,8 @@
     const xs = all.map((p) => p[0]), ys = all.map((p) => p[1]), ext = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1e-9), mg = ext * 0.16;
     const bounds = { xmin: Math.min(...xs) - mg, xmax: Math.max(...xs) + mg, ymin: Math.min(...ys) - mg, ymax: Math.max(...ys) + mg };
     const D = UI.Draw2D(svg, bounds, { pad: 46 });
-    D.line([bounds.xmin, 0], [bounds.xmax, 0], { stroke: COL.dim, sw: 1 }); D.line([0, bounds.ymin], [0, bounds.ymax], { stroke: COL.dim, sw: 1 });
-    D.head(D.X(bounds.xmax), D.Y(0), 1, 0, COL.dim, 8); D.head(D.X(0), D.Y(bounds.ymax), 0, -1, COL.dim, 8);
+    D.line([bounds.xmin, 0], [bounds.xmax, 0], { stroke: COL.axis, sw: 1 }); D.line([0, bounds.ymin], [0, bounds.ymax], { stroke: COL.axis, sw: 1 });
+    D.head(D.X(bounds.xmax), D.Y(0), 1, 0, COL.axis, 8); D.head(D.X(0), D.Y(bounds.ymax), 0, -1, COL.axis, 8);
     D.text([bounds.xmax, 0], 'x', { dx: -4, dy: 15, color: COL.dim, weight: 700, anchor: 'end' }); D.text([0, bounds.ymax], 'y', { dx: 8, dy: 10, color: COL.dim, weight: 700 });
     paths.forEach((pts) => D.pline(pts, { stroke: COL.cable, sw: 4 }));
     g.rows.forEach((r, i) => {
@@ -265,8 +265,8 @@
     const D = UI.Draw2D(svg, bounds, { pad: 46 });
     g.rows.forEach((r, i) => { if (r.sign > 0) D.poly(polys[i], { fill: FILL, stroke: EDGE, sw: 1.5 }); });
     g.rows.forEach((r, i) => { if (r.sign < 0) D.poly(polys[i], { fill: '#fbfcfd', fop: 0.75, stroke: EDGE, sw: 1.3, dash: '5 3' }); });
-    D.line([bounds.xmin, 0], [bounds.xmax, 0], { stroke: COL.dim, sw: 1 }); D.line([0, bounds.ymin], [0, bounds.ymax], { stroke: COL.dim, sw: 1, dash: '9 3 2 3' });
-    D.head(D.X(bounds.xmax), D.Y(0), 1, 0, COL.dim, 8); D.head(D.X(0), D.Y(bounds.ymax), 0, -1, COL.dim, 8);
+    D.line([bounds.xmin, 0], [bounds.xmax, 0], { stroke: COL.axis, sw: 1 }); D.line([0, bounds.ymin], [0, bounds.ymax], { stroke: COL.axis, sw: 1, dash: '9 3 2 3' });
+    D.head(D.X(bounds.xmax), D.Y(0), 1, 0, COL.axis, 8); D.head(D.X(0), D.Y(bounds.ymax), 0, -1, COL.axis, 8);
     D.text([bounds.xmax, 0], 'x', { dx: -4, dy: 15, color: COL.dim, weight: 700, anchor: 'end' }); D.text([0, bounds.ymax], 'z', { dx: 8, dy: 10, color: COL.dim, weight: 700 });
     g.rows.forEach((r, i) => D.dot([r.x, r.z], '#2f7fc1', opt.showP ? `${i + 1}: z̃ = ${fmt(r.z)}` : String(i + 1), { r: 4, dx: 8, dy: 4 }));
     D.dot([g.c[0], g.c[2]], CCOL, opt.showP ? `G (${fmt(g.c[0])}, ${fmt(g.c[1])}, ${fmt(g.c[2])}) ${Lu}` : 'G', { r: 6.5, dx: -10, dy: -8, anchor: 'end' });
@@ -280,7 +280,7 @@
     D.poly(pf, { fill: FILL, stroke: EDGE, sw: 1.6 });
     D.line([0, zmin - mg * 1.4], [0, zmax + mg * 0.8], { stroke: COL.cable, sw: 1.4, dash: '12 4 2 4' });
     D.head(D.X(0), D.Y(zmax + mg * 0.8), 0, -1, COL.cable, 8); D.text([0, zmax + mg * 0.8], 'z (axis of revolution)', { dx: 8, dy: 6, color: COL.cable, size: 11.5 });
-    D.line([0, zmin - mg * 0.6], [rmax + mg * 0.8, zmin - mg * 0.6], { stroke: COL.dim, sw: 1 }); D.head(D.X(rmax + mg * 0.8), D.Y(zmin - mg * 0.6), 1, 0, COL.dim, 8);
+    D.line([0, zmin - mg * 0.6], [rmax + mg * 0.8, zmin - mg * 0.6], { stroke: COL.axis, sw: 1 }); D.head(D.X(rmax + mg * 0.8), D.Y(zmin - mg * 0.6), 1, 0, COL.axis, 8);
     D.text([rmax + mg * 0.8, zmin - mg * 0.6], 'r', { dx: -2, dy: 15, color: COL.dim, weight: 700, anchor: 'end' });
     if (g.sub === 'polygon') pf.forEach((p, i) => D.dot(p, EDGE, String(i + 1), { r: 3, dx: 6, dy: -5 }));
     const zc = g.sub === 'polygon' ? Section.polyProps(pf).Sx / Section.polyProps(pf).A : 0, C0 = [g.rbarA, zc];
@@ -331,9 +331,9 @@
   }
   function axes3(v, L, names) {
     // book axes (x, y, z) are drawn as view (x, z, y) when z is the vertical axis
-    arrow3(v, [0, 0, 0], [L, 0, 0], COL.dim, 1.4); v.label([L * 1.06, 0, 0], names[0], COL.dim);
-    arrow3(v, [0, 0, 0], [0, L, 0], COL.dim, 1.4); v.label([0, L * 1.06, 0], names[1], COL.dim);
-    arrow3(v, [0, 0, 0], [0, 0, L], COL.dim, 1.4); v.label([0, 0, L * 1.06], names[2], COL.dim);
+    arrow3(v, [0, 0, 0], [L, 0, 0], COL.axis, 1.4); v.label([L * 1.06, 0, 0], names[0], COL.axis);
+    arrow3(v, [0, 0, 0], [0, L, 0], COL.axis, 1.4); v.label([0, L * 1.06, 0], names[1], COL.axis);
+    arrow3(v, [0, 0, 0], [0, 0, L], COL.axis, 1.4); v.label([0, 0, L * 1.06], names[2], COL.axis);
   }
   function drawLine3D(v, res, U, opt) {
     const g = res.geo, paths = g.rows.map(segPts), all = paths.flat();
@@ -363,9 +363,9 @@
     const anyHole = g.rows.some((r) => r.sign < 0); opt = Object.assign({ _solid: anyHole ? 0.55 : 1 }, opt);
     g.rows.forEach((r) => { if (r.sign < 0) paint(r, true); });
     g.rows.forEach((r) => { if (r.sign > 0) paint(r, false); });
-    arrow3(v, [0, 0, 0], [ext * 0.9, 0, 0], COL.dim, 1.3); v.label([ext * 0.95, 0, 0], 'x', COL.dim);
-    arrow3(v, [0, -ext * 0.2, 0], [0, ext * 1.25, 0], COL.dim, 1.3); v.label([0, ext * 1.3, 0], 'z', COL.dim);
-    arrow3(v, [0, 0, 0], [0, 0, -ext * 0.9], COL.dim, 1.3); v.label([0, 0, -ext * 0.95], 'y', COL.dim);
+    arrow3(v, [0, 0, 0], [ext * 0.9, 0, 0], COL.axis, 1.3); v.label([ext * 0.95, 0, 0], 'x', COL.axis);
+    arrow3(v, [0, -ext * 0.2, 0], [0, ext * 1.25, 0], COL.axis, 1.3); v.label([0, ext * 1.3, 0], 'z', COL.axis);
+    arrow3(v, [0, 0, 0], [0, 0, -ext * 0.9], COL.axis, 1.3); v.label([0, 0, -ext * 0.95], 'y', COL.axis);
     const G = [g.c[0], g.c[2], -g.c[1]];
     v.circle(G[0], G[1], G[2], ext * 0.03, CCOL, 4, 16);
     v.label(G, opt.showP ? `G: z̄ = ${fmt(g.c[2])} ${g.Lu}` : 'G', CCOL);
