@@ -6,7 +6,7 @@ const R = (p) => require(path.join(__dirname, '..', p));
 const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/internal.js');
 const Forces = R('st/forces.js'), Equil = R('st/equil.js'), Truss = R('st/truss.js'), Friction = R('st/friction.js');
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
-const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js'), Torsion = R('md/torsion.js'), BeamStress = R('md/beamstress.js'), Deflect = R('md/deflect.js'), Transform = R('md/transform.js'), Combined = R('md/combined.js');
+const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js'), Torsion = R('md/torsion.js'), BeamStress = R('md/beamstress.js'), Deflect = R('md/deflect.js'), Transform = R('md/transform.js'), Combined = R('md/combined.js'), Buckle = R('md/buckle.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
 const filter = (process.argv[2] || '').toLowerCase();
@@ -729,6 +729,41 @@ group('combined loadings module', () => {
   const a = out(Combined.solve(st, U.SI), 'Shear stress τ_xz');
   Combined.convertState(st, 'SI', 'US'); close('τ in ksi', out(Combined.solve(st, U.US), 'Shear stress τ_xz'), a * 0.145038, 1e-4);
   Combined.convertState(st, 'US', 'SI'); close('τ after the round trip', out(Combined.solve(st, U.SI), 'Shear stress τ_xz'), a, 1e-4);
+});
+
+group('buckling module', () => {
+  const bk = (o, sys) => Buckle.solve(Core.deepMerge(Buckle.defaults(), o), U[sys || 'SI']);
+  const ax = (sup, n, K) => ({ sup, n: n || 1, K: K || 1 });
+  // Example 17.1: W8×31, pinned, 12 ft; it yields first
+  let r = bk({ fu: 'kip', L: 12, sec: { src: 'W', W: 'W8×31' }, ax: ax('pp'), ay: ax('pp'), E: 29000, sY: 50, FS: 1 }, 'US');
+  close('17.1 P_cr about y', out(r, 'Critical load about y, (P_cr)_y'), 512); close('17.1 σ_cr', out(r, 'Critical stress σ_cr'), 56.1); close('17.1 P = σY A', out(r, 'Largest load P'), 456.5);
+  truthy('17.1 yields first', (r.out.find((o) => o.k === 'Yields before it buckles') || {}).v === 'Yes' && /y–y/.test((r.out.find((o) => o.k === 'Buckling axis') || {}).v));
+  // Example 17.2: braced aluminium column
+  r = bk({ fu: 'kN', L: 5, sec: { src: 'given', A: 7500, Ix: 61.3e6, Iy: 23.2e6 }, ax: ax('fr'), ay: ax('fp'), E: 70, sY: 215, FS: 3 });
+  close('17.2 (P_cr)_x', out(r, 'Critical load about x, (P_cr)_x'), 424); close('17.2 (P_cr)_y', out(r, 'Critical load about y, (P_cr)_y'), 1310); close('17.2 P_allow', out(r, 'Allowable load P_allow'), 141); close('17.2 σ_cr', out(r, 'Critical stress σ_cr'), 56.5);
+  // Example 17.3: W6×15 fixed at both ends, braced at mid-height about y
+  r = bk({ fu: 'kip', L: 24, sec: { src: 'W', W: 'W6×15' }, ax: ax('ff'), ay: ax('fp', 2), E: 29000, sY: 60, FS: 1 }, 'US');
+  close('17.3 (KL)_y = 8.40 ft', out(r, 'Effective length about y, (KL)_y'), 8.4); close('17.3 (P_cr)_x', out(r, 'Critical load about x, (P_cr)_x'), 401.7); close('17.3 (P_cr)_y', out(r, 'Critical load about y, (P_cr)_y'), 262.5); close('17.3 σ_cr', out(r, 'Critical stress σ_cr'), 59.3); close('17.3 P', out(r, 'Largest load P'), 262.5);
+  // F17-1 and F17-4
+  r = bk({ fu: 'kip', L: 50 / 12, sec: { src: 'shape', shape: 'circle', d: 1 }, ax: ax('ff'), ay: ax('ff'), E: 29000, sY: 36, FS: 1 }, 'US');
+  close('F17-1 P_cr', out(r, 'Critical load P_cr'), 22.5);
+  r = bk({ fu: 'kN', L: 5, sec: { src: 'shape', shape: 'tube', d: 50, di: 30 }, ax: ax('ff'), ay: ax('ff'), E: 200, sY: 250, FS: 1 });
+  close('F17-4 P_cr', out(r, 'Critical load P_cr'), 84.3);
+  r = bk({ fu: 'kip', L: 12, sec: { src: 'shape', shape: 'rect', b: 2, h: 4 }, ax: ax('pp'), ay: ax('pp'), E: 1600, sY: 5, FS: 1 }, 'US');
+  close('F17-2 P_cr (weak axis)', out(r, 'Critical load P_cr'), 2.03);
+  // sizing and length, the reverse of F17-1
+  r = bk({ task: 'size', fu: 'kip', P: 22.48, L: 50 / 12, sec: { src: 'shape', shape: 'circle' }, ax: ax('ff'), ay: ax('ff'), E: 29000, sY: 36, FS: 1 }, 'US');
+  close('size: d = 1 in.', out(r, 'Required diameter d'), 1, 0.002);
+  r = bk({ task: 'length', fu: 'kip', P: 22.48, sec: { src: 'shape', shape: 'circle', d: 1 }, ax: ax('ff'), ay: ax('ff'), E: 29000, sY: 36, FS: 1 }, 'US');
+  close('length: 50 in.', out(r, 'Largest length L'), 50 / 12, 0.002);
+  r = bk({ task: 'size', fu: 'kip', P: 250, L: 24, sec: { src: 'W' }, ax: ax('ff'), ay: ax('fp', 2), E: 29000, sY: 60, FS: 1 }, 'US');
+  truthy('size: W6×15 is the lightest for 17.3 at 250 kip', (r.out.find((o) => o.k === 'Lightest W shape') || {}).v === 'W6×15');
+  truthy('K = 0 fails', !bk({ ax: { sup: 'k', n: 1, K: 0 } }).ok);
+  // unit round trip
+  const st = Core.deepMerge(Buckle.defaults(), {});
+  const a = out(Buckle.solve(st, U.SI), 'Allowable load P_allow');
+  Buckle.convertState(st, 'SI', 'US'); close('P_allow in kip', out(Buckle.solve(st, U.US), 'Allowable load P_allow'), a * 0.224809, 1e-4);
+  Buckle.convertState(st, 'US', 'SI'); close('P_allow after the round trip', out(Buckle.solve(st, U.SI), 'Allowable load P_allow'), a, 1e-4);
 });
 
 groups.forEach(([name, fn]) => { if (filter && !name.toLowerCase().includes(filter)) return; console.log(name); fn(); });
