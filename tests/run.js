@@ -6,7 +6,7 @@ const R = (p) => require(path.join(__dirname, '..', p));
 const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/internal.js');
 const Forces = R('st/forces.js'), Equil = R('st/equil.js'), Truss = R('st/truss.js'), Friction = R('st/friction.js');
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
-const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js'), Torsion = R('md/torsion.js'), BeamStress = R('md/beamstress.js');
+const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js'), Torsion = R('md/torsion.js'), BeamStress = R('md/beamstress.js'), Deflect = R('md/deflect.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
 const filter = (process.argv[2] || '').toLowerCase();
@@ -578,6 +578,56 @@ group('beam stresses module', () => {
   BeamStress.convertState(st, 'SI', 'US'); const b = out(BeamStress.solve(st, U.US), 'Absolute maximum bending stress σ_max');
   BeamStress.convertState(st, 'US', 'SI'); close('σ_max in ksi', b, a / 6.894757, 1e-4); close('σ_max after the round trip', out(BeamStress.solve(st, U.SI), 'Absolute maximum bending stress σ_max'), a, 1e-5);
   truthy('flange thicker than the depth fails', !bs({ mode: 'flexure', sec: { src: 'shape', shape: 'T', bf: 150, d: 20, tf: 30, tw: 30 }, ld: { src: 'given', M: 10 } }).ok);
+});
+
+group('beam deflection module', () => {
+  const Ld = (kind, o) => Object.assign({ kind, x: 0, P: 0, M: 0, dir: 'ccw', x1: 0, x2: 0, w1: 0, w2: 0 }, o), sp = (type, x) => ({ type, x });
+  const df = (o, sys) => Deflect.solve(Core.deepMerge(Deflect.defaults(), o), U[sys || 'SI']);
+  const ss = (l) => [sp('pin', 0), sp('roller', l)];
+  // Example 16.1: triangular load peaking at midspan, v_max = w0 L⁴/(120EI)
+  let r = df({ ei: 'unit', at: 3, bm: { L: 6, sups: ss(6), loads: [Ld('dist', { x1: 0, x2: 3, w1: 0, w2: 1 }), Ld('dist', { x1: 3, x2: 6, w1: 1, w2: 0 })] } });
+  close('16.1 v_max = w0L⁴/120EI', out(r, 'Largest deflection v_max'), -(6 ** 4) / 120); close('16.1 at midspan', out(r, 'Where the deflection is largest, x'), 3);
+  // Example 16.2: W12×26 cantilever
+  r = df({ fu: 'kip', ei: 'num', Isrc: 'W', W: 'W12×26', E: 29000, at: 0, bm: { L: 15, sups: [sp('fixed', 15)], loads: [Ld('point', { x: 0, P: 6 })] } }, 'US');
+  close('16.2 θ_A', out(r, 'Slope at the point θ'), 0.0164); close('16.2 v_A', out(r, 'Deflection at the point v'), -1.97);
+  // Example 16.3
+  r = df({ ei: 'unit', at: 1.633, bm: { L: 3, sups: ss(3), loads: [Ld('point', { x: 2, P: 6 })] } });
+  close('16.3 v_max', out(r, 'Largest deflection v_max'), -2.90); close('16.3 x', out(r, 'Where the deflection is largest, x'), 1.633); close('16.3 A_y', out(r, 'Reaction at A, A_y'), 2);
+  // Example 16.4: overhang
+  r = df({ ei: 'unit', at: 3, bm: { L: 3, sups: [sp('pin', 0), sp('roller', 2)], loads: [Ld('point', { x: 3, P: 4 })] } });
+  close('16.4 v_C', out(r, 'Deflection at the point v'), -4); close('16.4 A_y', out(r, 'Reaction at A, A_y'), -2);
+  // Example 16.7 by superposition
+  const b167 = { L: 8, sups: ss(8), loads: [Ld('dist', { x1: 0, x2: 4, w1: 2, w2: 2 }), Ld('point', { x: 4, P: 8 })] };
+  close('16.7 v_C', out(df({ mode: 'super', ei: 'unit', at: 4, bm: b167 }), 'Deflection at the point v'), -138.67); close('16.7 θ_A', out(df({ mode: 'super', ei: 'unit', at: 0, bm: b167 }), 'Slope at the point θ'), -56);
+  // Example 16.8: triangular load on a cantilever, unloaded tip
+  close('16.8 v_C', out(df({ mode: 'super', ei: 'unit', at: 8, bm: { L: 8, sups: [sp('fixed', 0)], loads: [Ld('dist', { x1: 0, x2: 6, w1: 4, w2: 0 })] } }), 'Deflection at the point v'), -244.8);
+  // Appendix D checks (L = 6, EI = 1)
+  const ad = (sups, q, at) => out(df({ ei: 'unit', at, bm: { L: 6, sups, loads: [q] } }), 'Deflection at the point v');
+  close('App. D: SS, P at midspan', ad(ss(6), Ld('point', { x: 3, P: 1 }), 3), -(6 ** 3) / 48);
+  close('App. D: SS, uniform', ad(ss(6), Ld('dist', { x1: 0, x2: 6, w1: 1, w2: 1 }), 3), (-5 * 6 ** 4) / 384);
+  close('App. D: SS, w on left half at L/2', ad(ss(6), Ld('dist', { x1: 0, x2: 3, w1: 1, w2: 1 }), 3), (-5 * 6 ** 4) / 768);
+  close('App. D: cantilever, P at tip', ad([sp('fixed', 0)], Ld('point', { x: 6, P: 1 }), 6), -(6 ** 3) / 3);
+  close('App. D: cantilever, uniform', ad([sp('fixed', 0)], Ld('dist', { x1: 0, x2: 6, w1: 1, w2: 1 }), 6), -(6 ** 4) / 8);
+  close('App. D: cantilever, couple at tip', ad([sp('fixed', 0)], Ld('couple', { x: 6, M: 1, dir: 'ccw' }), 6), 36 / 2);
+  close('App. D: cantilever, w on half next to wall', ad([sp('fixed', 0)], Ld('dist', { x1: 0, x2: 3, w1: 1, w2: 1 }), 6), (-7 * 6 ** 4) / 384);
+  r = df({ ei: 'unit', at: 6, bm: { L: 6, sups: ss(6), loads: [Ld('couple', { x: 6, M: 1, dir: 'ccw' })] } });
+  close('App. D: SS, couple at end, θ₂ = M0L/3EI', out(r, 'Slope at the point θ'), 2); close('App. D: SS, couple, v_max', out(r, 'Largest deflection v_max'), -36 / (9 * Math.sqrt(3)));
+  // Example 16.12 and the standard indeterminate beams
+  r = df({ mode: 'indet', fu: 'kip', ei: 'unit', at: 6, bm: { L: 12, sups: [sp('fixed', 0), sp('fixed', 12)], loads: [Ld('dist', { x1: 0, x2: 6, w1: 3, w2: 3 })] } }, 'US');
+  close('16.12 M_A', out(r, 'Moment at A, M_A'), 24.75); close('16.12 M_B (clockwise)', out(r, 'Moment at B, M_B'), -11.25);
+  r = df({ mode: 'indet', ei: 'unit', at: 3, bm: { L: 6, sups: [sp('fixed', 0), sp('roller', 6)], loads: [Ld('dist', { x1: 0, x2: 6, w1: 1, w2: 1 })] } });
+  close('propped R_B = 3wL/8', out(r, 'Reaction at B, B_y'), 2.25); close('propped M_A = wL²/8', out(r, 'Moment at A, M_A'), 4.5);
+  r = df({ mode: 'indet', ei: 'unit', at: 3, bm: { L: 6, sups: [sp('fixed', 0), sp('fixed', 6)], loads: [Ld('dist', { x1: 0, x2: 6, w1: 1, w2: 1 })] } });
+  close('fixed-fixed M = wL²/12', out(r, 'Moment at A, M_A'), 3); close('fixed-fixed v = wL⁴/384EI', out(r, 'Deflection at the point v'), -(6 ** 4) / 384);
+  r = df({ mode: 'indet', ei: 'unit', at: 3, bm: { L: 8, sups: [sp('pin', 0), sp('roller', 4), sp('roller', 8)], loads: [Ld('dist', { x1: 0, x2: 8, w1: 1, w2: 1 })] } });
+  close('two spans: end reaction 3wl/8', out(r, 'Reaction at A, A_y'), 1.5); close('two spans: middle reaction 10wl/8', out(r, 'Reaction at B, B_y'), 5);
+  // unit round trip
+  const st = Core.deepMerge(Deflect.defaults(), { ei: 'num', E: 200, I: 100e6, at: 2, bm: { L: 6, sups: ss(6), loads: [Ld('dist', { x1: 0, x2: 6, w1: 20, w2: 20 })] } });
+  const a = out(Deflect.solve(st, U.SI), 'Largest deflection v_max');
+  close('v_max = 5wL⁴/384EI', a, (-5 * 20e3 * 6 ** 4) / (384 * 200e9 * 100e-6) * 1000);
+  Deflect.convertState(st, 'SI', 'US'); close('v_max in inches', out(Deflect.solve(st, U.US), 'Largest deflection v_max'), a / 25.4, 1e-4);
+  Deflect.convertState(st, 'US', 'SI'); close('v_max after the round trip', out(Deflect.solve(st, U.SI), 'Largest deflection v_max'), a, 1e-4);
+  truthy('a beam on one pin fails', !df({ ei: 'unit', at: 2, bm: { L: 4, sups: [sp('pin', 0)], loads: [Ld('point', { x: 2, P: 5 })] } }).ok);
 });
 
 groups.forEach(([name, fn]) => { if (filter && !name.toLowerCase().includes(filter)) return; console.log(name); fn(); });
