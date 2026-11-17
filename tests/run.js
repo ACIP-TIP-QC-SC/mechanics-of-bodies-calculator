@@ -6,7 +6,7 @@ const R = (p) => require(path.join(__dirname, '..', p));
 const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/internal.js');
 const Forces = R('st/forces.js'), Equil = R('st/equil.js'), Truss = R('st/truss.js'), Friction = R('st/friction.js');
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
-const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js'), Torsion = R('md/torsion.js'), BeamStress = R('md/beamstress.js'), Deflect = R('md/deflect.js'), Transform = R('md/transform.js');
+const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js'), Torsion = R('md/torsion.js'), BeamStress = R('md/beamstress.js'), Deflect = R('md/deflect.js'), Transform = R('md/transform.js'), Combined = R('md/combined.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
 const filter = (process.argv[2] || '').toLowerCase();
@@ -685,6 +685,50 @@ group('stress transformation module', () => {
   const a = out(Transform.solve(st, U.SI), 'Principal stress σ_1');
   Transform.convertState(st, 'SI', 'US'); close('σ1 in ksi', out(Transform.solve(st, U.US), 'Principal stress σ_1'), a * 0.145038, 1e-4);
   Transform.convertState(st, 'US', 'SI'); close('σ1 after the round trip', out(Transform.solve(st, U.SI), 'Principal stress σ_1'), a, 1e-4);
+});
+
+group('combined loadings module', () => {
+  const cb = (o, sys) => Combined.solve(Core.deepMerge(Combined.defaults(), o), U[sys || 'SI']);
+  // Example 13.1: largest pressure in a cylinder and a sphere
+  let r = cb({ mode: 'vessel', pu: 'psi', vs: { kind: 'cyl', task: 'pmax', r: 24, t: 0.5, sA: 20, N: 0, E: 0 } }, 'US');
+  close('13.1 cylinder p', out(r, 'Largest internal pressure p'), 417); close('13.1 σ2 = 10 ksi', out(r, 'Longitudinal stress σ_2'), 10);
+  r = cb({ mode: 'vessel', pu: 'psi', vs: { kind: 'sphere', task: 'pmax', r: 24, t: 0.5, sA: 20, E: 0 } }, 'US');
+  close('13.1 sphere p', out(r, 'Largest internal pressure p'), 833);
+  // Example 13.3: gas tank with a load on top
+  r = cb({ mode: 'vessel', pu: 'psi', fu: 'kip', vs: { kind: 'cyl', task: 'stress', p: 2, r: 24, t: 0.5, N: -1.5, E: 0 } }, 'US');
+  close('13.3 σ1 = 96.0 psi', out(r, 'Hoop stress σ_1'), 0.096); close('13.3 σ2 = 28.3 psi', out(r, 'Longitudinal stress σ_2'), 0.0283);
+  // Example 14.10 style: absolute maximum shear at the outer wall is σ1/2
+  r = cb({ mode: 'vessel', pu: 'MPa', vs: { kind: 'cyl', task: 'stress', p: 2, r: 400, t: 25, N: 0, E: 0 } });
+  close('cylinder σ1 = 32 MPa', out(r, 'Hoop stress σ_1'), 32); close('τabs = σ1/2', out(r, 'Absolute maximum shear stress τ_abs'), 16); close('in-plane τ = σ1/4', out(r, 'Largest in-plane shear stress'), 8);
+  r = cb({ mode: 'vessel', pu: 'MPa', vs: { kind: 'cyl', task: 'tmin', p: 2, r: 400, sA: 100, E: 0 } }); close('thickness pr/σ', out(r, 'Smallest wall thickness t'), 8);
+  r = cb({ mode: 'vessel', pu: 'MPa', vs: { kind: 'sphere', task: 'stress', p: 2, r: 400, t: 10, E: 200, nu: 0.3 } });
+  close('sphere σ = pr/2t', out(r, 'Wall stress σ_1 = σ_2'), 40); close('sphere δr = (1−ν)σr/E', out(r, 'Change in the inner radius δr'), (0.7 * 40 * 400) / 200000);
+  truthy('r/t below 10 warns', cb({ mode: 'vessel', pu: 'MPa', vs: { kind: 'cyl', task: 'stress', p: 2, r: 40, t: 10, E: 0 } }).warn.length > 0);
+  // Example 13.4: rectangular member, points C (top) and D (centre)
+  const s134 = { shape: 'rect', b: 50, h: 250, N: -16.45, Vy: 0, Vz: 21.93, My: -32.89, Mz: 0, T: 0 };
+  r = cb({ mode: 'section', sc: Object.assign({ pt: 't' }, s134) });
+  close('13.4 σ_C = −64.5 MPa', out(r, 'Normal stress σ_x'), -64.5); close('13.4 τ_C = 0', out(r, 'Shear stress τ_xz'), 0); close('13.4 bending at C', out(r, 'Bending stress from M_y'), -63.16);
+  r = cb({ mode: 'section', sc: Object.assign({ pt: 'c' }, s134) });
+  close('13.4 σ_D = −1.32 MPa', out(r, 'Normal stress σ_x'), -1.316); close('13.4 τ_D = 2.63 MPa', out(r, 'Shear stress τ_xz'), 2.632);
+  // Example 13.5: rod in tension and bending
+  r = cb({ mode: 'section', fu: 'lb', mu: 'lb·in.', sc: { shape: 'circle', d: 1.5, N: 500, Vy: 0, Vz: 0, My: 0, Mz: -7000, T: 0, pt: 'r' } }, 'US');
+  close('13.5 N/A = 0.283 ksi', out(r, 'Normal stress from N'), 0.283); close('13.5 Mc/I = 21.13 ksi', out(r, 'Bending stress from M_z'), 21.13); close('13.5 σ_A = 21.4 ksi', out(r, 'Normal stress σ_x'), 21.4);
+  // Example 13.6: rod in shear, bending and torsion
+  r = cb({ mode: 'section', fu: 'lb', mu: 'lb·in.', sc: { shape: 'circle', d: 1.5, N: 0, Vy: 0, Vz: 800, My: 8000, Mz: 0, T: 11200, pt: 'r' } }, 'US');
+  close('13.6 VQ/It = 0.6036 ksi', out(r, 'Shear stress from V_z (τ_xz)'), 0.6036); close('13.6 Tc/J = 16.90 ksi', out(r, 'Shear stress from T, τ_xz'), 16.90); close('13.6 τ = 17.5 ksi', out(r, 'Shear stress τ_xz'), 17.5); close('13.6 σ_A = 0', out(r, 'Normal stress σ_x'), 0);
+  r = cb({ mode: 'section', sc: { shape: 'tube', d: 100, di: 80, N: 0, Vy: 0, Vz: 0, My: 0, Mz: 0, T: 4, pt: 'ti' } });
+  close('tube inner wall τ = Tc_i/J', out(r, 'Shear stress τ_xy'), (-4e3 * 0.04) / ((Math.PI / 2) * (0.05 ** 4 - 0.04 ** 4)) / 1e6);
+  truthy('a point off the section fails', !cb({ mode: 'section', sc: Object.assign({ pt: 'custom', y: 40, z: 0 }, s134) }).ok);
+  // Example 13.2: eccentric compressive load on a 4 in. × 10 in. member
+  r = cb({ mode: 'eccentric', fu: 'lb', ec: { b: 4, h: 10, P: 150, ey: 0, ez: 5 } }, 'US');
+  close('13.2 σ_C = −15.0 psi', out(r, 'Smallest normal stress'), -0.015); close('13.2 σ_B = 7.50 psi', out(r, 'Largest normal stress'), 0.0075); close('13.2 neutral axis 3.33 in. from B', out(r, 'Distance of the neutral axis from the nearer edge'), 3.333);
+  r = cb({ mode: 'eccentric', ec: { b: 300, h: 300, P: 900, ey: 50, ez: 0 } });
+  close('load on the kern edge: σ_min', out(r, 'Smallest normal stress'), -20); close('load on the kern edge: σ_max = 0', out(r, 'Largest normal stress'), 0); truthy('on the kern edge counts as inside', out(r, 'Load inside the kern') === 'Yes' || (r.out.find((o) => o.k === 'Load inside the kern') || {}).v === 'Yes');
+  // unit round trip
+  const st = Core.deepMerge(Combined.defaults(), { mode: 'section', sc: Object.assign({ pt: 'c' }, s134) });
+  const a = out(Combined.solve(st, U.SI), 'Shear stress τ_xz');
+  Combined.convertState(st, 'SI', 'US'); close('τ in ksi', out(Combined.solve(st, U.US), 'Shear stress τ_xz'), a * 0.145038, 1e-4);
+  Combined.convertState(st, 'US', 'SI'); close('τ after the round trip', out(Combined.solve(st, U.SI), 'Shear stress τ_xz'), a, 1e-4);
 });
 
 groups.forEach(([name, fn]) => { if (filter && !name.toLowerCase().includes(filter)) return; console.log(name); fn(); });
