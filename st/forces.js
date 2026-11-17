@@ -198,7 +198,8 @@
       rows.forEach((r) => S.add({ t: `Moment of ${r.name} about O`, f: `M_O = r × F = | i  j  k ; r_x  r_y  r_z ; F_x  F_y  F_z |`, s: `r = ${vstr(r.r, Lu)},  F = ${vstr(r.v, F)}`, r: `M_O = ${vstr(r.M, FL)}`, n: r.how !== 'given as components' ? r.how : undefined }));
     }
     const MO = clean(rows.reduce((s, r) => add(s, r.M), [0, 0, 0]), sc), MOm = mag(MO);
-    if (rows.length > 1 || !planar) S.add({ t: 'Resultant moment about O', f: 'M_O = Σ(r × F)', r: planar ? `M_O = ${fmt(MO[2])} ${FL} (${MO[2] >= 0 ? 'counterclockwise' : 'clockwise'})` : `M_O = ${vstr(MO, FL)}, |M_O| = ${fmt(MOm)} ${FL}` });
+    if (planar) S.add({ t: 'Check with the moment arm', f: 'M_O = F d, where d is the perpendicular distance from O to the line of action', s: rows.map((r) => `${r.name}: ${fmt(mag(r.v))} × ${mag(r.v) > 0 ? fmt(Math.abs(r.M[2]) / mag(r.v)) : '0'} = ${fmt(Math.abs(r.M[2]))}`).join(';  '), n: 'The sign comes from the sense of rotation the force tends to give about O: counterclockwise is positive.' });
+    S.add({ t: 'Resultant moment about O', f: 'M_O = Σ(r × F)', r: planar ? `M_O = ${fmt(MO[2])} ${FL} (${MO[2] >= 0 ? 'counterclockwise' : 'clockwise'})` : `M_O = ${vstr(MO, FL)}, |M_O| = ${fmt(MOm)} ${FL}` });
     if (planar) out.push({ k: 'Moment about O, M_O (↺ positive)', v: MO[2], u: FL, hl: true });
     else out.push({ k: 'M_O x component', v: MO[0], u: FL }, { k: 'M_O y component', v: MO[1], u: FL }, { k: 'M_O z component', v: MO[2], u: FL }, { k: 'Magnitude |M_O|', v: MOm, u: FL, hl: true });
     let axis = null;

@@ -238,7 +238,7 @@
     D.dot(O, '#1d2733', 'O', { r: 4, dx: -14, dy: 16 });
     if (g.FR > 0) {
       const at = [O[0], O[1]];
-      D.force(at, g.R, len(g.FR), { color: RCOL, w: 3.6, head: 13, label: opt.showP ? `F_R = ${fmt(g.FR)} ${F}` : 'F_R', size: 12.5, ldx: -6, anchor: 'end' });
+      D.force(at, g.R, len(g.FR), { color: RCOL, w: 3.6, head: 13, label: opt.showP ? `F_R = ${fmt(g.FR)} ${F}` : 'F_R', size: 12.5, ldx: D.X(at[0]) < 140 ? 6 : -6, ldy: D.X(at[0]) < 140 ? 16 : -6, anchor: D.X(at[0]) < 140 ? 'start' : 'end' });
       if (g.line) {
         const u = [g.R[0] / g.FR, g.R[1] / g.FR], p = g.R[1] ? [g.line.hit.x, O[1]] : [O[0], g.line.hit.y];
         D.line([p[0] - u[0] * e * 3, p[1] - u[1] * e * 3], [p[0] + u[0] * e * 3, p[1] + u[1] * e * 3], { stroke: MCOL, sw: 1.6, dash: '8 5' });
@@ -251,7 +251,7 @@
   function drawDist(svg, g, opt) {
     const { F, Lu } = g.c, segs = g.segs, xa = Math.min(0, ...segs.map((q) => q.x1)), xb = Math.max(...segs.map((q) => q.x2)), L = xb - xa;
     const { W, H } = Charts.clear(svg), ml = 50, mr = 40, X = (x) => ml + ((x - xa) / L) * (W - ml - mr);
-    const wmax = Math.max(...segs.map((q) => Math.max(Math.abs(q.w1), Math.abs(q.w2))), 1e-300), yb = H * 0.62, hh = Math.min(H * 0.32, 140), Yw = (w) => yb - 8 - (w / wmax) * hh;
+    const wmax = Math.max(...segs.map((q) => Math.max(Math.abs(q.w1), Math.abs(q.w2))), 1e-300), yb = Math.min(H * 0.55, H - 160), hh = Math.min(yb - 50, 150), Yw = (w) => yb - 8 - (w / wmax) * hh;
     const g0 = s('g', {}, svg);
     s('rect', { x: X(xa), y: yb - 8, width: X(xb) - X(xa), height: 16, fill: COL.body, stroke: COL.bodyEdge, 'stroke-width': 1.4 }, g0);
     segs.forEach((q) => {
@@ -269,13 +269,17 @@
     // parts (dashed) and resultant
     g.parts.forEach((p) => s('line', { x1: X(p.x), y1: yb + 14, x2: X(p.x), y2: yb + 30, stroke: '#7f8c8d', 'stroke-width': 1, 'stroke-dasharray': '3 3' }, g0));
     if (g.xbar !== null) {
-      const x = X(g.xbar), down = g.FR > 0, y0 = yb + (down ? 70 : 12), y1 = yb + (down ? 12 : 70);
-      s('line', { x1: x, y1: y0, x2: x, y2: y1 + (down ? -10 : 10), stroke: RCOL, 'stroke-width': 3.4 }, g0);
-      s('polygon', { points: down ? `${x},${y1} ${x - 6},${y1 - 13} ${x + 6},${y1 - 13}` : `${x},${y1} ${x - 6},${y1 + 13} ${x + 6},${y1 + 13}`, fill: RCOL }, g0);
-      T(g0, x + 8, yb + 62, opt.showP ? `F_R = ${fmt(Math.abs(g.FR))} ${F} at x̄ = ${fmt(g.xbar)} ${Lu}` : 'F_R', { color: RCOL, size: 12.5, weight: 700, anchor: x > W * 0.65 ? 'end' : 'start' });
-      s('line', { x1: X(xa), y1: yb + 92, x2: x, y2: yb + 92, stroke: COL.dim, 'stroke-width': 1 }, g0);
-      [X(xa), x].forEach((xx) => s('line', { x1: xx, y1: yb + 86, x2: xx, y2: yb + 98, stroke: COL.dim, 'stroke-width': 1 }, g0));
-      T(g0, (X(xa) + x) / 2, yb + 108, `x̄ = ${fmt(g.xbar - xa)} ${Lu}${xa ? ' from the left end' : ''}`, { anchor: 'middle', color: COL.dim, size: 11.5 });
+      // equivalent loading: the same beam with the single resultant
+      const x = X(g.xbar), down = g.FR > 0, ye = yb + 96;
+      T(g0, X(xa), ye - 44, 'Equivalent resultant', { color: '#5a6b75', size: 11.5, weight: 700 });
+      s('rect', { x: X(xa), y: ye - 6, width: X(xb) - X(xa), height: 12, fill: COL.body, stroke: COL.bodyEdge, 'stroke-width': 1.2, opacity: 0.8 }, g0);
+      const ya = down ? ye - 52 : ye - 6, yh = down ? ye - 6 : ye - 52;
+      s('line', { x1: x, y1: ya, x2: x, y2: yh + (down ? -12 : 12), stroke: RCOL, 'stroke-width': 3.4 }, g0);
+      s('polygon', { points: down ? `${x},${yh} ${x - 6},${yh - 13} ${x + 6},${yh - 13}` : `${x},${yh} ${x - 6},${yh + 13} ${x + 6},${yh + 13}`, fill: RCOL }, g0);
+      T(g0, x + (x > W * 0.65 ? -8 : 8), ye - 30, opt.showP ? `F_R = ${fmt(Math.abs(g.FR))} ${F}${down ? '' : ' (upward)'}` : 'F_R', { color: RCOL, size: 12.5, weight: 700, anchor: x > W * 0.65 ? 'end' : 'start' });
+      s('line', { x1: X(xa), y1: ye + 22, x2: x, y2: ye + 22, stroke: COL.dim, 'stroke-width': 1 }, g0);
+      [X(xa), x].forEach((xx) => s('line', { x1: xx, y1: ye + 16, x2: xx, y2: ye + 28, stroke: COL.dim, 'stroke-width': 1 }, g0));
+      T(g0, (X(xa) + x) / 2, ye + 40, `x̄ = ${fmt(g.xbar - xa)} ${Lu}${xa ? ' from the left end' : ''}`, { anchor: 'middle', color: COL.dim, size: 11.5 });
     }
     const ev = [...new Set([xa, xb].concat(...segs.map((q) => [q.x1, q.x2])))].sort((p, q) => p - q);
     ev.forEach((x) => T(g0, X(x), yb + 24, fmt(x), { anchor: 'middle', color: '#5a6b75', size: 10.5, weight: 400 }));
@@ -360,7 +364,7 @@
       v._hs = L / 30;
       v.box(xa, -d, -w / 2, xb, 0, w / 2, '#b9c2cb', 1, '#4a5661');
       segs.forEach((q) => v.extrude([[q.x1, 0], [q.x1, (q.w1 / wm) * hl], [q.x2, (q.w2 / wm) * hl], [q.x2, 0]], -w / 2, w / 2, '#c0392b', 0.22, '#c0392b'));
-      if (g.xbar !== null) { const sg = g.FR > 0 ? 1 : -1; arrow3(v, [g.xbar, -d - sg * hl * 0.2 - (sg > 0 ? 0 : 0) + (sg > 0 ? -hl * 0.9 : 0), 0].map((x, i) => (i === 1 ? (sg > 0 ? -d - hl * 0.9 : -d - hl * 0.1) : x)), [g.xbar, sg > 0 ? -d - hl * 0.1 : -d - hl * 0.9, 0], RCOL, 3.4); v.label([g.xbar, -d - hl, 0], lab('F_R', Math.abs(g.FR), F), RCOL); }
+      if (g.xbar !== null) { const zf = w * 0.9, top = hl * 1.25, dn = g.FR > 0; arrow3(v, [g.xbar, dn ? top : 0, zf], [g.xbar, dn ? 0 : top, zf], RCOL, 3.4); v.label([g.xbar, top * 1.06, zf], lab('F_R', Math.abs(g.FR), F) + (opt.showP ? ` at x̄ = ${fmt(g.xbar)} ${g.c.Lu}` : ''), RCOL); }
       v.autoBounds(); return;
     }
     // genuinely 3D modes
