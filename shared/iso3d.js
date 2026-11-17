@@ -43,7 +43,9 @@
     clear() { this.faces = []; this.lines = []; this.labels = []; this.dims = []; }
 
     /* ---------- scene building ---------- */
-    /** layer: faces in a lower layer are always painted first (use -1 for floors and ground slabs).
+    /** layer: faces in a lower layer are always painted first (use -1 for floors and ground slabs). It may also be a
+     *  function of facing(n) (> 0 when the normal n points toward the viewer), so that a solid something rests on is
+     *  painted first when the contact plane faces the viewer and last when it faces away (see View3D.restLayer).
      *  out: the outward normal of a face on a closed solid; a face turned away from the viewer is then skipped. */
     face(pts, fill, alpha = 1, stroke = null, lw = 1, layer = 0, out = null) { this.faces.push({ pts, fill, alpha, stroke, lw, layer, out }); }
     line(pts, color = '#222', lw = 1.5, dash = null) { this.lines.push({ pts, color, lw, dash }); }
@@ -155,6 +157,7 @@
       const ctx = this.ctx;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
+      ctx.lineJoin = 'round'; // mitred joins on thin pieces and label halos leave spikes
       this.ox = w / 2; this.oy = h / 2;
       this.sc = ((Math.min(w, h) * 0.46) / this.radius) * this.zoom;
       const L = norm([0.35, 0.85, 0.45]);
@@ -168,10 +171,10 @@
       for (const f of this.faces) {
         if (f.out && f.alpha >= 0.99 && facing(f.out) < -1e-9) continue;
         if (!f._nrm) f._nrm = f.out || faceNormal(f.pts);
-        const shade = 0.62 + 0.38 * Math.abs(dot(f._nrm, L)), layer = useLayer ? f.layer || 0 : 0;
+        const shade = 0.62 + 0.38 * Math.abs(dot(f._nrm, L)), layer = typeof f.layer === 'function' ? f.layer(facing) : useLayer ? f.layer || 0 : 0;
         if (f._maxL !== maxL) { f._sub = f.alpha >= 0.99 ? splitFace(f.pts, maxL) : null; f._maxL = maxL; } // see-through faces stay whole (no seams)
         if (!f._sub) { const { pp, z } = pz(f.pts); items.push({ f, pp, z, shade, layer, stroke: true }); continue; }
-        f._sub.forEach((pc) => { const { pp, z } = pz(pc.pts); items.push({ f, pp, z, shade, layer, seam: true, bnd: f.stroke && pc.bnd.length ? pc.bnd.map((e) => e.map((q) => this.project(q))) : null }); });
+        f._sub.forEach((pc) => { const { pp, z } = pz(pc.pts); items.push({ f, pp, z, shade, layer, seam: pc.inn.map(({ e, s0, s1 }) => [this.project(e[0]), this.project(e[1]), s0, s1]), bnd: f.stroke && pc.bnd.length ? pc.bnd.map((e) => [this.project(e[0]), this.project(e[1]), e[2], e[3]]) : null }); });
       }
       items.sort((a, b) => a.layer - b.layer || a.z - b.z);
       for (const it of items) {
@@ -182,8 +185,21 @@
         const [r, g, b] = hexToRgb(f.fill), col = `rgba(${Math.round(r * shade)},${Math.round(g * shade)},${Math.round(b * shade)},${f.alpha})`;
         ctx.fillStyle = col;
         ctx.fill();
-        if (it.seam && f.alpha >= 0.99) { ctx.strokeStyle = col; ctx.lineWidth = 0.8; ctx.stroke(); }
-        if (it.bnd) { ctx.beginPath(); it.bnd.forEach(([a, b]) => { ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }); ctx.strokeStyle = f.stroke; ctx.lineWidth = f.lw; ctx.lineCap = 'round'; ctx.globalAlpha = Math.min(1, f.alpha + 0.35); ctx.stroke(); ctx.globalAlpha = 1; ctx.lineCap = 'butt'; }
+        if (it.seam && it.seam.length) {
+          ctx.beginPath();
+          it.seam.forEach(([a, b, s0, s1]) => {
+            const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, c = Math.min(0.45, (f.lw * 0.5 + 0.4) / l);
+            const ta = s0 && f.stroke ? c : 0, tb = s1 && f.stroke ? 1 - c : 1;
+            ctx.moveTo(a[0] + (b[0] - a[0]) * ta, a[1] + (b[1] - a[1]) * ta); ctx.lineTo(a[0] + (b[0] - a[0]) * tb, a[1] + (b[1] - a[1]) * tb);
+          }); ctx.strokeStyle = col; ctx.lineWidth = 0.8; ctx.stroke(); }
+        if (it.bnd) {
+          // each outline piece runs a little past its ends along the same edge, over any corner of a neighbouring piece
+          // that was painted later and clipped the line; at the face's own corners it stops
+          ctx.beginPath();
+          it.bnd.forEach(([a, b, ea, eb]) => {
+            const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, x = Math.min(4, l) / l;
+            ctx.moveTo(a[0] - (ea ? dx * x : 0), a[1] - (ea ? dy * x : 0)); ctx.lineTo(b[0] + (eb ? dx * x : 0), b[1] + (eb ? dy * x : 0));
+          }); ctx.strokeStyle = f.stroke; ctx.lineWidth = f.lw; ctx.lineCap = 'round'; ctx.globalAlpha = Math.min(1, f.alpha + 0.35); ctx.stroke(); ctx.globalAlpha = 1; ctx.lineCap = 'butt'; }
         if (it.stroke && f.stroke) { ctx.strokeStyle = f.stroke; ctx.lineWidth = f.lw; ctx.globalAlpha = Math.min(1, f.alpha + 0.35); ctx.stroke(); ctx.globalAlpha = 1; }
       }
       for (const l of this.lines) {
@@ -245,21 +261,34 @@
     const n = pts.length;
     let big = false; for (let i = 0; i < n; i++) if (len3(sub3(pts[(i + 1) % n], pts[i])) > maxL) { big = true; break; }
     if (!big || n < 3 || !convex(pts)) return null;
-    const out = [];
-    if (n === 4) {
+    // each piece keeps its edges on the face outline (bnd, drawn as the outline) apart from the inner ones (inn, painted
+    // over in the fill colour to close hairline gaps), so a neighbour never paints across the outline
+    const pts0 = pts, out = [], piece = (q, fl) => {
+      const bnd = [], inn = [];
+      q.forEach((a, i) => { const b = q[(i + 1) % q.length]; if (len3(sub3(b, a)) > 1e-12) (fl[i] ? bnd : inn).push([a, b]); });
+      const onB = (p) => bnd.some((e) => e[0] === p || e[1] === p); // inner edges that end on the outline stop short of it
+      const corner = (p) => pts0.some((v) => len3(sub3(p, v)) < 1e-9); // outline pieces run on past ends that are not corners
+      out.push({ pts: q, bnd: bnd.map((e) => [e[0], e[1], !corner(e[0]), !corner(e[1])]), inn: inn.map((e) => ({ e, s0: onB(e[0]), s1: onB(e[1]) })) });
+    };
+    if (n === 3) {
+      // a triangle is cut as a quad folded at the vertex opposite its longest side: a clean grid with no T-joints and no
+      // slivers along the outline, so each outline piece meets its neighbours end to end
+      const e = [0, 1, 2].map((i) => len3(sub3(pts[(i + 1) % 3], pts[i]))), k = e.indexOf(Math.max(...e));
+      pts = [pts[k], pts[(k + 1) % 3], pts[(k + 2) % 3], pts[(k + 2) % 3]];
+    }
+    if (pts.length === 4) {
       const nu = Math.min(24, Math.ceil(Math.max(len3(sub3(pts[1], pts[0])), len3(sub3(pts[2], pts[3]))) / maxL)), nv = Math.min(24, Math.ceil(Math.max(len3(sub3(pts[3], pts[0])), len3(sub3(pts[2], pts[1]))) / maxL));
       const P = (u, v) => lerp3(lerp3(pts[0], pts[1], u), lerp3(pts[3], pts[2], u), v);
       for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
-        const q = [P(i / nu, j / nv), P((i + 1) / nu, j / nv), P((i + 1) / nu, (j + 1) / nv), P(i / nu, (j + 1) / nv)], bnd = [];
-        if (j === 0) bnd.push([q[0], q[1]]); if (i === nu - 1) bnd.push([q[1], q[2]]); if (j === nv - 1) bnd.push([q[2], q[3]]); if (i === 0) bnd.push([q[3], q[0]]);
-        out.push({ pts: q, bnd });
+        const q = [P(i / nu, j / nv), P((i + 1) / nu, j / nv), P((i + 1) / nu, (j + 1) / nv), P(i / nu, (j + 1) / nv)];
+        piece(q, [j === 0, i === nu - 1, j === nv - 1, i === 0]);
       }
       return out;
     }
     // fan into triangles, then halve the longest edge until every edge is short; fl marks edges on the outline
     const tri = (a, b, c, fl, d) => {
       const e = [len3(sub3(b, a)), len3(sub3(c, b)), len3(sub3(a, c))], k = e.indexOf(Math.max(...e));
-      if (e[k] <= maxL || d > 9) { const bnd = []; if (fl[0]) bnd.push([a, b]); if (fl[1]) bnd.push([b, c]); if (fl[2]) bnd.push([c, a]); out.push({ pts: [a, b, c], bnd }); return; }
+      if (e[k] <= maxL || d > 9) { piece([a, b, c], fl); return; }
       if (k === 0) { const m = lerp3(a, b, 0.5); tri(a, m, c, [fl[0], false, fl[2]], d + 1); tri(m, b, c, [fl[0], fl[1], false], d + 1); }
       else if (k === 1) { const m = lerp3(b, c, 0.5); tri(a, b, m, [fl[0], fl[1], false], d + 1); tri(a, m, c, [false, fl[1], fl[2]], d + 1); }
       else { const m = lerp3(c, a, 0.5); tri(a, b, m, [fl[0], false, fl[2]], d + 1); tri(m, b, c, [false, fl[1], fl[2]], d + 1); }
@@ -287,5 +316,8 @@
     }
     return norm([nx, ny, nz]);
   }
+  /** Layer for a solid that other things rest on: n is the contact plane's normal pointing toward what rests on it.
+   *  Everything resting lies on the n side of the plane and the solid on the other, so the plane decides the order. */
+  View3D.restLayer = (n, k = 1) => (facing) => (facing(n) > 0 ? -k : k);
   root.View3D = View3D;
 })(window);

@@ -9,7 +9,7 @@
   const { svgEl: s, COL } = UI;
   const T = Charts.text;
   const DEG = Math.PI / 180;
-  const TCOL = '#2f6fb5', CCOL = '#c8442f', ZCOL = '#9aa5ad', DCOL = '#0f8a7e', RCOL = COL.react, LCOL = COL.load, CUTC = '#e67e22';
+  const TCOL = '#2f6fb5', CCOL = '#c8442f', NCOL = '#46525c', ZCOL = '#9aa5ad', DCOL = '#0f8a7e', RCOL = COL.react, LCOL = COL.load, CUTC = '#e67e22';
 
   const M = { id: 'truss', title: 'Trusses', defaults: Truss.defaults, units: 'SI' };
   const S = () => M.state;
@@ -54,16 +54,20 @@
     sec = C.section(c, 'Method of sections');
     C.toggle(sec, { label: 'Cut the truss with a section', get: () => st.cutOn !== false, set: (v) => (st.cutOn = v) });
     if (st.cutOn !== false) C.slider(sec, { label: 'Section position (fraction of the span from the left)', min: 0.01, max: 0.99, step: 0.01, get: () => st.cutF, set: (v) => (st.cutF = v), unit: '', rebuild: true });
-    sec = C.section(c, 'Deflected shape');
-    C.toggle(sec, { label: 'Show the deflected shape', get: () => st.defl !== false, set: (v) => (st.defl = v) });
+    sec = C.section(c, 'Joint displacements');
     C.toggle(sec, { label: 'Use E and A (same for every member)', get: () => !!st.ae.use, set: (v) => (st.ae.use = v) });
     if (st.ae.use) {
       C.num(sec, { label: 'Modulus E', get: () => st.ae.E, set: (v) => (st.ae.E = v), unit: U.modulus });
       C.num(sec, { label: 'Cross-section area A', get: () => st.ae.A, set: (v) => (st.ae.A = v), unit: M.units === 'US' ? 'in²' : 'mm²' });
     } else C.note(sec, 'Without E and A the joint displacements are given as AE × δ, with AE the same for every member.');
-    sec = C.section(c, 'Joint free-body diagram');
-    const res = M._lastNames || [];
-    C.select(sec, { label: 'Show the joint', get: () => st.sel || '', set: (v) => (st.sel = v || null), options: [['', 'None (or click a joint)']].concat(res.map((n) => [n, `Joint ${n}`])) });
+  };
+  /* switches that only change the picture, in the Diagram options bar under the diagram */
+  M.diagram = function (c, C) {
+    const st = S();
+    C.toggle(c, { label: 'Colour members by tension or compression', get: () => st.tcColor !== false, set: (v) => (st.tcColor = v) });
+    C.toggle(c, { label: 'Show the deflected shape', get: () => st.defl !== false, set: (v) => (st.defl = v) });
+    const names = M._lastNames || [];
+    C.select(c, { label: 'Joint free-body diagram', get: () => st.sel || '', set: (v) => (st.sel = v || null), options: [['', 'None (or click a joint)']].concat(names.map((n) => [n, `Joint ${n}`])) });
   };
 
   M.compute = (U) => { const r = Truss.solve(S(), U); M._lastNames = r.ok ? r.geo.J.map((j) => j.name) : M._lastNames; return r; };
@@ -72,8 +76,9 @@
   const showDefl = () => S().defl !== false;
   M.cap2D = () => (showDefl() ? 'Member forces and deflected shape' : 'Member forces');
   M.cap3D = '3D view';
-  M.hint = () => 'Blue members are in tension, red in compression; the thicker the line, the larger the force. Click a joint to see its free-body diagram. Drag the orange section line to cut other members.' + (showDefl() ? ' The dashed teal truss is the deflected shape, exaggerated; press Play to watch it deflect.' : '');
-  M.legend = () => [[TCOL, 'Tension', 'ln'], [CCOL, 'Compression', 'ln'], [ZCOL, 'Zero-force', 'ln'], [LCOL, 'Loads'], [RCOL, 'Reactions']].concat(showDefl() ? [[DCOL, 'Deflected shape', 'ln']] : [], S().cutOn !== false ? [[CUTC, 'Section', 'ln']] : []);
+  const tc = () => S().tcColor !== false;
+  M.hint = () => (tc() ? 'Blue members are in tension, red in compression; the thicker' : 'The thicker') + ' the line, the larger the force. Click a joint to see its free-body diagram. Drag the orange section line to cut other members.' + (showDefl() ? ' The dashed teal truss is the deflected shape, exaggerated; press Play to watch it deflect.' : '');
+  M.legend = () => (tc() ? [[TCOL, 'Tension', 'ln'], [CCOL, 'Compression', 'ln']] : [[NCOL, 'Member', 'ln']]).concat([[ZCOL, 'Zero-force', 'ln'], [LCOL, 'Loads'], [RCOL, 'Reactions']].concat(showDefl() ? [[DCOL, 'Deflected shape', 'ln']] : [], S().cutOn !== false ? [[CUTC, 'Section', 'ln']] : []));
 
   const deflect = root.Anim.deflection(S);
   const defK = () => (S()._k === undefined ? 1 : S()._k);
@@ -117,7 +122,7 @@
     if (LW) { const tw = txt.length * o.size * 0.56, a = o.anchor || 'start', l = a === 'start' ? x : a === 'end' ? x - tw : x - tw / 2; x += Math.max(0, 6 - l) - Math.max(0, l + tw - (LW - 6)); }
     return T(g, x, y, txt, o);
   };
-  const mcol = (m) => (m.zero ? ZCOL : m.F > 0 ? TCOL : CCOL);
+  const mcol = (m) => (m.zero ? ZCOL : !tc() ? NCOL : m.F > 0 ? TCOL : CCOL);
 
   M.draw2D = function (svg, res, U, opt) {
     const g = res.geo, st = S(), { F } = g.c;

@@ -8,7 +8,7 @@
  *   { id, title, defaults(), presets: [{ name, units, state, expect, fails }],
  *     controls(parent, C), compute(U) -> result, draw2D(svg, res, U, opt),
  *     draw3D(view3d, res, U, opt), plot(svg, res, U) [optional],
- *     onUnits(from, to), legend, hint, toggle, cap2D, cap3D,
+ *     onUnits(from, to), legend, hint, toggle, diagram(parent, C), cap2D, cap3D,
  *     onDrag(pt, phase) / onClick(pt) [optional], anim [optional] }
  * The app owns module.state and module.units.
  * ===================================================================== */
@@ -72,6 +72,7 @@
       const tg = val(m.toggle);
       $('showPWrap').hidden = !tg;
       if (tg) $('showPLabel').textContent = tg;
+      $('diagOpts').hidden = !tg && $('diagCtl').children.length < 2;
       const lg = $('legend'); lg.innerHTML = '';
       const items = val(m.legend) || [];
       items.forEach(([c, t, k]) => lg.append(h('span', null, h('i', { class: k || '', style: { background: c } }), t)));
@@ -89,6 +90,10 @@
       c.innerHTML = '';
       const m = App.mod();
       m.controls(c, C);
+      // diagram options: the shared values switch first, then the module's own display switches (M.diagram)
+      const dc = $('diagCtl');
+      [...dc.children].forEach((x) => { if (x.id !== 'showPWrap') x.remove(); });
+      if (typeof m.diagram === 'function') m.diagram(dc, C);
       if (!keepExample) { buildExamples(); }
       $('controlsPanel').scrollTop = scroll;
       const a = typeof m.anim === 'function' ? m.anim() : m.anim;
@@ -214,6 +219,8 @@
     $('uSI').addEventListener('click', () => setUnits('SI'));
     $('uUS').addEventListener('click', () => setUnits('US'));
     $('showP').addEventListener('change', (e) => { App.showP = e.target.checked; renderDiagram(); });
+    try { if (localStorage.getItem('diagOptsClosed') === '1') $('diagOpts').open = false; } catch (e) { /* storage blocked */ }
+    $('diagOpts').addEventListener('toggle', () => { try { localStorage.setItem('diagOptsClosed', $('diagOpts').open ? '0' : '1'); } catch (e) { /* storage blocked */ } });
     App.setView = function (v) {
       App.view = v;
       $('viewSeg').querySelectorAll('button').forEach((x) => { const on = x.dataset.v === v; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); });

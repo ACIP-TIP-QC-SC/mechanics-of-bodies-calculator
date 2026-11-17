@@ -407,13 +407,14 @@
     [1, -1].forEach((sg) => v.line([b, base.map((x, i) => x + c[i] * sg * hs * 0.4)], color, lw || 2.4));
   }
   M.draw3D = function (v, res, U, opt) {
+    const rest = root.View3D.restLayer;
     const g = res.geo, F = g.c.F, val = (k, txt) => (opt.showP ? `${k} = ${txt}` : k);
     const GROUND = '#dfe4e8', GEDGE = '#4a5661', WOOD = '#d9b58a', WEDGE = '#8a6a3f', STEEL = '#c9d3da';
     if (g.kind === 'block') {
       const ph = g.phi * DEG, cp = Math.cos(ph), sp = Math.sin(ph), R = (u, w) => [u * cp - w * sp, u * sp + w * cp], e = Math.max(g.b, g.H), z = g.b * 0.6, ext = g.b * 0.9 + e * 0.6;
       v._hs = e * 0.08;
       const a = R(-ext, 0), b = R(ext, 0), yb = Math.min(a[1], b[1]) - e * 0.1;
-      v.extrude([a, b, [b[0], yb], [a[0], yb]], -z * 1.4, z * 1.4, GROUND, 1, GEDGE, { layer: -1 });
+      v.extrude([a, b, [b[0], yb], [a[0], yb]], -z * 1.4, z * 1.4, GROUND, 1, GEDGE, { layer: rest([-sp, cp, 0]) });
       v.extrude([R(-g.b / 2, 0), R(g.b / 2, 0), R(g.b / 2, g.H), R(-g.b / 2, g.H)], -z / 2, z / 2, WOOD, 1, WEDGE);
       const G = R(0, g.H / 2); arrow3(v, [G[0], G[1], 0], [G[0], G[1] - e * 0.45, 0], LCOL, 2.4); v.label([G[0], G[1] - e * 0.5, 0], val('W', `${fmt(g.W)} ${F}`), LCOL);
       const zf = z / 2 + 0.002, o = R(Math.max(-g.b / 2, Math.min(g.b / 2, g.x)), 0), nrm = R(0, 1), tg = R(1, 0);
@@ -425,8 +426,8 @@
     if (g.kind === 'incline') {
       const ph = g.phi * DEG, cp = Math.cos(ph), sp = Math.sin(ph), R = (u, w) => [u * cp - w * sp, u * sp + w * cp], bs = 0.17, z = 0.3, zb = 0.1, top = R(1, 0);
       v._hs = 0.045;
-      v.box(-0.3, -0.04, -z * 1.3, top[0] + 0.12, 0, z * 1.3, GROUND, 1, GEDGE, { layer: -1 });
-      v.extrude([[0, 0], [top[0], 0], top], -z, z, '#e3e9ed', 1, GEDGE);
+      v.box(-0.3, -0.04, -z * 1.3, top[0] + 0.12, 0, z * 1.3, GROUND, 1, GEDGE, { layer: rest([0, 1, 0], 2) });
+      v.extrude([[0, 0], [top[0], 0], top], -z, z, '#e3e9ed', 1, GEDGE, { layer: rest([-sp, cp, 0]) }); // the block rests on the slope
       const sc = inclinePos(g);
       v.extrude([R(sc - bs / 2, 0), R(sc + bs / 2, 0), R(sc + bs / 2, bs), R(sc - bs / 2, bs)], -zb, zb, WOOD, 1, WEDGE);
       const G = R(sc, bs / 2), b0 = R(sc, 0), n = R(0, 1), t = R(1, 0), zf = zb + 0.002;
@@ -459,8 +460,8 @@
       const k = lever ? 1 / (0.55 * g.a) : 1, a = lever ? g.a * k : 0, xB = Lw * 0.5, yB = t * 0.5, xA = xB + a, hL = (lever ? a : Lw) * 0.08;
       const zw = 0.3, xmin = -Lw * 0.6, xmax = lever ? xA + a * 0.15 : Lw * 1.5, face = (x) => t * (1 - x / Lw);
       v._hs = 0.06;
-      v.box(xmin, -0.05, -0.5, xmax, 0, 0.5, GROUND, 1, GEDGE, { layer: -1 });
-      v.extrude([[0, 0], [Lw, 0], [0, t]], -zw, zw, STEEL, 1, GEDGE);
+      v.box(xmin, -0.05, -0.5, xmax, 0, 0.5, GROUND, 1, GEDGE, { layer: rest([0, 1, 0], 2) });
+      v.extrude([[0, 0], [Lw, 0], [0, t]], -zw, zw, STEEL, 1, GEDGE, { layer: rest([t, Lw, 0]) }); // the load rests on the sloped face
       let topW;
       if (lever) {
         const zl = 0.12;
@@ -472,7 +473,7 @@
       } else {
         const bw = Lw * 0.36, bh = Lw * 0.4, x0 = xB - bw / 2, yt = face(x0) + bh, zb = 0.2;
         v.extrude([[x0, face(x0)], [x0 + bw, face(x0 + bw)], [x0 + bw, yt], [x0, yt]], -zb, zb, WOOD, 1, WEDGE);
-        [[x0 - 0.06, x0 - 0.012], [x0 + bw + 0.012, x0 + bw + 0.06]].forEach(([u0, u1]) => v.box(u0, yB + bh * 0.1, -zw, u1, yB + bh * 1.6, zw, '#b9c4cc', 0.45, GEDGE));
+        [[x0 - 0.06, x0 - 0.012], [x0 + bw + 0.012, x0 + bw + 0.06]].forEach(([u0, u1]) => v.box(u0, Math.max(yB + bh * 0.1, face(u0) + 0.03), -zw, u1, yB + bh * 1.6, zw, '#b9c4cc', 0.45, GEDGE));
         topW = [xB, yt, 0];
       }
       arrow3(v, [topW[0], topW[1] + 0.4, topW[2]], topW, LCOL, 2.6); v.label([topW[0], topW[1] + 0.44, 0], val('W', `${fmt(g.W)} ${F}`), LCOL);

@@ -23,7 +23,6 @@
     <div class="seg" role="group" aria-label="Units">
       <button type="button" id="uSI" aria-pressed="true">SI</button><button type="button" id="uUS" aria-pressed="false">U.S. Customary</button>
     </div>
-    <label class="tog" id="showPWrap"><input type="checkbox" id="showP" checked> <span id="showPLabel">Values on the diagram</span></label>
     <select id="examples" aria-label="Load example"></select>
   </div>
   <main class="layout">
@@ -47,6 +46,12 @@
         </div>
         <div class="legend" id="legend"></div>
       </div>
+      <details class="panel dopts" id="diagOpts" open>
+        <summary>Diagram options</summary>
+        <div class="dopts-body" id="diagCtl">
+          <label class="tog" id="showPWrap"><input type="checkbox" id="showP" checked> <span id="showPLabel">Values on the diagram</span></label>
+        </div>
+      </details>
       <div class="panel cv" id="plotPanel" hidden>
         <div class="plot-wrap"><svg id="svgPlot" xmlns="http://www.w3.org/2000/svg"></svg></div>
       </div>

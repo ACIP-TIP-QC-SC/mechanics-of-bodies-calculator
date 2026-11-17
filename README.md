@@ -14,6 +14,8 @@ Built so far:
 
 Wherever a member deflects, Play bends it from straight to its deflected shape and back in a 10-second loop (speed 0.25× to 4×), in 2D and in 3D, coloured from blue (no deflection) to red (the largest). Every later module with a deflected shape follows the same rule.
 
+Every diagram has a collapsible **Diagram options** bar under it that holds the switches which only change the picture (values on the diagram, the deflected shape, what Play animates, the truss tension/compression colours, the joint free-body diagram). Inputs keep only what changes the problem. Every later module puts its display switches in the same bar.
+
 Planned: seven Dynamics modules; eight Mechanics of Deformable Bodies modules. A discipline tab appears once its first module is built.
 
 ## Layout

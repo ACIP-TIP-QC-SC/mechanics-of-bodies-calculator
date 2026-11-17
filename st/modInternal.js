@@ -61,12 +61,6 @@
       const sync = () => (st.hinges = hs.map((o) => o.x));
       const listApp = { update: () => { sync(); root.App.update(); }, rebuild: () => { sync(); root.App.rebuild(true); } };
       UI.Controls(listApp).list(sec, { items: hs, max: 2, title: () => 'Hinge (M = 0)', fields: () => [{ key: 'x', label: 'Position x', unit: Lu, wide: true }], add: [['Hinge', () => ({ x: tidy(st.L / 2) })]] });
-      sec = C.section(c, 'Deflected shape');
-      C.toggle(sec, { label: 'Show the deflected shape', get: () => st.defl !== false, set: (v) => { st.defl = v; if (!v) st.play = 'cut'; } });
-      if (st.defl !== false) {
-        C.seg(sec, { label: 'Play animates', get: () => st.play || 'deflect', set: (v) => { st.play = v; delete st._k; }, options: [['deflect', 'The beam deflecting'], ['cut', 'The moving cut']] });
-        C.note(sec, 'The shape is exaggerated and assumes the same EI along the whole beam. Results list EI × deflection, so divide by EI for the actual deflection.');
-      }
       sec = C.section(c, 'Cut');
       C.slider(sec, { label: 'Cut at x', min: 0, max: st.L, step: tidy(st.L / 200, 2), get: () => st.cut, set: (v) => (st.cut = v), unit: Lu, rebuild: true });
       const res = root.App && root.App.res;
@@ -124,11 +118,18 @@
   M.compute = (U) => Internal.solve(S(), U);
   M.onUnits = (from, to) => Internal.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
+  /* switches that only change the picture, in the Diagram options bar under the diagram */
+  M.diagram = function (c, C) {
+    const st = S();
+    if (!isBeam()) return;
+    C.toggle(c, { label: 'Show the deflected shape', get: () => st.defl !== false, set: (v) => { st.defl = v; if (!v) st.play = 'cut'; } });
+    if (st.defl !== false) C.seg(c, { label: 'Play animates', get: () => st.play || 'deflect', set: (v) => { st.play = v; delete st._k; }, options: [['deflect', 'The beam deflecting'], ['cut', 'The moving cut']] });
+  };
   const showDefl = () => isBeam() && S().defl !== false;
   M.cap2D = () => (isBeam() ? (showDefl() ? 'Beam diagrams and deflected shape' : 'Beam, shear and moment diagrams') : 'Cable diagram');
   M.cap3D = '3D view';
   M.plotCaption = 'Tension along the span';
-  M.hint = () => (isBeam() ? 'Drag the orange cut line along the beam. Press Play to sweep the cut or, if chosen in the inputs, to watch the beam deflect. Positive shear acts downward on the right face of the left segment; positive moment bends the beam concave upward.' : 'Tension is tangent to the cable, and its horizontal component F_H is the same at every point.');
+  M.hint = () => (isBeam() ? 'Drag the orange cut line along the beam. Press Play to watch the beam deflect or to sweep the cut (choose which under Diagram options). Positive shear acts downward on the right face of the left segment; positive moment bends the beam concave upward.' + (showDefl() ? ' The deflected shape is exaggerated and assumes the same EI along the whole beam; results list EI × deflection, so divide by EI for the actual deflection.' : '') : 'Tension is tangent to the cable, and its horizontal component F_H is the same at every point.');
   M.legend = () => (isBeam()
     ? [[COL.load, 'Loads'], [COL.react, 'Reactions'], [COL.shear, 'Shear V', 'sq'], [COL.moment, 'Moment M', 'sq']].concat(showDefl() ? [[DCOL, 'Deflected shape', 'ln']] : [], [[COL.accent, 'Cut', 'ln']])
     : [[COL.cable, 'Cable', 'ln'], [COL.load, 'Loads'], [COL.react, 'Support reactions'], [COL.tension, 'Tension']]);

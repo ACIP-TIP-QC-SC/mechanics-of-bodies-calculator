@@ -30,7 +30,7 @@
       },
       cutOn: true, cutF: 0.42,
       ae: { use: false, E: 200, A: 1500 },
-      defl: true,
+      defl: true, tcColor: true,
     };
   }
 
