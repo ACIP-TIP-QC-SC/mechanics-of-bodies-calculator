@@ -4,6 +4,7 @@
 const path = require('path');
 const R = (p) => require(path.join(__dirname, '..', p));
 const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/internal.js');
+const Forces = R('st/forces.js');
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
@@ -135,6 +136,47 @@ group('internal forces module', () => {
   // failing inputs give messages, never NaN
   truthy('bad cable', Internal.solve(st({ mode: 'cableP', cab: { loads: [{ x: 30, P: 4 }] } }), U.SI).ok === false);
   truthy('short cable', Internal.solve(st({ mode: 'catenary', cat: { given: 'len', len: 10 } }), U.SI).ok === false);
+});
+
+group('force systems module', () => {
+  const D = Forces.defaults, mk = (o) => Core.deepMerge(D(), o), SI = U.SI, US = U.US;
+  const P = (F, ang) => ({ by: 'polar', F, ang }), C2 = (Fx, Fy) => ({ by: 'comp', Fx, Fy });
+  // Example 2.1
+  let r = Forces.solve(mk({ mode: 'coplanar', fu: 'N', co: { forces: [P(100, 15), P(150, 80)] } }), SI);
+  close('2.1 F_R', out(r, 'Resultant magnitude F_R'), 212.6); close('2.1 θ', out(r, 'Direction θ (↺ from +x)'), 54.76);
+  // Example 2.7 (one force by a 3-4-5 slope)
+  r = Forces.solve(mk({ mode: 'coplanar', co: { forces: [P(400, 180), P(250, 45), { by: 'slope', F: 200, dx: -4, dy: 3 }] } }), SI);
+  close('2.7 F_R', out(r, 'Resultant magnitude F_R'), 484.7); close('2.7 (F_R)_x', out(r, 'Resultant (F_R)_x'), -383.2); close('2.7 (F_R)_y', out(r, 'Resultant (F_R)_y'), 296.8); close('2.7 θ', out(r, 'Direction θ (↺ from +x)'), 142.2);
+  // Example 2.8
+  r = Forces.solve(mk({ mode: 'vector3d', fu: 'lb', v3: { forces: [{ by: 'comp', Fx: 35.36, Fy: -35.36, Fz: 86.6 }] } }), US);
+  close('2.8 |F|', out(r, 'Magnitude F'), 100); close('2.8 α', out(r, 'Direction angle α (from +x)'), 69.30); close('2.8 β', out(r, 'Direction angle β (from +y)'), 110.7); close('2.8 γ', out(r, 'Direction angle γ (from +z)'), 30.00);
+  r = Forces.solve(mk({ mode: 'vector3d', v3: { forces: [{ by: 'angles', F: 100, al: 69.3, be: 110.7, ga: 30 }] } }), SI);
+  close('direction angles back to components', out(r, 'F_z'), 86.6);
+  truthy('impossible direction angles fail', !Forces.solve(mk({ mode: 'vector3d', v3: { forces: [{ by: 'angles', F: 100, al: 30, be: 30, ga: 30 }] } }), SI).ok);
+  r = Forces.solve(mk({ mode: 'vector3d', v3: { forces: [{ by: 'line', F: 700, ax: 0, ay: 0, az: 0, bx: 2, by_: 3, bz: 6 }] } }), SI);
+  close('force along a line F_y', out(r, 'F_y'), 300);
+  // component along a line
+  r = Forces.solve(mk({ mode: 'dot', dot: { force: { by: 'line', F: 300, ax: 0, ay: 0, az: 0, bx: 2, by_: 3, bz: 6 }, P: { x: 0, y: 0, z: 0 }, Q: { x: 0, y: 4, z: 0 } } }), SI);
+  close('F along y axis', out(r, 'Component along the line F_∥'), 300 * 3 / 7); close('angle with y', out(r, 'Angle θ between the force and the line'), Math.acos(3 / 7) * 180 / Math.PI);
+  // moment about a point and an axis (closed form)
+  r = Forces.solve(mk({ mode: 'moment' }), SI);
+  close('M_O x', out(r, 'M_O x component'), 30); close('M_O y', out(r, 'M_O y component'), -20); close('M_x', out(r, 'Moment about the axis M_a (along +u_a)'), 30);
+  r = Forces.solve(mk({ mode: 'moment', mom: { axis: false, forces: [{ by: 'polar', F: 0, Fx: 0, Fy: -50, Fz: 0, x: 2, y: 0, z: 0, by: 'comp' }] } }), SI);
+  close('planar M_O = −Fd', out(r, 'Moment about O, M_O (↺ positive)'), -100);
+  // Example 4.17
+  r = Forces.solve(mk({ mode: 'reduce', fu: 'kN' }), SI);
+  close('4.17 F_R', out(r, 'Resultant force F_R'), 5.367); close('4.17 θ', out(r, 'Direction θ (↺ from +x)'), 26.57); close('4.17 d', out(r, 'Line of action crosses the horizontal through O at x'), 2.25);
+  // 3D parallel forces and wrench
+  r = Forces.solve(mk({ mode: 'reduce3d' }), SI);
+  close('parallel forces x', out(r, 'Single resultant acts at x'), 0.75); close('parallel forces y', out(r, 'Single resultant acts at y'), 0.625);
+  r = Forces.solve(mk({ mode: 'reduce3d', r3: { forces: [{ by: 'comp', Fx: 0, Fy: 0, Fz: 10, x: 0, y: 0, z: 0 }], couples: [{ Mx: 0, My: 0, Mz: 5 }] } }), SI);
+  close('wrench pitch', out(r, 'Pitch of the wrench p = M_∥ / F_R'), 0.5);
+  // Example 4.23
+  r = Forces.solve(mk({ mode: 'dist', fu: 'lb' }), US);
+  close('4.23 F_R', out(r, 'Resultant force F_R (↓ positive)'), 675); close('4.23 x̄', out(r, 'Location of the resultant x̄'), 4.00);
+  // unit round trip
+  const st = mk({ mode: 'reduce', fu: 'kN' }); Forces.convertState(st, 'SI', 'US'); Forces.convertState(st, 'US', 'SI');
+  close('unit round trip', out(Forces.solve(st, SI), 'Line of action crosses the horizontal through O at x'), 2.25, 1e-6);
 });
 
 group('section engine', () => {
