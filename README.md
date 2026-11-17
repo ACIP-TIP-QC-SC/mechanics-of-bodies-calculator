@@ -11,12 +11,13 @@ American Concrete Institute Philippines T.I.P. QC Student Chapter · by CEM Juma
 Built so far:
 
 - **Statics of Rigid Bodies:** Force Systems (coplanar and 3D resultants, direction angles, components along a line, moments about a point and an axis, force-couple systems, wrenches, distributed loads); Equilibrium (particles in a plane and in space, rigid bodies with pins, rollers, fixed supports, cables and links, with checks for statically indeterminate and improperly constrained bodies); Trusses (Pratt, Howe, Warren, roof and cantilever templates or any plane truss typed in, method of joints and method of sections step by step, zero-force members, joint free-body diagrams, and the deflected truss with its animation); Centroids and Moments of Inertia (composite areas, wires and bodies, Pappus and Guldinus, principal axes and Mohr's circle); Internal Forces (internal loadings at a cut, shear and moment diagrams with the deflected shape and its animation, cables with point loads, uniform loads or their own weight, with supports at the same or different levels); Friction (blocks that slip or tip, a block sliding on an incline with static and kinetic friction, ladders, wedges, square-threaded screws, flat belts over drums)
+- **Mechanics of Deformable Bodies:** Simple Stress and Strain (normal stress, strain and Poisson's ratio in a bar; a weight hung on two rods; bolted and pinned joints checked for shear, bearing, net section and tear-out; sizing pins, rods, punched plates and collars from a factor of safety; reading E, yield, ultimate and fracture stress, resilience and toughness from stress-strain data, with unloading and the permanent set; a shear pad), with a material picker filled from the book's table of average properties
 
 Wherever a member deflects, Play bends it from straight to its deflected shape and back in a 10-second loop (speed 0.25× to 4×), in 2D and in 3D, coloured from blue (no deflection) to red (the largest). Every later module with a deflected shape follows the same rule.
 
 Every diagram has a collapsible **Diagram options** bar under it that holds the switches which only change the picture (values on the diagram, the deflected shape, what Play animates, the truss tension/compression colours, the joint free-body diagram). Inputs keep only what changes the problem. Every later module puts its display switches in the same bar.
 
-Planned: seven Dynamics modules; eight Mechanics of Deformable Bodies modules. A discipline tab appears once its first module is built.
+Planned: seven Dynamics modules; seven more Mechanics of Deformable Bodies modules. A discipline tab appears once its first module is built.
 
 ## Layout
 
@@ -26,6 +27,7 @@ Planned: seven Dynamics modules; eight Mechanics of Deformable Bodies modules. A
   - `core.js` (units, 4-significant-figure formatting, step recorder, preset merge), `app.js` (app shell), `report.js` (Print PDF)
   - `beam.js` (beam engine: reactions, N, V and M)
 - `st/`: Statics solver. Each module has a physics file (`internal.js`) and a UI file (`modInternal.js`)
+- `md/`: Mechanics of Deformable Bodies solver, laid out the same way, with `mdcore.js` (units, the material table, bar areas) and `mdui.js` (3D cylinders, arrows, the material picker)
 - `vendor/`: html2canvas 1.4.1 and jsPDF 2.5.1 (MIT licensed), hosted here so the PDF feature needs no outside scripts
 - `tests/`: `run.js` checks the physics against textbook answers; `presets.spec.js` loads every preset in a headless browser
 

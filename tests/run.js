@@ -6,6 +6,7 @@ const R = (p) => require(path.join(__dirname, '..', p));
 const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/internal.js');
 const Forces = R('st/forces.js'), Equil = R('st/equil.js'), Truss = R('st/truss.js'), Friction = R('st/friction.js');
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
+const MD = R('md/mdcore.js'), Stress = R('md/stress.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
 const filter = (process.argv[2] || '').toLowerCase();
@@ -376,6 +377,51 @@ group('centroids module', () => {
   r = SecMod.solve(st, U.US); close('converted Ī_x in in.⁴', out(r, 'Ī_x about the centroidal x′ axis'), 2.9e9 / 25.4 ** 4, 2e-3); truthy('unit became in.', st.lu === 'in.');
   truthy('all-hole area fails', !SecMod.solve(mk({ area: { shape: 'custom', parts: [{ kind: 'rect', x: 0, y: 0, b: 1, h: 1, hole: true }] } }), U.SI).ok);
   truthy('impossible inertia fails', !SecMod.solve(mk({ mode: 'inclined', inc: { Ix: 1, Iy: 1, Ixy: 5, theta: 0 } }), U.SI).ok);
+});
+
+group('simple stress and strain module', () => {
+  const mk = (o) => Core.deepMerge(Stress.defaults(), o);
+  // Example 8.3 steel bar
+  let r = Stress.solve(mk({ mode: 'bar', fu: 'kN', bar: { shape: 'rect', b: 100, h: 50, L: 1.5, P: 80, E: 200, nu: 0.32, sY: 250 } }), U.SI);
+  close('8.3 σ', out(r, 'Normal stress σ'), 16); close('8.3 δ', out(r, 'Change in length δ'), 0.12);
+  close('8.3 ε_lat', out(r, 'Lateral strain ε_lat'), -25.6e-6); close('8.3 Δb', out(r, 'Change in width b'), -0.00256); close('8.3 Δh', out(r, 'Change in depth h'), -0.00128);
+  // circular bar by hand: σ = P/A, δ = PL/AE
+  r = Stress.solve(mk({ mode: 'bar', fu: 'kN', bar: { shape: 'circle', d: 20, L: 2, P: 31.416, E: 200, nu: 0.3, sY: 250 } }), U.SI);
+  close('round bar σ = 100 MPa', out(r, 'Normal stress σ'), 100, 1e-3); close('round bar δ = 1 mm', out(r, 'Change in length δ'), 1, 1e-3);
+  // Example 7.6 lamp on two rods
+  r = Stress.solve(mk({ mode: 'hanger', fu: 'N', hg: { wBy: 'mass', m: 80, a1: 60, a2: 36.8699, d1: 10, d2: 8, L1: 1.2, L2: 1.5, E: 200, sY: 250 } }), U.SI);
+  close('7.6 F_BA', out(r, 'Force in rod 1, F₁'), 632.4); close('7.6 F_BC', out(r, 'Force in rod 2, F₂'), 395.2);
+  close('7.6 σ_BA', out(r, 'Stress in rod 1, σ₁'), 8.05); close('7.6 σ_BC', out(r, 'Stress in rod 2, σ₂'), 7.86);
+  // Example 7.11 lap joint
+  r = Stress.solve(mk({ mode: 'joint', fu: 'kN', jt: { task: 'allow', P: 10, d: 10, n: 1, planes: 1, t: 15, w: 50, e: 20, tb: 80, st: 50, sb: 80, tp: 30 } }), U.SI);
+  close('7.11 P_allow', out(r, 'Allowable load P'), 6.283); close('7.11 bearing', out(r, 'Load for bearing on the plate'), 12);
+  close('7.11 net section', out(r, 'Load for tension on the net section of the plate'), 30); close('7.11 tear-out', out(r, 'Load for shear tear-out of the plate'), 18);
+  // Example 7.8 pin in double shear
+  r = Stress.solve(mk({ mode: 'joint', fu: 'kN', jt: { task: 'check', P: 21.36, d: 20, n: 1, planes: 2, t: 20, w: 0, e: 0, tb: 0, st: 0, sb: 0, tp: 0 } }), U.SI);
+  close('7.8 τ', out(r, 'Average shear stress in the bolts τ'), 34.0);
+  // Example 7.10 pins A and C
+  r = Stress.solve(mk({ mode: 'size', fu: 'kip', sz: { part: 'pin', P: 3, planes: 1, byFS: true, fail: 12, FS: 1.5, step: 0.25 } }), U.US);
+  close('7.10 d_A', out(r, 'Required pin diameter d'), 0.691); close('7.10 use 3/4 in.', out(r, 'Size to use (rounded up)'), 0.75);
+  r = Stress.solve(mk({ mode: 'size', fu: 'kip', sz: { part: 'pin', P: 6.083, planes: 2, byFS: true, fail: 12, FS: 1.5, step: 0.25 } }), U.US);
+  close('7.10 d_C', out(r, 'Required pin diameter d'), 0.696);
+  // Example 7.12 rod and disk
+  r = Stress.solve(mk({ mode: 'size', fu: 'kN', sz: { part: 'rod', P: 20, byFS: false, allow: 60, step: 0 } }), U.SI);
+  close('7.12 rod d', out(r, 'Required rod diameter d'), 20.6);
+  r = Stress.solve(mk({ mode: 'size', fu: 'kN', sz: { part: 'punch', P: 20, byFS: false, allow: 35, dh: 40, step: 0 } }), U.SI);
+  close('7.12 disk t', out(r, 'Required plate thickness t'), 4.547);
+  // Example 8.2 unloading
+  r = Stress.solve(mk({ mode: 'curve', cv: { pts: [{ e: 0, s: 0 }, { e: 0.006, s: 450 }, { e: 0.012, s: 540 }, { e: 0.023, s: 600 }, { e: 0.03, s: 620 }, { e: 0.04, s: 600 }], nLin: 1, unload: true, sU: 600 } }), U.SI);
+  close('8.2 E', out(r, 'Modulus of elasticity E'), 75); close('8.2 u_r', out(r, 'Modulus of resilience u_r'), 1.35);
+  close('8.2 set', out(r, 'Permanent set'), 0.015); close('8.2 u_r after', out(r, 'Modulus of resilience after reloading'), 2.4);
+  // shear pad by hand: τ = 2 kN / (150 × 100 mm²) = 0.1333 MPa, γ = τ/G
+  r = Stress.solve(mk({ mode: 'pad', fu: 'kN', pad: { given: 'force', a: 150, b: 100, h: 20, V: 2, G: 0.2, useEnu: false } }), U.SI);
+  truthy('pad solves', r.ok && r.steps.length >= 3);
+  // unit toggle keeps the physics
+  const st = mk({ mode: 'bar', fu: 'kN', bar: { shape: 'rect', b: 100, h: 50, L: 1.5, P: 80, E: 200, nu: 0.32, sY: 250 } });
+  Stress.convertState(st, 'SI', 'US', 'kN'); r = Stress.solve(st, U.US);
+  close('converted σ in ksi', out(r, 'Normal stress σ'), 16 / 6.894757, 2e-3);
+  truthy('material table A-36 E = 29000 ksi', MD.material('a36', 'US').E === 29000);
+  truthy('plate narrower than holes fails', !Stress.solve(mk({ mode: 'joint', fu: 'kN', jt: { task: 'allow', d: 20, n: 3, planes: 1, t: 10, w: 50, e: 20, tb: 80, st: 50, sb: 80, tp: 30 } }), U.SI).ok);
 });
 
 groups.forEach(([name, fn]) => { if (filter && !name.toLowerCase().includes(filter)) return; console.log(name); fn(); });
