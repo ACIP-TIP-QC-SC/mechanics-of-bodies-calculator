@@ -246,6 +246,10 @@
   }
   function pend2D(svg, g, opt) {
     const u = g.u, b = g.b, rod = g.shape === 'rod', fb = dopt('fbd', true), kd = dopt('kd', true);
+    if (g.Fmax === undefined) { // one scale for the whole swing, so the arrows do not pulse while playing
+      let F = g.W, Kx = 1e-12; [{ x: g.th, v: g.w }].concat(g.sim).forEach((q) => { const P = g.pinAt(q.x, q.v), a = g.aOf(q.x); F = Math.max(F, Math.abs(P.On), Math.abs(P.Ot)); Kx = Math.max(Kx, b.m * q.v * q.v * b.rG, Math.abs(b.m * a * b.rG)); });
+      g.Fmax = F; g.KDmax = Kx;
+    }
     const ps = pendState(g), th = uNow() === undefined && g.method === 'energy' ? g.th : ps.th, w = uNow() === undefined && g.method === 'energy' ? g.w : ps.w, al = g.aOf(th), P = g.pinAt(th, w);
     const rD = rod ? b.L : Math.max(1.5 * b.rG, 1.25 * b.k), R = (rod ? b.L : rD) * 1.18, yC = rod ? 0.72 * R : 1.1 * rD;
     const D = UI.Draw2D(svg, { xmin: -R, xmax: R, ymin: -R, ymax: yC + 0.22 * R }, opts2(svg, kd));
@@ -259,7 +263,7 @@
     gMark(D, G, 'G', { dx: 6, dy: 18 });
     if (Math.abs(th) > 1e-3) D.arc([0, 0], 30, 0, -th / D2R, lbl(opt, `θ = ${fmt(th / D2R)}°`, 'θ'), { color: K.ink });
     if (fb) {
-      const fmax = Math.max(g.W, Math.abs(P.On), Math.abs(P.Ot), 1e-9), n = [-eG[0], -eG[1]], t = [-Math.sin(th), -Math.cos(th)];
+      const fmax = g.Fmax, n = [-eG[0], -eG[1]], t = [-Math.sin(th), -Math.cos(th)];
       farrow(D, G, [0, -1], g.W, fmax, lbl(opt, `W = ${fmt(g.W)} ${u.F}`, 'W'));
       farrow(D, [0, 0], n, P.On, fmax, lbl(opt, `O_n = ${fmt(Math.abs(P.On))}`, 'O_n'));
       farrow(D, [0, 0], t, P.Ot, fmax, lbl(opt, `O_t = ${fmt(Math.abs(P.Ot))}`, 'O_t'));
@@ -269,7 +273,7 @@
       const Lp = 46, ex = eG[0], ey = -eG[1];
       D.el('line', { x1: cx - ex * Lp, y1: cy - ey * Lp, x2: cx + ex * Lp, y2: cy + ey * Lp, stroke: LINK, 'stroke-width': 9, 'stroke-linecap': 'round' });
       D.circle(D.inv(cx, cy), 4.5 / D.sc, { fill: K.ink });
-      const mn = b.m * w * w * b.rG, mt = b.m * al * b.rG, mx = Math.max(Math.abs(mn), Math.abs(mt), 1e-12);
+      const mn = b.m * w * w * b.rG, mt = b.m * al * b.rG, mx = g.KDmax;
       if (Math.abs(mn) > 1e-9 * mx) parrow(D, cx, cy, [-eG[0], -eG[1]], 24 + 34 * Math.abs(mn) / mx, K.acc, lbl(opt, `mω²r_G = ${fmt(mn)}`, 'mω²r_G'));
       if (Math.abs(mt) > 1e-9 * mx) parrow(D, cx, cy, [-Math.sin(th) * Math.sign(mt), -Math.cos(th) * Math.sign(mt)], 24 + 34 * Math.abs(mt) / mx, K.acc, lbl(opt, `mαr_G = ${fmt(Math.abs(mt))}`, 'mαr_G'));
       if (Math.abs(al) > 1e-12) curlPx(D, cx - bw * 0.3, cy - bh * 0.2, 15, al > 0, K.acc, lbl(opt, `I_Gα = ${fmt(Math.abs(b.IG * al))}`, 'I_Gα'), { ldy: 50, ldx: 8 });

@@ -110,7 +110,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .dopts-body .ctl-row .ctl-label { margin: 0; font-size: 13px; color: var(--muted); white-space: nowrap; }
 .dopts-body select { width: auto; max-width: 100%; }
 .dopts-body .ctl-row.toggle label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-svg .lbl { paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; font-family: "Source Sans 3", system-ui, sans-serif; }
+svg .lbl { paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; text-rendering: geometricPrecision; font-family: "Source Sans 3", system-ui, sans-serif; }
 
 /* results & solution */
 #msgs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }

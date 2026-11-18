@@ -178,10 +178,15 @@
     let xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
     const showOsc = dopt('osc', true) && isFinite(P.rho) && P.rho < 4 * (Math.max(...xs) - Math.min(...xs) + 1e-9);
     const C = isFinite(P.rho) ? [P.pos[0] + P.n[0] * P.rho, P.pos[1] + P.n[1] * P.rho] : null;
-    if (showOsc) { xs = xs.concat([C[0] - P.rho, C[0] + P.rho]); ys = ys.concat([C[1] - P.rho, C[1] + P.rho]); }
+    // the frame is fixed by the instant asked for and the ends of the animated stretch, so it does not move during Play
+    const P0 = pathAt(g, p0), C0 = isFinite(P0.rho) ? [P0.pos[0] + P0.n[0] * P0.rho, P0.pos[1] + P0.n[1] * P0.rho] : null;
+    if (dopt('osc', true) && C0 && P0.rho < 4 * (Math.max(...xs) - Math.min(...xs) + 1e-9)) { xs = xs.concat([C0[0] - P0.rho, C0[0] + P0.rho]); ys = ys.concat([C0[1] - P0.rho, C0[1] + P0.rho]); }
     // clip the view to the neighbourhood of the point for a y = f(x) path
     let xmin = Math.min(...xs), xmax = Math.max(...xs), ymin = Math.min(...ys), ymax = Math.max(...ys);
-    if (g.kind !== 'circle') { const span = rng[1] - rng[0]; ymin = Math.max(ymin, P.pos[1] - span); ymax = Math.min(ymax, P.pos[1] + span); xmin = Math.max(xmin, P.pos[0] - span); xmax = Math.min(xmax, P.pos[0] + span); }
+    if (g.kind !== 'circle') {
+      const span = rng[1] - rng[0], Q = [P0.pos, pathAt(g, rng[0] + 0.1 * span).pos, pathAt(g, rng[0] + 0.9 * span).pos];
+      ymin = Math.max(ymin, Math.min(...Q.map((q) => q[1])) - span); ymax = Math.min(ymax, Math.max(...Q.map((q) => q[1])) + span); xmin = Math.max(xmin, Math.min(...Q.map((q) => q[0])) - span); xmax = Math.min(xmax, Math.max(...Q.map((q) => q[0])) + span);
+    }
     const D = UI.Draw2D(svg, { xmin, xmax, ymin, ymax }, { pad: 56 }), px = (w) => w / D.sc;
     D.line([xmin, 0], [xmax, 0], { stroke: K.ink, sw: 0.8, op: 0.5 }); D.line([0, ymin], [0, ymax], { stroke: K.ink, sw: 0.8, op: 0.5 });
     D.pline(pts.filter((q) => q[1] >= ymin - 1e9), { stroke: K.path, sw: 2.6 });
@@ -364,7 +369,7 @@
       const P = pathAt(g, par), map = g.kind === 'circle' ? (q) => [q[0], 0, -q[1]] : (q) => [q[0], q[1], 0];
       let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity]; pts.forEach((q) => q.forEach((c, i) => { mn[i] = Math.min(mn[i], c); mx[i] = Math.max(mx[i], c); }));
       const span = Math.max(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2], 1e-6);
-      if (g.kind !== 'circle') { const y0 = Math.max(mn[1], P.pos[1] - (rng[1] - rng[0])); mn[1] = y0; mx[1] = Math.min(mx[1], P.pos[1] + (rng[1] - rng[0])); }
+      if (g.kind !== 'circle') { const sp = rng[1] - rng[0], Qy = [pathAt(g, g.x).pos[1], pathAt(g, rng[0] + 0.1 * sp).pos[1], pathAt(g, rng[0] + 0.9 * sp).pos[1]]; mn[1] = Math.max(mn[1], Math.min(...Qy) - sp); mx[1] = Math.min(mx[1], Math.max(...Qy) + sp); }
       v.line(pts.filter((q) => q[1] >= mn[1] - 1e-9 && q[1] <= mx[1] + 1e-9), K.path, 3);
       const p = map(P.pos), an = isFinite(P.rho) ? (g.v * g.v) / P.rho : 0, L = span * 0.2, amax = Math.max(Math.hypot(g.at, an), 1e-12);
       DYUI.sphere(v, p, span * 0.02, K.path);

@@ -139,7 +139,7 @@
       const k = scaleOf(g), th = x * k, Ld = g.sys === 'pend' ? 3 : 2.6;
       D.poly([[-0.8, 0], [0.8, 0], [0.8, 0.25], [-0.8, 0.25]], { fill: 'url(#hatch)', stroke: K.edge, sw: 1 });
       const P = (r, a) => [r * Math.sin(a), -r * Math.cos(a)];
-      if (dopt('eq', true)) { D.line([0, 0], [0, -Ld - 0.4], { stroke: K.ink, sw: 1, dash: '5 4' }); if (Math.abs(th) > 0.01) D.arc([0, 0], 60, -90, -90 + th / D2R, lbl(opt, `θ = ${fmt(x / D2R)}°`, 'θ'), { color: K.pos }); }
+      if (dopt('eq', true)) { D.line([0, 0], [0, -Ld - 0.4], { stroke: K.ink, sw: 1, dash: '5 4' }); if (Math.abs(th) > 0.01) D.arc([0, 0], 60, -90, -90 + th / D2R, null, { color: K.pos }); D.text([0, -Ld - 0.4], lbl(opt, `θ = ${fmt(x / D2R)}°`, 'θ'), { dx: 8, dy: 4, color: K.pos, size: 12, weight: 700 }); }
       if (g.sys === 'pend') { D.line([0, 0], P(Ld, th), { stroke: K.ink, sw: 1.8 }); D.circle(P(Ld, th), 0.22, { fill: K.pos, stroke: '#fff', sw: 2 }); D.text(P(Ld, th), lbl(opt, `L = ${fmt(g.L)} ${u.L}`, 'L'), { dx: 18, dy: 4, color: K.ink, size: 11.5 }); }
       else if (g.body === 'rod' || g.body === 'kg') { const a = P(0, th), b = P(Ld, th), n = [Math.cos(th) * 0.1, Math.sin(th) * 0.1]; D.poly([[a[0] - n[0], a[1] - n[1]], [a[0] + n[0], a[1] + n[1]], [b[0] + n[0], b[1] + n[1]], [b[0] - n[0], b[1] - n[1]]], { fill: BLK, stroke: K.edge, sw: 1.4 }); D.dot(P(g.body === 'rod' ? Ld / 2 : Ld * 0.6, th), K.ink, 'G', { r: 4 }); }
       else { const R = 1.2, c = P(R, th); D.circle(c, R, { fill: g.body === 'disk' ? BLK : 'none', stroke: K.edge, sw: g.body === 'disk' ? 1.4 : 5 }); D.dot(c, K.ink, 'G', { r: 4 }); }

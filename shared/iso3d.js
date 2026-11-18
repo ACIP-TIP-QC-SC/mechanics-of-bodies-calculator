@@ -232,14 +232,22 @@
       ctx.font = '600 12px system-ui, sans-serif';
       // labels: nudged up or down, a line at a time, so that no two of them sit on top of each other
       const placed = [], hit = (x, y, w) => placed.some((r) => x < r.x + r.w + 3 && x + w + 3 > r.x && y - 12 < r.y && y > r.y - 12);
-      for (const lb of this.labels) {
+      // The nudge each label got last time is tried first, so that labels on moving parts do not jump between frames.
+      if (!this._nudge || this._nudge.length !== this.labels.length) this._nudge = this.labels.map(() => 0);
+      this.labels.forEach((lb, i) => {
         const q = this.project(lb.p), w = ctx.measureText(lb.text).width;
-        let x = Math.max(4, Math.min(q[0] + 4, cv.clientWidth - w - 4)), y = q[1] - 4;
-        for (let k = 1; k <= 8 && hit(x, y, w); k++) { const dy = Math.ceil(k / 2) * 14 * (k % 2 ? 1 : -1); if (!hit(x, q[1] - 4 + dy, w)) { y = q[1] - 4 + dy; break; } }
+        const x = Math.max(4, Math.min(q[0] + 4, cv.clientWidth - w - 4)), y0 = q[1] - 4;
+        let y = y0 + this._nudge[i];
+        if (this.animating) { /* while playing, each label keeps its nudge and follows its point smoothly */ }
+        else if (hit(x, y, w)) {
+          y = y0;
+          for (let k = 1; k <= 8 && hit(x, y, w); k++) { const dy = Math.ceil(k / 2) * 14 * (k % 2 ? 1 : -1); if (!hit(x, y0 + dy, w)) { y = y0 + dy; break; } }
+        } else if (this._nudge[i] && !hit(x, y0, w)) y = y0; // back to its own place once that is free
+        this._nudge[i] = y - y0;
         placed.push({ x, y, w });
         ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.strokeText(lb.text, x, y);
         ctx.fillStyle = lb.color; ctx.fillText(lb.text, x, y);
-      }
+      });
       // axis gizmo
       const gx = 46, gy = h - 40, s = 26;
       const ax = [[1, 0, 0, '#c0392b', 'x'], [0, 1, 0, '#27ae60', 'y'], [0, 0, 1, '#2c6fd1', 'z']];

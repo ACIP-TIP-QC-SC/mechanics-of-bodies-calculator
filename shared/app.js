@@ -134,7 +134,7 @@
       } else {
         svg.setAttribute('hidden', ''); cv.removeAttribute('hidden');
         $('resetIso').hidden = false;
-        view3d.clear();
+        view3d.clear(); view3d.animating = anim.playing;
         if (res.ok) m.draw3D(view3d, res, U, { showP: App.showP });
         view3d.render();
       }

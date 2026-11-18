@@ -197,7 +197,7 @@
         const t = s('text', {
           x: (o.px ? p[0] : X(p[0])) + (o.dx || 0), y: (o.px ? p[1] : Y(p[1])) + (o.dy || 0), 'text-anchor': o.anchor || 'start',
           class: 'lbl ' + (o.cls || ''), fill: o.color || '#1d2733', 'font-size': o.size || 12, 'font-weight': o.weight || 600,
-          'dominant-baseline': o.base || 'auto', transform: o.rot ? `rotate(${o.rot} ${(o.px ? p[0] : X(p[0])) + (o.dx || 0)} ${(o.px ? p[1] : Y(p[1])) + (o.dy || 0)})` : undefined,
+          'dominant-baseline': o.base || 'auto', style: /^(#fff|#ffffff|white)$/i.test(o.color || '') || o.halo === false ? 'stroke: none' : undefined, transform: o.rot ? `rotate(${o.rot} ${(o.px ? p[0] : X(p[0])) + (o.dx || 0)} ${(o.px ? p[1] : Y(p[1])) + (o.dy || 0)})` : undefined,
         }, parent || root);
         t.textContent = str;
         return t;
