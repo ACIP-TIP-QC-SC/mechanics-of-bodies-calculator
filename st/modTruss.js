@@ -21,7 +21,7 @@
   M.controls = function (c, C) {
     const st = S(), U = Core.UNITS[M.units], Lu = U.len, F = st.fu;
     let sec = C.section(c, 'Truss');
-    C.seg(sec, { label: 'Set up from', get: () => st.mode, set: (v) => (st.mode = v), options: [['template', 'A template'], ['custom', 'Joints and members']] });
+    C.seg(sec, { label: 'Set up from', get: () => st.mode, set: (v) => (st.mode = v), options: [['template', 'A template'], ['custom', 'Joints and members'], ['space', 'Space truss (3D)']] });
     C.seg(sec, { label: 'Force unit', get: () => st.fu, set: (v) => (st.fu = v), options: U.forces.map((f) => [f, f]) });
     if (st.mode === 'template') {
       C.select(sec, { label: 'Type', get: () => st.tpl, set: (v) => { st.tpl = v; if (v === 'roof' && st.n % 2) st.n = +st.n + 1; }, options: Truss.TEMPLATES });
@@ -33,6 +33,23 @@
       if (st.tpl !== 'roof') C.seg(sec, { label: 'Loaded joints', get: () => st.chord, set: (v) => (st.chord = v), options: [['bottom', st.tpl === 'cantilever' ? 'Bottom chord' : 'Bottom chord (inside joints)'], ['top', 'Top chord']] });
       else C.note(sec, 'The roof loads act at the top chord joints.');
       C.note(sec, st.tpl === 'cantilever' ? 'The truss is held by a pin at the top of the wall and a roller (pushing horizontally) at the bottom.' : 'A pin at the left end and a roller at the right end. Joints are lettered along the bottom chord first, then the top chord.');
+    } else if (st.mode === 'space') {
+      const q = st.space, names = () => q.joints.map((j) => [j.name, j.name]);
+      sec = C.section(c, 'Joints (z up)');
+      C.list(sec, { items: q.joints, max: 26, min: 4, title: (it) => `Joint ${it.name}`, fields: () => [{ key: 'x', label: 'x', unit: Lu }, { key: 'y', label: 'y', unit: Lu }, { key: 'z', label: 'z', unit: Lu }],
+        add: [['Joint', () => { const used = new Set(q.joints.map((j) => j.name)); let i = 0; while (used.has('ABCDEFGHIJKLMNOPQRSTUVWXYZ'[i])) i++; const l = q.joints[q.joints.length - 1]; return { name: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[i] || 'Z' + i, x: tidy(l.x + 1), y: l.y, z: l.z }; }]] });
+      sec = C.section(c, 'Members');
+      C.list(sec, { items: q.members, max: 60, min: 1, color: () => '#d6e4f3', title: (it) => `Member ${it.a}${it.b}`, fields: () => [{ key: 'a', label: 'From joint', options: names() }, { key: 'b', label: 'To joint', options: names() }],
+        add: [['Member', () => ({ a: q.joints[0].name, b: q.joints[1].name })]] });
+      sec = C.section(c, 'Supports');
+      C.note(sec, 'A ball and socket gives three reaction components; a short link or a roller on a smooth surface gives one, along the axis chosen.');
+      C.list(sec, { items: q.supports, max: 6, color: () => '#cfe8d8', title: (it) => `Support at ${it.j}`,
+        fields: () => [{ key: 'j', label: 'Joint', options: names() }, { key: 'fix', label: 'Reactions', options: Truss.FIX, wide: true }],
+        add: [['Support', () => ({ j: q.joints[0].name, fix: 'xyz' })]] });
+      sec = C.section(c, 'Loads at joints');
+      C.list(sec, { items: q.loads, max: 12, color: () => '#f6c9c2', title: (it, i) => `Load ${i + 1} at ${it.j}`,
+        fields: () => [{ key: 'j', label: 'Joint', options: names() }, { key: 'Fx', label: 'F_x', unit: F }, { key: 'Fy', label: 'F_y', unit: F }, { key: 'Fz', label: 'F_z (up +)', unit: F }],
+        add: [['Load', () => ({ j: q.joints[0].name, Fx: 0, Fy: 0, Fz: -10 })]] });
     } else {
       const q = st.custom, names = () => q.joints.map((j) => [j.name, j.name]);
       sec = C.section(c, 'Joints');
@@ -51,9 +68,18 @@
         fields: (it) => [{ key: 'j', label: 'Joint', options: names() }, { key: 'by', label: 'Given as', options: BY2 }].concat(it.by === 'polar' ? [{ key: 'F', label: 'Magnitude', unit: F }, { key: 'ang', label: 'Angle ↺ from +x', unit: '°' }] : [{ key: 'Fx', label: 'F_x (→ +)', unit: F }, { key: 'Fy', label: 'F_y (↑ +)', unit: F }]),
         add: [['Load', () => ({ j: q.joints[0].name, by: 'comp', Fx: 0, Fy: -10, F: 10, ang: 270, dx: 4, dy: 3 })]] });
     }
+    if (st.mode !== 'space') {
     sec = C.section(c, 'Method of sections');
     C.toggle(sec, { label: 'Cut the truss with a section', get: () => st.cutOn !== false, set: (v) => (st.cutOn = v) });
     if (st.cutOn !== false) C.slider(sec, { label: 'Section position (fraction of the span from the left)', min: 0.01, max: 0.99, step: 0.01, get: () => st.cutF, set: (v) => (st.cutF = v), unit: '', rebuild: true });
+    }
+    sec = C.section(c, 'Largest load from member strength');
+    C.toggle(sec, { label: 'Find the largest load the members can carry', get: () => !!st.cap.on, set: (v) => (st.cap.on = v) });
+    if (st.cap.on) {
+      C.num(sec, { label: 'Largest tension any member can carry', get: () => st.cap.T, set: (v) => (st.cap.T = v), unit: F });
+      C.num(sec, { label: 'Largest compression any member can carry', get: () => st.cap.C, set: (v) => (st.cap.C = v), unit: F });
+      C.note(sec, 'Enter the loads with their real proportions (for example P = 1 at each loaded joint); all of them are scaled up together until the first member reaches its limit.');
+    }
     sec = C.section(c, 'Joint displacements');
     C.toggle(sec, { label: 'Use E and A (same for every member)', get: () => !!st.ae.use, set: (v) => (st.ae.use = v) });
     if (st.ae.use) {
@@ -67,18 +93,18 @@
     C.toggle(c, { label: 'Colour members by tension or compression', get: () => st.tcColor !== false, set: (v) => (st.tcColor = v) });
     C.toggle(c, { label: 'Show the deflected shape', get: () => st.defl !== false, set: (v) => (st.defl = v) });
     const names = M._lastNames || [];
-    C.select(c, { label: 'Joint free-body diagram', get: () => st.sel || '', set: (v) => (st.sel = v || null), options: [['', 'None (or click a joint)']].concat(names.map((n) => [n, `Joint ${n}`])) });
+    if (st.mode !== 'space') C.select(c, { label: 'Joint free-body diagram', get: () => st.sel || '', set: (v) => (st.sel = v || null), options: [['', 'None (or click a joint)']].concat(names.map((n) => [n, `Joint ${n}`])) });
   };
 
   M.compute = (U) => { const r = Truss.solve(S(), U); M._lastNames = r.ok ? r.geo.J.map((j) => j.name) : M._lastNames; return r; };
   M.onUnits = (from, to) => Truss.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
   const showDefl = () => S().defl !== false;
-  M.cap2D = () => (showDefl() ? 'Member forces and deflected shape' : 'Member forces');
+  M.cap2D = () => (S().mode === 'space' ? 'Top and front views' : showDefl() ? 'Member forces and deflected shape' : 'Member forces');
   M.cap3D = '3D view';
   const tc = () => S().tcColor !== false;
-  M.hint = () => (tc() ? 'Blue members are in tension, red in compression; the thicker' : 'The thicker') + ' the line, the larger the force. Click a joint to see its free-body diagram. Drag the orange section line to cut other members.' + (showDefl() ? ' The dashed teal truss is the deflected shape, exaggerated; press Play to watch it deflect.' : '');
-  M.legend = () => (tc() ? [[TCOL, 'Tension', 'ln'], [CCOL, 'Compression', 'ln']] : [[NCOL, 'Member', 'ln']]).concat([[ZCOL, 'Zero-force', 'ln'], [LCOL, 'Loads'], [RCOL, 'Reactions']].concat(showDefl() ? [[DCOL, 'Deflected shape', 'ln']] : [], S().cutOn !== false ? [[CUTC, 'Section', 'ln']] : []));
+  M.hint = () => S().mode === 'space' ? (tc() ? 'Blue members are in tension, red in compression; the' : 'The') + ' thicker the line, the larger the force. The top and front views are drawn to the same scale; turn the 3D view to see the truss from any side.' + (showDefl() ? ' The dashed teal truss is the deflected shape, exaggerated.' : '') : (tc() ? 'Blue members are in tension, red in compression; the thicker' : 'The thicker') + ' the line, the larger the force. Click a joint to see its free-body diagram. Drag the orange section line to cut other members.' + (showDefl() ? ' The dashed teal truss is the deflected shape, exaggerated; press Play to watch it deflect.' : '');
+  M.legend = () => (tc() ? [[TCOL, 'Tension', 'ln'], [CCOL, 'Compression', 'ln']] : [[NCOL, 'Member', 'ln']]).concat([[ZCOL, 'Zero-force', 'ln'], [LCOL, 'Loads'], [RCOL, 'Reactions']].concat(showDefl() ? [[DCOL, 'Deflected shape', 'ln']] : [], S().cutOn !== false && S().mode !== 'space' ? [[CUTC, 'Section', 'ln']] : []));
 
   const deflect = root.Anim.deflection(S);
   const defK = () => (S()._k === undefined ? 1 : S()._k);
@@ -88,6 +114,7 @@
   let dragged = false;
   M.onDrag = function (p, phase, res) {
     const g = res.geo, st = S();
+    if (g.space) return false;
     if (!g.cut || st.cutOn === false || !M._sc) return false;
     const xs = g.J.map((j) => j.x), x0 = Math.min(...xs);
     if (phase === 'down') { if (Math.abs(p[0] - g.cut.x) * M._sc > 14) return false; dragged = true; return true; }
@@ -97,7 +124,7 @@
   };
   M.onClick = function (p, res) {
     if (dragged) { dragged = false; return false; }
-    const g = res.geo, st = S(); if (!M._sc) return false;
+    const g = res.geo, st = S(); if (!M._sc || g.space) return false;
     let best = null, bd = 16 / M._sc;
     g.J.forEach((j) => { const d = Math.hypot(j.x - p[0], j.y - p[1]); if (d < bd) { bd = d; best = j; } });
     if (best) { st.sel = st.sel === best.name ? null : best.name; return true; }
@@ -124,7 +151,23 @@
   };
   const mcol = (m) => (m.zero ? ZCOL : !tc() ? NCOL : m.F > 0 ? TCOL : CCOL);
 
+  /** Space truss: top and front views, same scale. */
+  function draw2DSpace(svg, g, opt) {
+    const F = g.c.F, P = (i) => [g.J[i].x, g.J[i].y, g.J[i].z], its = [], L = g.span * 0.22;
+    if (showDefl() && g.disp) {
+      const dm = Math.max(...g.disp.map((d) => Math.hypot(...d)), 1e-300), amp = (0.06 * g.span) / dm * defK();
+      const Q = (i) => P(i).map((v, k) => v + g.disp[i][k] * amp);
+      g.Mm.forEach((m) => its.push({ kind: 'line', a: Q(m.a), b: Q(m.b), color: DCOL, w: 1.6, dash: '6 4' }));
+    }
+    g.Mm.forEach((m) => its.push({ kind: 'line', a: P(m.a), b: P(m.b), color: mcol(m), w: m.zero ? 1.4 : 2 + 4 * (Math.abs(m.F) / (g.fmax || 1)), dash: m.zero ? '5 4' : null }));
+    g.loads.forEach((l) => { if (!(l.F > 0)) return; const p = P(l.j); its.push({ a: p.map((v, k) => v - (l.f[k] / l.F) * L), b: p, color: LCOL, label: opt.showP ? `${fmt(l.F)} ${F}` : null }); });
+    g.R.forEach((q) => { if (!(Math.abs(q.v) > 0)) return; const p = P(q.j), sg = Math.sign(q.v); its.push({ a: p.map((v, k) => v - q.d[k] * sg * L * 0.8), b: p, color: RCOL, label: opt.showP ? `${q.name} = ${fmt(Math.abs(q.v))}` : null }); });
+    g.J.forEach((j, i) => its.push({ kind: 'dot', a: P(i), color: '#1d2733', label: j.name }));
+    Charts.twoViews(svg, its);
+  }
+
   M.draw2D = function (svg, res, U, opt) {
+    if (res.geo.space) return draw2DSpace(svg, res.geo, opt);
     const g = res.geo, st = S(), { F } = g.c;
     const sel = st.sel ? g.J.findIndex((j) => j.name === st.sel) : -1;
     const W = svg.clientWidth || 800, H = svg.clientHeight || 560;
@@ -241,7 +284,24 @@
     const c = [u[1] * n[2] - u[2] * n[1], u[2] * n[0] - u[0] * n[2], u[0] * n[1] - u[1] * n[0]], base = b.map((x, i) => x - u[i] * hs);
     [1, -1].forEach((sg) => v.line([b, base.map((x, i) => x + c[i] * sg * hs * 0.4)], color, lw || 2.4));
   }
+  /** Space truss in 3D: book axes with z up. */
+  function draw3DSpace(v, g, opt) {
+    const F = g.c.F, e = g.span, t = e * 0.012, V = (p) => [p[0], p[2], -p[1]];
+    const moving = showDefl() && g.disp && S()._k !== undefined, dm = g.disp ? Math.max(...g.disp.map((d) => Math.hypot(...d)), 1e-300) : 1;
+    const P0 = (i) => [g.J[i].x, g.J[i].y, g.J[i].z], ampM = moving ? ((0.06 * e) / dm) * S()._k : 0;
+    const P = moving ? (i) => P0(i).map((x, k) => x + g.disp[i][k] * ampM) : P0;
+    v._hs = e * 0.03;
+    g.Mm.forEach((m) => v.line([V(P(m.a)), V(P(m.b))], mcol(m), m.zero ? 1.4 : 2 + 4 * (Math.abs(m.F) / (g.fmax || 1)), m.zero ? [5, 4] : null));
+    g.J.forEach((j, i) => { const p = V(P(i)); v.box(p[0] - t, p[1] - t, p[2] - t, p[0] + t, p[1] + t, p[2] + t, '#dfe5ea', 1, '#1d2733'); v.label([p[0], p[1] + t * 4, p[2]], j.name, '#1d2733'); });
+    g.sup.forEach((sp) => { if (sp.j === undefined) return; const p = V(P(sp.j)), w = e * 0.03; v.box(p[0] - w, p[1] - w * 1.6, p[2] - w, p[0] + w, p[1] - t * 1.5, p[2] + w, sp.fix === 'xyz' ? '#b9c4cc' : '#d5dde2', 1, '#5a6b75'); });
+    if (moving) g.Mm.forEach((m) => v.line([V(P0(m.a)), V(P0(m.b))], '#9aa5ad', 1.4, [5, 4]));
+    else if (showDefl() && g.disp) { const amp = (0.06 * e) / dm * defK(), Q = (i) => V(P0(i).map((x, k) => x + g.disp[i][k] * amp)); g.Mm.forEach((m) => v.line([Q(m.a), Q(m.b)], DCOL, 1.6, [6, 4])); }
+    g.loads.forEach((l) => { if (!(l.F > 0)) return; const p = P(l.j), L = e * 0.2, a = p.map((x, k) => x - (l.f[k] / l.F) * L); arrow3(v, V(a), V(p), LCOL, 2.4); if (opt.showP) v.label(V(a), `${fmt(l.F)} ${F}`, LCOL); });
+    g.R.forEach((q) => { if (!(Math.abs(q.v) > 0)) return; const p = P(q.j), sg = Math.sign(q.v), L = e * 0.15, gap = e * 0.05, h = p.map((x, k) => x - q.d[k] * sg * gap), a = h.map((x, k) => x - q.d[k] * sg * L); arrow3(v, V(a), V(h), RCOL, 2.4); if (opt.showP) v.label(V(a), `${q.name} = ${fmt(Math.abs(q.v))} ${F}`, RCOL); });
+    v.autoBounds();
+  }
   M.draw3D = function (v, res, U, opt) {
+    if (res.geo.space) return draw3DSpace(v, res.geo, opt);
     const g = res.geo, F = g.c.F, ys = g.J.map((j) => j.y), e = Math.max(g.span, Math.max(...ys) - Math.min(...ys), 1e-9), t = e * 0.012;
     const moving = showDefl() && g.disp && S()._k !== undefined, dmv = moving ? Math.max(...g.disp.map((d) => Math.hypot(d[0], d[1])), 1e-300) : 1, ampM = moving ? ((0.06 * e) / dmv) * S()._k : 0;
     const xm = (Math.min(...g.J.map((j) => j.x)) + Math.max(...g.J.map((j) => j.x))) / 2, P0 = (i, dz) => [g.J[i].x - xm, g.J[i].y, dz || 0];
@@ -267,6 +327,7 @@
   const J = (s) => s.split(' ').map((t) => { const [name, x, y] = t.split(','); return { name, x: +x, y: +y }; });
   const Mb = (s) => s.split(' ').map((m) => ({ a: m[0], b: m[1] }));
   const ld = (j, Fx, Fy) => ({ j, by: 'comp', Fx, Fy, F: Math.hypot(Fx, Fy), ang: 270, dx: 4, dy: 3 });
+  const SP = (f) => ({ joints: [{ name: 'C', x: 0, y: 0, z: 8 }, { name: 'A', x: 6, y: 0, z: 0 }, { name: 'B', x: 0, y: 6, z: 0 }, { name: 'D', x: 0, y: -6, z: 0 }], members: Mb('CA CB CD AB AD DB'), supports: [{ j: 'A', fix: 'z' }, { j: 'D', fix: 'xz' }, { j: 'B', fix: 'xyz' }], loads: [{ j: 'C', Fx: f[0], Fy: f[1], Fz: f[2] }] });
   const cust = (o) => Object.assign({ mode: 'custom', cutOn: false }, o);
   M.presets = [
     { name: 'Test: Book Example 6.1, three-member truss (method of joints)', units: 'SI', state: cust({ fu: 'N', custom: { joints: J('A,0,0 B,0,2 C,2,0'), members: Mb('BA BC CA'), supports: [{ j: 'A', type: 'pin', ang: 90 }, { j: 'C', type: 'roller', ang: 90 }], loads: [ld('B', 500, 0)] } }),
@@ -283,6 +344,13 @@
       expect: [{ k: 'F_CF', v: 0.589 }, { k: 'A_y', v: 3.25 }, { k: 'N_E', v: 4.75 }] },
     { name: 'Test: Pratt truss, 4 panels, closed form (top chord = M/h)', units: 'SI', state: { mode: 'template', tpl: 'pratt', fu: 'kN', n: 4, a: 3, h: 4, P: 10, chord: 'bottom', cutOn: true, cutF: 0.375 },
       expect: [{ k: 'A_y', v: 15 }, { k: 'N_E', v: 15 }, { k: 'F_FG', v: 15 }, { k: 'F_BC', v: 11.25 }] },
+    { name: 'Test: Problem 6-14, greatest load P from member strengths (849 lb)', units: 'US', state: cust({ fu: 'lb', cap: { on: true, T: 1500, C: 800 }, custom: { joints: J('A,0,0 B,10,10 C,20,0 D,10,2.5'), members: Mb('AB BC AD DC BD'), supports: [{ j: 'A', type: 'pin', ang: 90 }, { j: 'C', type: 'roller', ang: 90 }], loads: [ld('D', 0, -1)] } }),
+      expect: [{ k: 'Largest load (λ × the largest load entered)', v: 848.53 }, { k: 'F_AB', v: 0.94281 }, { k: 'F_BD', v: 1.3333 }] },
+    { name: 'Test: Problem 6-53, space truss with F = {−500i + 600j + 400k} lb', units: 'US', state: { mode: 'space', fu: 'lb', space: SP([-500, 600, 400]) },
+      expect: [{ k: 'F_CA', v: 833.33 }, { k: 'F_CB', v: 666.67 }, { k: 'F_CD', v: 333.33 }, { k: 'F_AB', v: 353.55 }, { k: 'F_AD', v: 353.55 }, { k: 'F_DB', v: 50 }] },
+    { name: 'Test: Problem 6-54, space truss with F = {600i + 450j − 750k} lb', units: 'US', state: { mode: 'space', fu: 'lb', space: SP([600, 450, -750]) },
+      expect: [{ k: 'F_CA', v: 1000 }, { k: 'F_CB', v: 343.75 }, { k: 'F_CD', v: 406.25 }, { k: 'F_AB', v: 424.26 }, { k: 'F_DB', v: 543.75 }] },
+    { name: 'Space truss, largest load with member strengths (SI)', units: 'SI', state: { mode: 'space', fu: 'kN', cap: { on: true, T: 20, C: 12 } } },
     { name: 'Pratt bridge truss, 6 panels, with E and A (steel)', units: 'SI', state: { mode: 'template', tpl: 'pratt', fu: 'kN', n: 6, a: 3, h: 4, P: 40, chord: 'bottom', cutF: 0.42, ae: { use: true, E: 200, A: 2500 } } },
     { name: 'Howe bridge truss, 8 panels, deck loads on top', units: 'US', state: { mode: 'template', tpl: 'howe', fu: 'kip', n: 8, a: 10, h: 12, P: 8, chord: 'top', cutF: 0.32 } },
     { name: 'Warren truss, 5 panels', units: 'SI', state: { mode: 'template', tpl: 'warren', fu: 'kN', n: 5, a: 4, h: 3.5, P: 20, chord: 'bottom', cutF: 0.5 } },

@@ -280,6 +280,20 @@ group('trusses module', () => {
   Truss.convertState(st, 'SI', 'US'); Truss.convertState(st, 'US', 'SI');
   const a = JSON.parse(st0), b2 = st;
   close('unit round trip E', b2.ae.E, a.ae.E, 1e-6); close('unit round trip x', b2.custom.joints[3].x, a.custom.joints[3].x, 1e-6); close('unit round trip load', b2.custom.loads[0].Fy, a.custom.loads[0].Fy, 1e-6);
+  // Problem 6-14: AB, BC carry 800 lb (C), the others 1500 lb (T): P_max = 849 lb
+  r = Truss.solve(mk({ mode: 'custom', fu: 'lb', cutOn: false, cap: { on: true, T: 1500, C: 800 }, custom: { joints: J('A,0,0 B,10,10 C,20,0 D,10,2.5'), members: Mb('AB BC AD DC BD'), supports: [{ j: 'A', type: 'pin', ang: 90 }, { j: 'C', type: 'roller', ang: 90 }], loads: [ld('D', 0, -1)] } }), U.US);
+  close('6-14 P_max', out(r, 'Largest load (λ × the largest load entered)'), 848.53, 1e-3);
+  // space trusses: Problems 6-53 and 6-54
+  const sp = (f) => mk({ mode: 'space', fu: 'lb', space: { joints: [{ name: 'C', x: 0, y: 0, z: 8 }, { name: 'A', x: 6, y: 0, z: 0 }, { name: 'B', x: 0, y: 6, z: 0 }, { name: 'D', x: 0, y: -6, z: 0 }], members: Mb('CA CB CD AB AD DB'), supports: [{ j: 'A', fix: 'z' }, { j: 'D', fix: 'xz' }, { j: 'B', fix: 'xyz' }], loads: [{ j: 'C', Fx: f[0], Fy: f[1], Fz: f[2] }] } });
+  r = Truss.solve(sp([-500, 600, 400]), U.US);
+  [['F_CA', 833.33], ['F_CB', 666.67], ['F_CD', 333.33], ['F_AB', 353.55], ['F_AD', 353.55], ['F_DB', 50]].forEach(([k, v]) => close('6-53 ' + k, out(r, k), v, 1e-3));
+  truthy('6-53 CB in compression', /\(C\)/.test(r.out.find((o) => o.k === 'F_CB').u));
+  r = Truss.solve(sp([600, 450, -750]), U.US);
+  [['F_CA', 1000], ['F_CB', 343.75], ['F_CD', 406.25], ['F_AB', 424.26], ['F_DB', 543.75]].forEach(([k, v]) => close('6-54 ' + k, out(r, k), v, 1e-3));
+  truthy('space truss default solves', Truss.solve(mk({ mode: 'space' }), SI).ok);
+  const bad = sp([0, 0, -1]); bad.space.supports = [{ j: 'B', fix: 'xyz' }, { j: 'A', fix: 'z' }];
+  truthy('space truss: m + r < 3j fails', !Truss.solve(bad, U.US).ok);
+  { const s2 = mk({ mode: 'space' }), F0 = out(Truss.solve(s2, SI), 'F_CA'); Truss.convertState(s2, 'SI', 'US'); Truss.convertState(s2, 'US', 'SI'); close('space units round trip', out(Truss.solve(s2, SI), 'F_CA'), F0, 1e-6); }
 });
 group('friction module', () => {
   const mk = (o) => Core.deepMerge(Friction.defaults(), o), SI = U.SI, US = U.US;

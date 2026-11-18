@@ -31,6 +31,13 @@
       cutOn: true, cutF: 0.42,
       ae: { use: false, E: 200, A: 1500 },
       defl: true, tcColor: true,
+      cap: { on: false, T: 10, C: 10 },
+      space: {
+        joints: [{ name: 'C', x: 0, y: 0, z: 2.4 }, { name: 'A', x: 1.8, y: 0, z: 0 }, { name: 'B', x: 0, y: 1.8, z: 0 }, { name: 'D', x: 0, y: -1.8, z: 0 }],
+        members: ['CA', 'CB', 'CD', 'AB', 'AD', 'DB'].map((m) => ({ a: m[0], b: m[1] })),
+        supports: [{ j: 'A', fix: 'z' }, { j: 'D', fix: 'xz' }, { j: 'B', fix: 'xyz' }],
+        loads: [{ j: 'C', Fx: -2, Fy: 2.5, Fz: 1.6 }],
+      },
     };
   }
 
@@ -139,6 +146,7 @@
   const TC = (v, F, sc) => (Math.abs(v) <= 1e-7 * sc ? `0 (zero-force member)` : `${fmt(Math.abs(v))} ${F} (${v > 0 ? 'T' : 'C'})`);
 
   function solve(st, U) {
+    if (st.mode === 'space') return solveSpace(st, U);
     const c = { F: st.fu, Lu: U.len, FL: `${st.fu}·${U.len}`, U };
     const md = model(st);
     if (md.err) return fail(md.err);
@@ -352,16 +360,165 @@
     const Mt = Mm.reduce((a, M) => (M.F > a.F ? M : a), { F: -Infinity }), Mc = Mm.reduce((a, M) => (M.F < a.F ? M : a), { F: Infinity });
     if (Mt.F > 0) out.push({ k: `Largest tension (${Mt.name})`, v: Mt.F, u: F });
     if (Mc.F < 0) out.push({ k: `Largest compression (${Mc.name})`, v: -Mc.F, u: F });
+    capacity(st, Mm, loads, S, out, F, sc, warn);
     return {
       ok: true, err: [], warn, status: { cls: warn.length ? 'warn' : 'ok', text: `Statically determinate · m + r = 2j = ${2 * nj}` }, out, steps: S.list,
       geo: { c, J, Mm: Mm.map((M) => ({ a: M.a, b: M.b, name: M.name, F: M.F, L: M.L, u: M.u, zero: Math.abs(M.F) <= 1e-7 * sc, rule: zero.has(Mm.indexOf(M)) })), sup, R: R.map((q) => ({ name: q.name, j: q.j, d: q.d, v: q.v })), loads, cut, disp, dU, useAE, fmax, span, joints: jointSteps.map((s) => s.joint) },
     };
   }
 
+
+  /* ------------------------------------------------------------------ */
+  /* Largest load from member capacities (forces scale with the loads)  */
+  /* ------------------------------------------------------------------ */
+  function capacity(st, Mm, loads, S, out, F, sc, warn) {
+    const cp = st.cap; if (!cp || !cp.on) return;
+    const Tm = +cp.T, Cm = +cp.C;
+    if (!(Tm > 0) || !(Cm > 0)) { warn.push('Enter the largest tension and compression greater than zero to find the largest load.'); return; }
+    const rows = [];
+    let lam = Infinity, gov = null;
+    Mm.forEach((M) => {
+      if (Math.abs(M.F) <= 1e-7 * sc) { rows.push([M.name, '0', '–', '–']); return; }
+      const cap = M.F > 0 ? Tm : Cm, r = cap / Math.abs(M.F);
+      rows.push([M.name, `${fmt(Math.abs(M.F))} (${M.F > 0 ? 'T' : 'C'})`, `${fmt(cap)} (${M.F > 0 ? 'T' : 'C'})`, fmt(r)]);
+      if (r < lam) { lam = r; gov = M; }
+    });
+    if (!gov) { warn.push('Every member force is zero, so the member capacities do not limit the loads.'); return; }
+    const Pmax = Math.max(...loads.map((l) => l.F));
+    S.add({ t: 'Largest load from the member capacities', f: 'λ = smallest of (capacity / |F|) over all members;  largest loads = λ × loads entered',
+      n: `Every member force is proportional to the loads, so the loads can be multiplied by λ until the first member reaches its capacity (${fmt(Tm)} ${F} in tension, ${fmt(Cm)} ${F} in compression). This is the book's method of assuming one member is at its limit and checking the others.`,
+      table: { head: ['Member', `Force for the loads entered (${F})`, `Capacity (${F})`, 'capacity / |F|'], rows },
+      r: `λ = ${fmt(lam)}, governed by ${gov.name} (${gov.F > 0 ? 'tension' : 'compression'});  largest load = ${fmt(lam)} × ${fmt(Pmax)} = ${fmt(lam * Pmax)} ${F}` });
+    out.unshift({ k: `Largest load (λ × the largest load entered)`, v: lam * Pmax, u: F, hl: true }, { k: `Load factor λ (governed by ${gov.name})`, v: lam, u: '', hl: true });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Space trusses (6.5): 3 equations at each joint                     */
+  /* ------------------------------------------------------------------ */
+  const FIX = [['xyz', 'Ball and socket (x, y, z)'], ['z', 'Short link or roller (z)'], ['x', 'Short link (x)'], ['y', 'Short link (y)'], ['xz', 'Links in x and z'], ['yz', 'Links in y and z'], ['xy', 'Links in x and y']];
+  function solveSpace(st, U) {
+    const q = st.space || {}, F = st.fu, Lu = U.len, c = { F, Lu, FL: `${F}·${Lu}`, U, space: true }, err = [], idx = {};
+    const J = (q.joints || []).map((j, i) => {
+      const name = String(j.name || '').trim() || nm(i);
+      if (idx[name] !== undefined) err.push(`Two joints are named ${name}.`);
+      idx[name] = i;
+      if (![j.x, j.y, j.z].every((v) => isFinite(+v))) err.push(`Joint ${name}: enter its coordinates.`);
+      return { name, x: +j.x, y: +j.y, z: +j.z };
+    });
+    if (J.length < 4) err.push('A space truss needs at least four joints.');
+    J.forEach((p, i) => J.forEach((r, k) => { if (k > i && Math.hypot(p.x - r.x, p.y - r.y, p.z - r.z) < 1e-9) err.push(`Joints ${p.name} and ${r.name} are at the same point.`); }));
+    const seen = {};
+    const Mm = (q.members || []).map((m) => {
+      const a = idx[m.a], b = idx[m.b];
+      if (a === undefined || b === undefined) { err.push(`Member ${m.a}${m.b}: joint ${a === undefined ? m.a : m.b} does not exist.`); return null; }
+      if (a === b) { err.push(`Member ${m.a}${m.b} joins a joint to itself.`); return null; }
+      const key = Math.min(a, b) + '-' + Math.max(a, b); if (seen[key]) err.push(`Member ${m.a}${m.b} is listed twice.`); seen[key] = true;
+      const d = [J[b].x - J[a].x, J[b].y - J[a].y, J[b].z - J[a].z], L = Math.hypot(...d);
+      return { a, b, name: J[a].name + J[b].name, L, u: d.map((v) => v / L) };
+    });
+    if (!Mm.length) err.push('Add the members.');
+    const R = [];
+    (q.supports || []).forEach((s) => {
+      const j = idx[s.j]; if (j === undefined) { err.push(`Support at ${s.j}: that joint does not exist.`); return; }
+      String(s.fix || 'xyz').split('').forEach((ax) => { const k = 'xyz'.indexOf(ax); if (k < 0) return; const d = [0, 0, 0]; d[k] = 1; R.push({ name: `${J[j].name}_${ax}`, j, d }); });
+    });
+    if (!R.length) err.push('Add the supports.');
+    const loads = (q.loads || []).map((l, i) => {
+      const j = idx[l.j]; if (j === undefined) { err.push(`Load ${i + 1}: joint ${l.j} does not exist.`); return null; }
+      const f = [+l.Fx || 0, +l.Fy || 0, +l.Fz || 0];
+      return { j, f, Fx: f[0], Fy: f[1], Fz: f[2], F: Math.hypot(...f) };
+    }).filter(Boolean);
+    if (err.length) return fail([...new Set(err)]);
+    const nj = J.length, m = Mm.length, r = R.length, S = Steps(), out = [], warn = [];
+    S.add({ t: 'Determinacy and stability', f: 'm + r = 3j', n: 'Each joint of a space truss gives three equations (ΣF_x = ΣF_y = ΣF_z = 0), so the member forces and reactions can be found when m + r = 3j and the truss cannot move.',
+      s: `m + r = ${m} + ${r} = ${m + r};   3j = 3(${nj}) = ${3 * nj}` });
+    if (m + r < 3 * nj) return fail(`Unstable: m + r = ${m + r} is less than 3j = ${3 * nj}. Add ${3 * nj - m - r} member${3 * nj - m - r > 1 ? 's' : ''} or support reactions.`);
+    if (m + r > 3 * nj) return fail(`Statically indeterminate: m + r = ${m + r} is more than 3j = ${3 * nj}. Remove ${m + r - 3 * nj} member${m + r - 3 * nj > 1 ? 's' : ''} or reactions.`);
+    S.add({ t: 'Member directions', f: 'u = (r_end − r_start) / L', n: 'Each member force is written as a Cartesian vector F u along the member, pulling away from the joint when positive (tension).',
+      table: { head: ['Member', `L (${Lu})`, 'u_x', 'u_y', 'u_z'], rows: Mm.map((M) => [M.name, fmt(M.L), fmt(M.u[0]), fmt(M.u[1]), fmt(M.u[2])]) } });
+    const A = [], b = [];
+    for (let i = 0; i < 3 * nj; i++) { A.push(new Array(m + r).fill(0)); b.push(0); }
+    Mm.forEach((M, k) => { for (let a = 0; a < 3; a++) { A[3 * M.a + a][k] += M.u[a]; A[3 * M.b + a][k] -= M.u[a]; } });
+    R.forEach((rq, k) => { for (let a = 0; a < 3; a++) A[3 * rq.j + a][m + k] += rq.d[a]; });
+    loads.forEach((l) => { for (let a = 0; a < 3; a++) b[3 * l.j + a] -= l.f[a]; });
+    const sol = linSolve(A, b);
+    if (sol.rank < m + r || !sol.x) return fail('Unstable: although m + r = 3j, the members and supports are arranged so that the truss can still move (for example all the reactions are parallel, or meet one line). Change the members or the supports.');
+    const sc = Math.max(1, ...loads.map((l) => l.F));
+    const x = sol.x.map((v) => (Math.abs(v) < 1e-7 * sc ? 0 : v));
+    Mm.forEach((M, k) => (M.F = x[k]));
+    R.forEach((rq, k) => (rq.v = x[m + k]));
+
+    /* method of joints: a joint with at most three unknowns (members and reactions) at a time */
+    const known = new Set(), kR = new Set(), AX = ['x', 'y', 'z'];
+    const memAt = (j) => Mm.map((M, k) => ({ k, M, u: M.a === j ? M.u : M.u.map((v) => -v) })).filter((t) => t.M.a === j || t.M.b === j);
+    const eq = (j, ax) => {
+      const parts = [];
+      memAt(j).forEach((t) => { const a = t.u[ax]; if (Math.abs(a) < 1e-12) return; parts.push(known.has(t.k) ? `(${fmt(a)})(${fmt(t.M.F)})` : `(${fmt(a)}) F_${t.M.name}`); });
+      R.forEach((rq, k) => { if (rq.j !== j || !rq.d[ax]) return; parts.push(kR.has(k) ? `(${fmt(rq.v)})` : rq.name); });
+      const ext = loads.reduce((s, l) => s + (l.j === j ? l.f[ax] : 0), 0);
+      let s = parts.join(' + ') || '0'; if (Math.abs(ext) > 1e-12 * sc) s += ext < 0 ? ` − ${fmt(-ext)}` : ` + ${fmt(ext)}`;
+      return `ΣF_${AX[ax]}: ${s} = 0`;
+    };
+    let guard = 0;
+    while (known.size < m && guard++ < 4 * nj) {
+      let best = null;
+      for (let j = 0; j < nj; j++) {
+        const um = memAt(j).filter((t) => !known.has(t.k)), ur = R.map((rq, k) => k).filter((k) => R[k].j === j && !kR.has(k));
+        const n = um.length + ur.length;
+        if (!um.length || n > 3) continue;
+        if (!best || n > best.n) best = { j, um, ur, n };
+      }
+      if (!best) break;
+      const { j, um, ur } = best, axes = [0, 1, 2].filter((ax) => um.some((t) => Math.abs(t.u[ax]) > 1e-12) || ur.some((k) => R[k].d[ax]));
+      const sline = axes.map((ax) => eq(j, ax)).join(';   ');
+      um.forEach((t) => known.add(t.k)); ur.forEach((k) => kR.add(k));
+      S.add({ t: `Joint ${J[j].name}`, f: 'ΣF_x = 0;  ΣF_y = 0;  ΣF_z = 0', n: `Free-body diagram of joint ${J[j].name}: ${um.length} unknown member force${um.length > 1 ? 's' : ''}${ur.length ? ` and ${ur.length} reaction${ur.length > 1 ? 's' : ''}` : ''}, so its three equations give them.`,
+        s: sline, r: um.map((t) => `F_${t.M.name} = ${TC(t.M.F, F, sc)}`).concat(ur.map((k) => `${R[k].name} = ${fmt(R[k].v)} ${F}`)).join(';  ') });
+    }
+    if (known.size < m) S.add({ t: 'Remaining joints solved together', n: 'Every remaining joint has more than three unknowns, so these joint equations are solved simultaneously.', r: Mm.filter((M, k) => !known.has(k)).map((M) => `F_${M.name} = ${TC(M.F, F, sc)}`).join(';  ') });
+    const restR = R.filter((rq, k) => !kR.has(k));
+    if (restR.length) S.add({ t: 'Support reactions', n: 'The reactions still unknown follow from the equations of the joints they act on.', r: restR.map((rq) => `${rq.name} = ${fmt(rq.v)} ${F}`).join(', ') });
+
+    /* joint displacements from AE (AE × δ when E and A are not given) */
+    const useAE = !!(st.ae && st.ae.use);
+    let AE = 1, dU = c.FL, kD = 1;
+    if (useAE) {
+      const E = +st.ae.E, Ar = +st.ae.A;
+      if (!(E > 0) || !(Ar > 0)) return fail('Enter E and A greater than zero, or turn off "Use E and A".');
+      AE = U.id === 'US' ? Core.convert(E * Ar, 'kip', F) : Core.convert(E * 1e9 * Ar * 1e-6, 'N', F);
+      dU = U.lenS; kD = Core.convert(1, Lu, dU);
+    }
+    const D = [], db = [];
+    Mm.forEach((M) => { const row = new Array(3 * nj).fill(0); for (let a = 0; a < 3; a++) { row[3 * M.b + a] = M.u[a]; row[3 * M.a + a] = -M.u[a]; } D.push(row); db.push((M.F * M.L) / AE); });
+    R.forEach((rq) => { const row = new Array(3 * nj).fill(0); for (let a = 0; a < 3; a++) row[3 * rq.j + a] = rq.d[a]; D.push(row); db.push(0); });
+    const ds = linSolve(D, db);
+    let disp = null;
+    if (ds.x) {
+      disp = J.map((p, i) => [0, 1, 2].map((a) => ds.x[3 * i + a] * kD));
+      const mags = disp.map((d) => Math.hypot(...d)), im = mags.indexOf(Math.max(...mags));
+      S.add({ t: useAE ? 'Joint displacements' : 'Joint displacements (AE constant, not given)', f: 'δ_member = F L / (AE);   (u_end − u_start) · u = δ_member',
+        n: `Each member changes length by FL/(AE); the joint displacements that fit every member, with the supports held in their reaction directions, follow from these equations.${useAE ? ` AE = ${fmt(AE)} ${F}.` : ' E and A are not given, so the values are AE × displacement, in ' + c.FL + '.'}`,
+        table: { head: ['Joint', `${useAE ? '' : 'AE·'}δ_x (${dU})`, `${useAE ? '' : 'AE·'}δ_y (${dU})`, `${useAE ? '' : 'AE·'}δ_z (${dU})`], rows: J.map((p, i) => [p.name, fmt(disp[i][0]), fmt(disp[i][1]), fmt(disp[i][2])]) },
+        r: `largest: joint ${J[im].name}, ${useAE ? 'δ' : 'AE·δ'} = ${fmt(mags[im])} ${dU}` });
+      out.push({ k: useAE ? `Largest joint displacement (${J[im].name})` : `Largest AE·δ (joint ${J[im].name})`, v: mags[im], u: dU });
+    }
+
+    R.forEach((rq) => out.unshift({ k: rq.name, v: rq.v, u: F, hl: true }));
+    Mm.forEach((M) => out.push({ k: `F_${M.name}`, v: Math.abs(M.F), u: Math.abs(M.F) <= 1e-7 * sc ? `${F} (zero)` : `${F} (${M.F > 0 ? 'T' : 'C'})` }));
+    out.push({ k: 'Zero-force members', v: Mm.filter((M) => Math.abs(M.F) <= 1e-7 * sc).length, u: '' });
+    capacity(st, Mm, loads, S, out, F, sc, warn);
+    const fmax = Math.max(...Mm.map((M) => Math.abs(M.F)));
+    const ext = (k) => { const v = J.map((p) => p[k]); return Math.max(...v) - Math.min(...v); };
+    return {
+      ok: true, err: [], warn, status: { cls: warn.length ? 'warn' : 'ok', text: `Space truss, statically determinate · m + r = 3j = ${3 * nj}` }, out, steps: S.list,
+      geo: { c, space: true, J, Mm: Mm.map((M) => ({ a: M.a, b: M.b, name: M.name, F: M.F, L: M.L, u: M.u, zero: Math.abs(M.F) <= 1e-7 * sc })), R: R.map((rq) => ({ name: rq.name, j: rq.j, d: rq.d, v: rq.v })), sup: (q.supports || []).map((s) => ({ j: idx[s.j], fix: s.fix })), loads, disp, dU, useAE, fmax, span: Math.max(ext('x'), ext('y'), ext('z'), 1e-9) },
+    };
+  }
+
   /* ------------------------------------------------------------------ */
   /* Units                                                              */
   /* ------------------------------------------------------------------ */
-  const LEN = new Set(['x', 'y', 'a', 'h']), FOR = new Set(['F', 'Fx', 'Fy', 'P']);
+  const LEN = new Set(['x', 'y', 'z', 'a', 'h']), FOR = new Set(['F', 'Fx', 'Fy', 'Fz', 'P']);
   function convertState(st, from, to) {
     if (from === to) return st;
     const { convert, twin, UNITS } = Core;
@@ -372,7 +529,8 @@
       Object.keys(o).forEach((k) => { const v = o[k]; if (typeof v === 'number') { if (LEN.has(k)) o[k] = tidy(v * kL, 9); else if (FOR.has(k)) o[k] = tidy(v * kF, 9); } else walk(v); });
     };
     st.a = tidy(+st.a * kL, 9); st.h = tidy(+st.h * kL, 9); st.P = tidy(+st.P * kF, 9);
-    walk(st.custom);
+    walk(st.custom); walk(st.space);
+    if (st.cap) { st.cap.T = tidy(+st.cap.T * kF, 9); st.cap.C = tidy(+st.cap.C * kF, 9); }
     if (st.ae) {
       st.ae.E = tidy(convert(+st.ae.E, from === 'SI' ? 'GPa' : 'ksi', to === 'SI' ? 'GPa' : 'ksi'), 9);
       st.ae.A = tidy(convert(+st.ae.A, from === 'SI' ? 'mm²' : 'in²', to === 'SI' ? 'mm²' : 'in²'), 9);
@@ -381,7 +539,7 @@
     return st;
   }
 
-  const Truss = { defaults, solve, convertState, template, model, TEMPLATES };
+  const Truss = { defaults, solve, convertState, template, model, TEMPLATES, FIX };
   root.Truss = Truss;
   if (typeof module !== 'undefined' && module.exports) module.exports = Truss;
 })(typeof window !== 'undefined' ? window : globalThis);
