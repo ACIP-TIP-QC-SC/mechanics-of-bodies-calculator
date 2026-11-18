@@ -175,7 +175,7 @@
   function floor3(v, x0, x1, y, d, a) {
     a = a || 0;
     const ca = Math.cos(a), sa = Math.sin(a), P = (s1, n1, z) => [x0 + s1 * ca - n1 * sa, y + s1 * sa + n1 * ca, z], L = (x1 - x0) / (ca || 1);
-    const t = 0.12 * Math.max(1, L / 10);
+    const t = 0.012 * L;
     const top = [P(0, 0, d), P(L, 0, d), P(L, 0, -d), P(0, 0, -d)], bot = [P(0, -t, d), P(L, -t, d), P(L, -t, -d), P(0, -t, -d)];
     const lay = root.View3D.restLayer([-sa, ca, 0]);
     v.face(top, '#d5dbe1', 1, '#7f8c8d', 1, lay, [-sa, ca, 0]);

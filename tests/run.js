@@ -7,6 +7,7 @@ const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/i
 const Forces = R('st/forces.js'), Equil = R('st/equil.js'), Truss = R('st/truss.js'), Friction = R('st/friction.js');
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
 const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js'), Torsion = R('md/torsion.js'), BeamStress = R('md/beamstress.js'), Deflect = R('md/deflect.js'), Transform = R('md/transform.js'), Combined = R('md/combined.js'), Buckle = R('md/buckle.js');
+const Rect = R('dy/rect.js'), Curv = R('dy/curv.js'), Pkin = R('dy/pkin.js'), Impact = R('dy/impact.js'), RbMotion = R('dy/rbmotion.js'), RbForce = R('dy/rbforce.js'), Vib = R('dy/vib.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
 const filter = (process.argv[2] || '').toLowerCase();
@@ -764,6 +765,100 @@ group('buckling module', () => {
   const a = out(Buckle.solve(st, U.SI), 'Allowable load P_allow');
   Buckle.convertState(st, 'SI', 'US'); close('P_allow in kip', out(Buckle.solve(st, U.US), 'Allowable load P_allow'), a * 0.224809, 1e-4);
   Buckle.convertState(st, 'US', 'SI'); close('P_allow after the round trip', out(Buckle.solve(st, U.SI), 'Allowable load P_allow'), a, 1e-4);
+});
+
+group('dynamics: rectilinear kinematics', () => {
+  const run = (o, sys) => Rect.solve(Object.assign(Rect.defaults(), o), U[sys]);
+  { const r = run({ mode: 'func', given: 'v', c: [0, 2, 3, 0, 0], s0: 0, t: 3 }, 'US'); [{ k: 'Position s', v: 36 }, { k: 'Acceleration a', v: 20 }].forEach((e) => close('Book Example 12.1, v = 3t² + 2t ft/s, at t = 3 s: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'av', form: 'kv3', k: 0.4, v0: 60, s0: 0, t: 4, track: 'v' }, 'SI'); [{ k: 'Velocity v', v: 0.559 }, { k: 'Position s', v: 4.431 }].forEach((e) => close('Book Example 12.2, projectile slowed by a = −0.4v³, at t = 4: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'const', grav: true, s0: 40, v0: 75, find: 's', at: 0, track: 'v' }, 'SI'); [{ k: 'Turning point position', v: 326.7 }, { k: 'Velocity v', v: -80.06 }].forEach((e) => close('Book Example 12.3, rocket at 75 m/s from 40 m up, free fall: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'as', cs: [0, 4, 0], s0: 0.1, v0: 0, sT: 0.2, track: 'v' }, 'SI'); [{ k: 'Velocity at the target v', v: 0.3464 }, { k: 'Time to reach the target t', v: 0.658 }].forEach((e) => close('Book Example 12.4, a = 4s from rest at 100 mm to 200 mm: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'func', given: 'v', c: [0, -6, 3, 0, 0], s0: 0, t: 3.5 }, 'SI'); [{ k: 'Position s', v: 6.125 }, { k: 'Distance travelled s_T', v: 14.125 }, { k: 'Average velocity v_avg', v: 1.75 }, { k: 'Average speed (v_sp)_avg', v: 4.036 }].forEach((e) => close('Book Example 12.5, v = 3t² − 6t over 0 to 3.5 s: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'graph', gtype: 'vt', s0: 0, pts: [{ t: 0, v: 0 }, { t: 10, v: 20 }, { t: 30, v: 20 }], t: 30 }, 'US'); [{ k: 'Position s', v: 500 }, { k: 'Velocity v', v: 20 }].forEach((e) => close('Book Example 12.6, bicycle v–t graph to 30 s: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'graph', gtype: 'at', s0: 0, v0: 0, segs: [{ t: 10, a: 10 }, { t: 60, a: -2 }], t: 10 }, 'SI'); [{ k: 'First instant with v = 0 (after start)', v: 60 }, { k: 'Velocity v', v: 100 }, { k: 'Displacement Δs', v: 3000 }].forEach((e) => close('Book Example 12.7, car at 10 m/s² for 10 s then −2 m/s²: ' + e.k, out(r, e.k), e.v)); }
+});
+
+group('dynamics: curvilinear motion', () => {
+  const run = (o, sys) => Curv.solve(Object.assign(Curv.defaults(), o), U[sys]);
+  { const r = run({ v0: 12, th: 0, h0: 6, land: 'level', yT: 0 }, 'SI'); [{ k: 'Time of flight t', v: 1.106 }, { k: 'Range R (horizontal distance)', v: 13.27 }].forEach((e) => close('Book Example 12.11, sack off a ramp at 12 m/s from 6 m up: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ v0: 25, th: 30, h0: 4, land: 'x', d: 20 }, 'US'); [{ k: 'Landing height h', v: 1.81 }, { k: 'Time of flight t', v: 0.9238 }].forEach((e) => close('Book Example 12.12, chips at 25 ft/s, 30°, 4 ft up, land 20 : ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ find: 'v0', by: 'time', T: 1.5, th: 30, h0: 1, yT: 0 }, 'SI'); [{ k: 'Launch speed v₀', v: 13.38 }, { k: 'Range R (horizontal distance)', v: 17.38 }, { k: 'Maximum height above the landing point', v: 3.28 }].forEach((e) => close('Book Example 12.13, rider off a 30° ramp 1 m up, 1.5 s in th: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'path', ptype: 'poly', c: [0, 0, 0.05, 0], x: 10, v: 6, at: 2 }, 'SI'); [{ k: 'Radius of curvature ρ', v: 28.28 }, { k: 'Normal acceleration a_n', v: 1.273 }, { k: 'Acceleration a', v: 2.37 }].forEach((e) => close('Book Example 12.14, path y = x²/20 at x = 10 m, v = 6 m/s, v: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'path', ptype: 'circle', rho: 2, v: 3.238, at: 1.138 }, 'SI'); [{ k: 'Normal acceleration a_n', v: 5.242 }, { k: 'Acceleration a', v: 5.36 }].forEach((e) => close('Book Example 12.16, box on a 2 m curve, v = 3.24 m/s, a_t = : ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'cyl', cr: [0, 0, 0.1, 0], cth: [0, 0, 0, 1], t: 1 }, 'SI'); [{ k: 'Speed v', v: 0.3606 }, { k: 'Radial acceleration a_r', v: -0.7 }, { k: 'Transverse acceleration a_θ', v: 1.8 }, { k: 'Acceleration a', v: 1.931 }].forEach((e) => close('Book Example 12.18, r = 0.1t² m, θ = t³ rad at t = 1 s: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'rel', A: { x: 0, y: 0, v: 18, dir: 240, at: -2, rho: 0, turn: 'left' }, B: { x: 20, y: -5, v: 12, dir: 270, at: 3, rho: 100, turn: 'right' } }, 'SI'); [{ k: 'Relative speed v_B/A', v: 9.69 }, { k: 'Direction of v_B/A', v: 21.74 }, { k: 'Relative acceleration a_B/A', v: 5.32 }].forEach((e) => close('Book Example 12.27, car B on a 100 m curve seen from car A: ' + e.k, out(r, e.k), e.v)); }
+});
+
+group('dynamics: particle kinetics', () => {
+  const run = (o, sys) => Pkin.solve(Object.assign(Pkin.defaults(), o), U[sys]);
+  { const r = run({ scene: 'block', method: 'force', m: 50, th: 0, P: 400, al: 30, mus: 0.35, muk: 0.3, v0: 0, t: 3 }, 'SI'); [{ k: 'Normal force N', v: 290.5 }, { k: 'Acceleration', v: 5.185 }, { k: 'Velocity at t = 3 s', v: 15.56 }].forEach((e) => close('Book Example 13.1, 50 kg crate towed by 400 N at 30°, μ_k = : ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'block', method: 'force', m: 50, th: 0, P: 150, al: -36.8699, mus: 0.2, muk: 0.2, v0: 0, t: 4 }, 'SI'); [{ k: 'Power of P at the end, P·v', v: 37.44 }, { k: 'Average power of P, U_P/Δt', v: 18.72 }].forEach((e) => close('Book Example 14.7, 50 kg crate pushed by 150 N on a 3-4-5 sl: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'block', method: 'stop', m: 3500, th: 10, P: 0, mus: 0.6, muk: 0.5, v0: -20 }, 'US'); [{ k: 'Distance to stop', v: 19.49 }].forEach((e) => close('Book Example 14.2, 3500 lb car skids down a 10° road from 20: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'block', method: 'work', m: 10, th: 30, P: 400, al: -30, mus: 0, muk: 0, v0: 0, spring: true, k: 30, s1: 0.5, d: 2 }, 'SI'); [{ k: 'Total work ΣU₁₋₂', v: 504.7 }, { k: 'Work of P, U_P', v: 692.8 }, { k: 'Work of the spring U_s', v: -90 }].forEach((e) => close('Book Example 14.1, 10 kg block pushed 2 m up a smooth 30° in: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'pulley', onA: 'hang', mA: 100, mB: 20, nA: 2, nB: 1, find: 'time', t: 1 }, 'SI'); [{ k: 'Cord tension T', v: 327 }, { k: 'Acceleration of A, a_A', v: 3.27 }, { k: 'Acceleration of B, a_B', v: -6.54 }].forEach((e) => close('Book Example 13.5, 100 kg block A on a movable pulley, 20 kg: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'pulley', onA: 'hang', mA: 10, mB: 100, nA: 1, nB: 4, find: 'speedB', vB: 2 }, 'SI'); [{ k: 'Distance B moves', v: 0.8835 }].forEach((e) => close('Book Example 14.6, 10 kg A and 100 kg B on four strands, B r: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'spring', smode: 'launch', sm: 2, sk: 200, sth: 90, d1: 0.7, d2: 0.6, y0: 0.3 }, 'SI'); [{ k: 'Highest point above the ground h', v: 0.9626 }].forEach((e) => close('Book Example 14.4, 2 kg block launched by a 200 N/m spring f: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'curve', m: 1200, r: 100, bank: 20, cmus: 0.2, cv: 18.9 }, 'SI'); [{ k: 'Speed with no friction needed', v: 18.9 }].forEach((e) => close('Book Example 13.6, banking for no friction, r = 100 m, θ = 2: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'circle', kind: 'inside', cm: 60, R: 4, phi0: 90, cv0: 0, phi: 30 }, 'SI'); [{ k: 'Normal force N', v: 1529 }].forEach((e) => close('Book Example 13.9, 60 kg skateboarder on a 4 m circular trac: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'circle', kind: 'cord', cm: 8000, R: 20, phi0: 60, cv0: 0, phi: 15 }, 'SI'); [{ k: 'Speed v', v: 13.52 }, { k: 'Cord tension T', v: 148900 }].forEach((e) => close('Book Example 14.9, 8 Mg plane on a 20 m cable released at 60: ' + e.k, out(r, e.k), e.v)); }
+});
+
+group('dynamics: impact', () => {
+  const run = (o, sys) => Impact.solve(Object.assign(Impact.defaults(), o), U[sys]);
+  { const r = run({ mode: 'central', find: 'plastic', mA: 15000, mB: 12000, vA1: 1.5, vB1: -0.75, dt: 0.8 }, 'SI'); [{ k: 'Common velocity after coupling v₂', v: 0.5 }, { k: 'Average force between them F_avg', v: 18750 }].forEach((e) => close('Book Example 15.4, 15 Mg boxcar couples with a 12 Mg tank ca: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'central', find: 'v', mA: 6, mB: 18, src: 'drop', hA: 3, vB1: 0, e: 0.5 }, 'US'); [{ k: 'Velocity of A before impact (v_A)₁', v: 13.9 }, { k: 'Velocity of A after impact (v_A)₂', v: -1.737 }, { k: 'Velocity of B after impact (v_B)₂', v: 5.212 }, { k: 'Energy lost', v: 10.13 }].forEach((e) => close('Book Example 15.9, 6 lb bag swings 3 ft down onto an 18 lb b: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'oblique', mA: 1, mB: 2, sA: 3, thA: 30, sB: 1, thB: 225, e: 0.75 }, 'SI'); [{ k: '(v_Ax)₂', v: -1.258 }, { k: '(v_Bx)₂', v: 1.221 }, { k: '(v_Ay)₂', v: 1.5 }, { k: '(v_By)₂', v: -0.7071 }].forEach((e) => close('Book Example 15.11, smooth disks 1 kg and 2 kg, e = 0.75: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'central', find: 'v', mA: 2, mB: 3, vA1: 4, vB1: -2, e: 0.6 }, 'SI'); [{ k: 'Velocity of A after impact (v_A)₂', v: -1.76 }, { k: 'Velocity of B after impact (v_B)₂', v: 1.84 }, { k: 'Energy lost', v: 13.82 }].forEach((e) => close('2 kg at 4 m/s meets 3 kg at 2 m/s head on, e = 0.6: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'bounce', find: 'v', h0: 2, e: 0.8, nb: 5 }, 'SI'); [{ k: 'First rebound height h₁', v: 1.28 }, { k: 'Second rebound height h₂', v: 0.8192 }, { k: 'Total distance travelled', v: 9.111 }].forEach((e) => close('ball dropped 2 m, e = 0.8: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'central', find: 'e', mA: 6, mB: 18, src: 'drop', hA: 3, vB1: 0, vB2m: 5.2125 }, 'US'); [{ k: 'Coefficient of restitution e', v: 0.5 }].forEach((e) => close('e back-solved from Example 15.9,: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'wall', find: 'v', surf: 'wall', v1: 20, th1: 30, e: 0.75 }, 'SI'); [{ k: 'Speed after impact v₂', v: 18.87 }, { k: 'Angle from the surface θ₂', v: 23.41 }].forEach((e) => close('ball at 20 m/s strikes a smooth wall at 30°, e = 0.75: ' + e.k, out(r, e.k), e.v)); }
+});
+
+group('dynamics: planar kinematics of rigid bodies', () => {
+  const run = (o, sys) => RbMotion.solve(Object.assign(RbMotion.defaults(), o), U[sys]);
+  { const r = run({ mode: 'slider', r: 0.25, l: 0.75, th: 45, beta: 90, e: 0, wAB: -10, aAB: -20 }, 'US'); [{ k: 'Velocity of the slider v_C', v: 2.197 }, { k: 'Angular velocity of BC, ω_BC', v: 2.425 }, { k: 'Angular acceleration of BC, α_BC', v: 27.68 }, { k: 'Acceleration of the slider a_C', v: -13.54 }].forEach((e) => close('Book Examples 16.12 and 16.17, crank 0.25 ft at 10 rad/s cw : ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'bar', L: 0.2, thb: 45, vA: 2, aA: 0 }, 'SI'); [{ k: 'Angular velocity ω', v: 14.14 }, { k: 'Velocity of B, v_B', v: 2 }].forEach((e) => close('Book Example 16.6, 0.2 m link in two slots, v_A = 2 m/s down: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'roll', surf: 'floor', R: 0.5, Ro: 0.5, w: -6, alr: -4, rho: 0.5, phi: 270 }, 'US'); [{ k: 'Acceleration of P, a_P', v: 18 }].forEach((e) => close('Book Example 16.14, disk 0.5 ft rolling at 6 rad/s, 4 rad/s²: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'roll', surf: 'cord', R: 0.5, Ro: 0.75, w: -3, alr: -4, rho: 0.75, phi: 90 }, 'US'); [{ k: 'Acceleration of P, a_P', v: 9.25 }, { k: 'Direction of a_P from +x', v: -71.08 }].forEach((e) => close('Book Example 16.15, spool unwinding at 3 rad/s and 4 rad/s²,: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'fixed', w0: 0, al: 2, by: 'rev', rev: 2, rA: 0.15, rB: 0.4, link: 'belt', rP: 0.4 }, 'SI'); [{ k: 'Speed of P, v_P', v: 1.063 }, { k: 'Acceleration of P, a_P', v: 2.843 }].forEach((e) => close('Book Example 16.2, belt drive from rest at 2 rad/s² for 2 tu: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'fixed', w0: 120, al: 0, by: 'time', tt: 0.2, rA: 0.05, rB: 0.15, link: 'gear', rP: 0.15 }, 'SI'); [{ k: 'Angular velocity of B, ω_B', v: -40 }, { k: 'Speed of P, v_P', v: 6 }].forEach((e) => close('50 mm gear at 120 rad/s drives a 150 mm gear: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ mode: 'fourbar', a4: 0.1, b4: 0.25, c4: 0.2, d4: 0.25, th4: 60, w4: 10, al4: 5 }, 'SI'); [{ k: 'Angular velocity of BC, ω_BC', v: -1.891 }, { k: 'Angular velocity of CD, ω_CD', v: 3.294 }, { k: 'Angular acceleration of CD, α_CD', v: 49.84 }].forEach((e) => close('four-bar 100/250/200/250 mm, crank at 60° and 10 rad/s: ' + e.k, out(r, e.k), e.v)); }
+});
+
+group('dynamics: planar kinetics of rigid bodies', () => {
+  const run = (o, sys) => RbForce.solve(Object.assign(RbForce.defaults(), o), U[sys]);
+  { const r = run({ scene: 'inertia', parts: [{ t: 'disk', m: 15.71, a: 0.25, b: 0, x: 0, y: 0.25, ang: 0, rm: 'add' }, { t: 'disk', m: 3.927, a: 0.125, b: 0, x: 0, y: 0.25, ang: 0, rm: 'remove' }] }, 'SI'); [{ k: 'Moment of inertia about O, I_O', v: 1.197 }].forEach((e) => close('Book Example 17.3, 250 mm disk with a 125 mm hole, about the: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'inertia', parts: [{ t: 'rod', m: 10, a: 2, b: 0, x: 0, y: -1, ang: 90, rm: 'add' }, { t: 'rod', m: 8, a: 1.5, b: 0, x: 0, y: -2, ang: 0, rm: 'add' }] }, 'US'); [{ k: 'Moment of inertia about O, I_O', v: 1.454 }, { k: 'Moment of inertia about G, I_G', v: 0.2881 }, { k: 'Distance from O to G', v: 1.444 }].forEach((e) => close('Book Example 17.4, T-shaped pendulum of two rods, 10 lb and : ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'car', cm: 2000, h: 0.3, br: 0.75, bf: 1.25, drive: 'rear', cmuk: 0.25 }, 'SI'); [{ k: 'Acceleration a_G', v: 1.593 }, { k: 'Front normal force N_A', v: 6880 }, { k: 'Rear normal force N_B', v: 12740 }].forEach((e) => close('Book Example 17.5, 2 Mg car with spinning rear wheels, μ_k =: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'car', cm: 200, h: 0.7125, br: 0.65, bf: 0.85, drive: 'wheelie' }, 'SI'); [{ k: 'Acceleration a_G', v: 8.949 }, { k: 'Friction needed at the rear, μ_s min', v: 0.9123 }].forEach((e) => close('Book Example 17.6, motorcycle and rider doing a wheelie: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'pend', method: 'force', shape: 'body', pm: 50, kG: 0.6, rG: 0.5, th: 0, w: 0, M: 0 }, 'US'); [{ k: 'Angular acceleration α (+ clockwise)', v: 26.39 }, { k: 'Pin force across OG, O_t', v: -29.51 }, { k: 'Pin force along OG, O_n', v: 0 }].forEach((e) => close('Book Example 17.8, unbalanced 50 lb flywheel released from r: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'pend', method: 'energy', shape: 'rod', pm: 10, pL: 2, th: 0, w: 0, M: 0, th2: 90 }, 'SI'); [{ k: 'Pin force along OG, O_n', v: 245.25 }, { k: 'Angular velocity at θ₂, ω₂', v: 3.836 }].forEach((e) => close('Book Example 17.11, slender rod released level, at the verti: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'drum', method: 'force', Iby: 'k', dm: 60, kO: 0.25, dr: 0.4, bm: 20, Mf: 0 }, 'SI'); [{ k: 'Angular acceleration of the drum α', v: 11.29 }, { k: 'Cord tension T', v: 105.9 }].forEach((e) => close('Book Example 17.10, 60 kg drum: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'drum', method: 'impulse', Iby: 'I', IO: 0.4, dm: 20, dr: 0.2, bm: 6, Mf: 0, dv1: 2, dt: 3 }, 'SI'); [{ k: 'Speed of the block v₂', v: 13.04 }].forEach((e) => close('Book Example 19.4, 6 kg cylinder on a disk: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'roll', method: 'force', surf: 'ground', rm: 50, rk: 0.7, R: 1.25, Ro: 1.25, phi: 0, RM: 35, P: 0, yP: 0, mus: 0.3, muk: 0.25 }, 'US'); [{ k: 'Acceleration of G, a_G', v: 8.05 }, { k: 'Angular acceleration α (+ clockwise)', v: 25.46 }].forEach((e) => close('Book Example 17.13, 50 lb wheel driven by a 35 lb·ft couple,: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ scene: 'roll', method: 'force', surf: 'cord', rm: 8, rk: 0.35, R: 0.5, Ro: 0.5, phi: 90, RM: 0, P: -100, yP: 0.2 }, 'SI'); [{ k: 'Angular acceleration α (+ clockwise)', v: -10.32 }, { k: 'Acceleration of G, a_G', v: -5.161 }].forEach((e) => close('Book Example 17.12, 8 kg spool pulled up its cord by 100 N: ' + e.k, out(r, e.k), e.v)); }
+});
+
+group('dynamics: vibrations', () => {
+  const run = (o, sys) => Vib.solve(Object.assign(Vib.defaults(), o), U[sys]);
+  { const r = run({ sys: 'tors', body: 'plate', m: 10, a: 0.2, b: 0.3, kt: 1.5, th0: 10 }, 'SI'); [{ k: 'Moment of inertia I_O', v: 0.1083 }, { k: 'Period τ', v: 1.69 }].forEach((e) => close('Book Example 22.2, 10 kg plate 0.2 m × 0.3 m on a rod of 1.5: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ sys: 'pulley', mb: 10, md: 15, rb: 0.75, rs: 0.75, k: 200, x0: 1, v0: 0 }, 'US'); [{ k: 'Period τ', v: 0.328 }].forEach((e) => close('Book Example 22.4, 10 lb block on a 15 lb disk, k = 200 lb/f: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ sys: 'pulley', mb: 10, md: 5, rb: 0.15, rs: 0.15, k: 200, x0: 40, v0: 0 }, 'SI'); [{ k: 'Natural frequency ω_n', v: 4 }, { k: 'Period τ', v: 1.571 }].forEach((e) => close('Book Example 22.6, 10 kg block on a 5 kg disk, k = 200 N/m: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ sys: 'sm', m: 20, k: 800, n: 4, arr: 'parallel', vert: true, exc: 'support', w0: 8, d0: 10, x0: 0, v0: 0 }, 'SI'); [{ k: 'Natural frequency ω_n', v: 12.65 }, { k: 'Steady-state amplitude X', v: 16.67 }].forEach((e) => close('Book Example 22.7, 20 kg on four 800 N/m springs, floor 10 s: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ sys: 'sm', m: 30, k: 200, n: 4, arr: 'parallel', vert: true, damp: 'z', zeta: 0.15, exc: 'unb', m0: 4, e: 60, w0: 10, x0: 0, v0: 0 }, 'SI'); [{ k: 'Force amplitude F₀', v: 24 }, { k: 'Natural frequency ω_n', v: 5.164 }, { k: 'Steady-state amplitude X', v: 10.67 }].forEach((e) => close('Book Example 22.8, 30 kg motor on four 200 N/m springs, 4 kg: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ sys: 'sm', m: 10, k: 1000, n: 1, x0: 50, v0: 0.5 }, 'SI'); [{ k: 'Natural frequency ω_n', v: 10 }, { k: 'Period τ', v: 0.6283 }, { k: 'Amplitude C', v: 70.71 }].forEach((e) => close('10 kg on 1000 N/m from x₀ = 50 mm, v₀ = 0.5 m/s: ' + e.k, out(r, e.k), e.v)); }
+  { const r = run({ sys: 'sm', m: 10, k: 1000, n: 1, x0: 50, v0: 0.5, damp: 'c', c: 40 }, 'SI'); [{ k: 'Critical damping c_c', v: 200 }, { k: 'Damping factor ζ = c/c_c', v: 0.2 }, { k: 'Damped natural frequency ω_d', v: 9.798 }].forEach((e) => close('the same with c = 40 N·s/m: ' + e.k, out(r, e.k), e.v)); }
+});
+
+group('dynamics: unit switching', () => {
+  [[RbForce, { scene: 'drum', method: 'energy' }, 'Speed of the block v₂', 3.28084], [RbForce, { scene: 'roll', method: 'force' }, 'Acceleration of G, a_G', 3.28084], [Pkin, {}, null, 1], [RbMotion, {}, null, 1]].forEach(([Mod, o, k, f]) => {
+    const st = Object.assign(Mod.defaults(), o), a = Mod.solve(st, U.SI);
+    Mod.convertState(st, 'SI', 'US'); const b = Mod.solve(st, U.US);
+    Mod.convertState(st, 'US', 'SI'); const c = Mod.solve(st, U.SI);
+    const key = k || a.out[0].k;
+    if (k) close(`${key} in U.S. units`, out(b, key), out(a, key) * f, 2e-3);
+    close(`${key} after the round trip`, out(c, key), out(a, key), 1e-4);
+  });
 });
 
 groups.forEach(([name, fn]) => { if (filter && !name.toLowerCase().includes(filter)) return; console.log(name); fn(); });
