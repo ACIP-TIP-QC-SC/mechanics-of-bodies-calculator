@@ -42,7 +42,7 @@
   M.controls = function (c, C) {
     const st = S(), U = Core.UNITS[M.units], Lu = U.len, F = st.fu, FL = `${F}·${Lu}`;
     let sec = C.section(c, 'Problem');
-    C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [['particle', 'Particle in a plane'], ['particle3d', 'Particle held by three cables in space'], ['rigid', 'Rigid body in a plane (supports and reactions)']] });
+    C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [['particle', 'Particle in a plane'], ['particle3d', 'Particle held by three cables in space'], ['rigid', 'Rigid body in a plane (supports and reactions)'], ['rigid3d', 'Rigid body in space (bearings, ball joints, cables)']] });
     C.seg(sec, { label: 'Force unit', get: () => st.fu, set: (v) => (st.fu = v), options: U.forces.map((f) => [f, f]) });
     if (st.mode === 'particle') {
       const q = st.pa;
@@ -67,6 +67,23 @@
       C.note(sec, 'Each cable pulls the particle toward its anchor point, or along the direction angles you give.');
       C.list(sec, { items: q.cables, max: 3, min: 3, color: () => '#e2cdef', title: (it) => `Cable ${it.name}`,
         fields: (it) => [{ key: 'by', label: 'Direction from', options: [['point', 'Anchor point'], ['angles', 'Direction angles']], wide: true }].concat(it.by === 'angles' ? [{ key: 'al', label: 'α', unit: '°' }, { key: 'be', label: 'β', unit: '°' }, { key: 'ga', label: 'γ', unit: '°', wide: true }] : [{ key: 'x', label: 'Anchor x', unit: Lu }, { key: 'y', label: 'Anchor y', unit: Lu }, { key: 'z', label: 'Anchor z', unit: Lu, wide: true }]) });
+    } else if (st.mode === 'rigid3d') {
+      const q = st.r3, ST = [['ball', 'Ball-and-socket joint'], ['thrust', 'Thrust bearing, hinge or pin (3 forces)'], ['thrustM', 'Thrust bearing or hinge with couple moments'], ['journal', 'Journal bearing (2 forces)'], ['journalM', 'Journal bearing with couple moments'], ['collar', 'Collar on a square rod'], ['cable', 'Cable to an anchor point'], ['link', 'Short link or strut to a point'], ['smooth', 'Smooth surface or roller (push direction)'], ['fixed', 'Fixed support']];
+      sec = C.section(c, 'Body (lines for the picture)');
+      C.note(sec, 'z points up. The lines only draw the body; forces act where you place them.');
+      C.list(sec, { items: q.members, max: 8, min: 1, title: (it, i) => `Line ${i + 1}`, fields: () => [{ key: 'x1', label: 'From x', unit: Lu }, { key: 'y1', label: 'From y', unit: Lu }, { key: 'z1', label: 'From z', unit: Lu, wide: true }, { key: 'x2', label: 'To x', unit: Lu }, { key: 'y2', label: 'To y', unit: Lu }, { key: 'z2', label: 'To z', unit: Lu, wide: true }], add: [['Line', () => { const l = q.members[q.members.length - 1]; return { x1: l.x2, y1: l.y2, z1: l.z2, x2: tidy(l.x2 + 1), y2: l.y2, z2: l.z2 }; }]] });
+      sec = C.section(c, 'Supports');
+      C.note(sec, 'Bearings and hinges: the axis is the direction of the shaft or hinge pin. Use the "forces only" kinds when the book says the bearings are properly aligned.');
+      C.list(sec, { items: q.supports, max: 5, color: (it) => (it.type === 'cable' ? '#e2cdef' : it.type === 'fixed' ? '#d5dbe1' : '#cfe8d8'), title: (it, i) => `Support ${it.name || 'ABCDE'[i]}`,
+        fields: (it) => [{ key: 'type', label: 'Type', options: ST, wide: true }, { key: 'name', label: 'Name', options: ['A', 'B', 'C', 'D', 'E', 'AB', 'AC', 'BC', 'BD', 'CD', 'CE', 'DE'].map((n) => [n, n]), wide: true }, { key: 'x', label: 'x', unit: Lu }, { key: 'y', label: 'y', unit: Lu }, { key: 'z', label: 'z', unit: Lu, wide: true }]
+          .concat(['journal', 'journalM', 'thrustM', 'collar'].includes(it.type) ? [{ key: 'ax', label: 'Axis of the shaft', options: [['x', 'x'], ['y', 'y'], ['z', 'z']], wide: true }] : [])
+          .concat(it.type === 'cable' || it.type === 'link' ? [{ key: 'bx', label: 'Other end x', unit: Lu }, { key: 'by', label: 'Other end y', unit: Lu }, { key: 'bz', label: 'Other end z', unit: Lu, wide: true }] : it.type === 'smooth' ? [{ key: 'bx', label: 'Push direction x', unit: '' }, { key: 'by', label: 'Push direction y', unit: '' }, { key: 'bz', label: 'Push direction z', unit: '', wide: true }] : []),
+        add: [['Ball joint', () => ({ type: 'ball', name: 'A', x: 0, y: 0, z: 0, ax: 'z', bx: 0, by: 0, bz: 1 })], ['Bearing', () => ({ type: 'journal', name: 'B', x: 0, y: 0, z: 0, ax: 'x', bx: 0, by: 0, bz: 1 })], ['Cable', () => ({ type: 'cable', name: 'CD', x: 0, y: 0, z: 0, ax: 'z', bx: 0, by: 0, bz: 1 })]] });
+      sec = C.section(c, 'Loads');
+      C.list(sec, { items: q.loads, max: 5, color: () => '#f6c9c2', title: (it, i) => (it.kind === 'mass' ? `Load ${i + 1}: weight` : `Load ${i + 1}: force`),
+        fields: (it) => [{ key: 'kind', label: 'Kind', options: [['mass', `Weight of a mass (${massU()})`], ['force', 'Force (components)']], wide: true }].concat(it.kind === 'mass' ? [{ key: 'm', label: 'Mass m', unit: massU(), wide: true }] : [{ key: 'Fx', label: 'F_x', unit: F }, { key: 'Fy', label: 'F_y', unit: F }, { key: 'Fz', label: 'F_z', unit: F, wide: true }]).concat([{ key: 'x', label: 'At x', unit: Lu }, { key: 'y', label: 'At y', unit: Lu }, { key: 'z', label: 'At z', unit: Lu, wide: true }]),
+        add: [['Force', () => ({ kind: 'force', m: 10, Fx: 0, Fy: 0, Fz: -100, x: 0, y: 0, z: 0 })], ['Weight', () => ({ kind: 'mass', m: 10, Fx: 0, Fy: 0, Fz: 0, x: 0, y: 0, z: 0 })]] });
+      C.list(sec, { items: q.couples, max: 3, color: () => '#e2cdef', title: (it, i) => `Couple ${i + 1}`, fields: () => [{ key: 'Mx', label: 'M_x', unit: FL }, { key: 'My', label: 'M_y', unit: FL }, { key: 'Mz', label: 'M_z', unit: FL, wide: true }], add: [['Couple', () => ({ Mx: 0, My: 0, Mz: 10 })]] });
     } else {
       const q = st.rb;
       sec = C.section(c, 'Body outline');
@@ -87,14 +104,15 @@
   M.compute = (U) => Equil.solve(S(), U);
   M.onUnits = (from, to) => Equil.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => ({ particle: 'Free-body diagram and force polygon', particle3d: 'Top and front views', rigid: 'Free-body diagram' }[mode()]);
+  M.cap2D = () => ({ particle: 'Free-body diagram and force polygon', particle3d: 'Top and front views', rigid: 'Free-body diagram', rigid3d: 'Top and front views' }[mode()]);
   M.cap3D = '3D view';
   M.hint = () => ({
     particle: 'Left: the free-body diagram of the particle. Right: the forces drawn tip to tail; in equilibrium the polygon closes.',
     particle3d: 'Cables are drawn from the particle to their anchors. Use the 3D view to see the arrangement in space.',
+    rigid3d: 'Reactions are drawn green in the direction they actually act; couple moments are double-headed arrows along their axis. Use the 3D view to see the body in space.',
     rigid: 'Reactions are drawn green in the direction they actually act (a negative answer flips the arrow). Loads are red.',
   }[mode()]);
-  M.legend = () => (mode() === 'rigid' ? [[LCOL, 'Loads'], [RCOL, 'Reactions'], [COL.couple, 'Couples']] : [[LCOL, 'Known loads'], [RCOL, 'Forces found'], ['#5a6b75', 'Cables', 'ln']]);
+  M.legend = () => (mode() === 'rigid' || mode() === 'rigid3d' ? [[LCOL, 'Loads'], [RCOL, 'Reactions'], [COL.couple, 'Couples']] : [[LCOL, 'Known loads'], [RCOL, 'Forces found'], ['#5a6b75', 'Cables', 'ln']]);
   M.anim = null;
 
   /* ------------------------------------------------------------------ */
@@ -255,6 +273,16 @@
     const g = res.geo;
     if (g.kind === 'particle') return drawParticle(svg, g, opt);
     if (g.kind === 'rigid') return drawRigid(svg, g, opt);
+    if (g.kind === 'rigid3d') {
+      const F = g.c.F, pts = g.members.flat().concat(g.sups.map((x) => x.p), g.loads.map((l) => l.p)), e = Math.max(...[0, 1, 2].map((k) => Math.max(...pts.map((p) => p[k])) - Math.min(...pts.map((p) => p[k]))), 1e-9);
+      const fm = Math.max(...g.loads.map((l) => Math.hypot(...l.v)), ...g.unk.filter((u) => !u.m).map((u) => Math.abs(u.v)), 1e-300), its = [];
+      g.members.forEach(([a, b]) => its.push({ a, b, kind: 'line', color: '#4a5661', w: 4 }));
+      g.unk.forEach((u) => { if (u.end) its.push({ a: u.p, b: u.end, kind: 'line', color: '#9aa5ad', w: 1.3, dash: '5 4' }); });
+      g.loads.forEach((l) => { const m = Math.hypot(...l.v); if (!(m > 0)) return; const k = (e * (0.2 + 0.25 * m / fm)) / m; its.push({ a: l.p.map((x, i) => x - l.v[i] * k), b: l.p, color: LCOL, w: 2.6, label: opt.showP ? `${fmt(m)} ${F}` : l.name }); });
+      g.unk.forEach((u) => { if (u.m || !(Math.abs(u.v) > 0)) return; const sg = Math.sign(u.v), L = e * (0.15 + 0.25 * Math.abs(u.v) / fm); its.push({ a: u.p.map((x, i) => x - u.d[i] * sg * L), b: u.p, color: RCOL, w: 2.4, label: opt.showP ? `${u.name} = ${fmt(Math.abs(u.v))} ${F}` : u.name }); });
+      g.sups.forEach((x) => its.push({ a: x.p, kind: 'dot', color: '#1d2733', label: x.L }));
+      return Charts.twoViews(svg, its);
+    }
     // particle in space: top and front views
     const F = g.c.F, items = [], A = g.A, ext = Math.max(...g.cables.filter((c) => c.end).map((c) => Math.hypot(c.end[0] - A[0], c.end[1] - A[1], c.end[2] - A[2])), 1);
     const Tm = Math.max(...g.cables.map((c) => c.T), 1e-300);
@@ -295,6 +323,22 @@
       g.K.filter((k) => k.name !== 'W').forEach((k) => { const m = Math.hypot(...k.v) || 1, tip = A.map((x, i) => x + (k.v[i] / m) * ext * 0.5); arrow3(v, V(A), V(tip), LCOL, 2.6); v.label(V(tip), lab(k.name, m, F), LCOL); });
       const L = ext * 0.5; [[[L, 0, 0], 'x'], [[0, L, 0], 'y'], [[0, 0, L], 'z']].forEach(([p, n]) => { arrow3(v, V(A), V(A.map((x, i) => x + p[i])), COL.axis, 1.3); v.label(V(A.map((x, i) => x + p[i] * 1.08)), n, COL.axis); });
       v.label(a, 'A', '#1d2733');
+      v.autoBounds(); return;
+    }
+    if (g.kind === 'rigid3d') {
+      const pts = g.members.flat().concat(g.sups.map((x) => x.p), g.loads.map((l) => l.p)), e = Math.max(...[0, 1, 2].map((k) => Math.max(...pts.map((p) => p[k])) - Math.min(...pts.map((p) => p[k]))), 1e-9);
+      const fm = Math.max(...g.loads.map((l) => Math.hypot(...l.v)), ...g.unk.filter((u) => !u.m).map((u) => Math.abs(u.v)), 1e-300); v._hs = e * 0.035;
+      g.members.forEach(([a, b]) => { v.line([V(a), V(b)], '#4a5661', 7); v.line([V(a), V(b)], '#b9c2cb', 4); });
+      g.unk.forEach((u) => { if (u.end) { v.line([V(u.p), V(u.end)], '#2c3e50', 1.8); const h = e * 0.025, q = V(u.end); v.box(q[0] - h, q[1] - h, q[2] - h, q[0] + h, q[1] + h, q[2] + h, '#8d98a3', 1, '#4a5661'); } });
+      g.sups.forEach((x) => { const h = e * 0.03, q = V(x.p); if (x.type !== 'cable' && x.type !== 'link') v.box(q[0] - h, q[1] - h, q[2] - h, q[0] + h, q[1] + h, q[2] + h, x.type === 'fixed' ? '#7f8c8d' : '#cfe8d8', 1, '#1e7a45'); v.label([q[0] + h, q[1] + h * 2, q[2]], x.L, '#1d2733'); });
+      g.loads.forEach((l) => { const m = Math.hypot(...l.v); if (!(m > 0)) return; const k = (e * (0.2 + 0.25 * m / fm)) / m, tail = l.p.map((x, i) => x - l.v[i] * k); arrow3(v, V(tail), V(l.p), LCOL, 2.8); v.label(V(tail), lab(l.name, m, F), LCOL); });
+      g.unk.forEach((u) => {
+        if (!(Math.abs(u.v) > 0)) return;
+        const sg = Math.sign(u.v), L = u.m ? e * 0.3 : e * (0.15 + 0.25 * Math.abs(u.v) / fm);
+        if (u.m) { const tip = u.p.map((x, i) => x + u.d[i] * sg * L), mid = u.p.map((x, i) => x + u.d[i] * sg * L * 0.82); arrow3(v, V(u.p), V(tip), COL.couple, 2.4); arrow3(v, V(u.p), V(mid), COL.couple, 2.4); v.label(V(tip), lab(u.name, Math.abs(u.v), g.c.FL), COL.couple); return; }
+        const tail = u.p.map((x, i) => x - u.d[i] * sg * L); arrow3(v, V(tail), V(u.p), RCOL, 2.6); v.label(V(tail), lab(u.name, Math.abs(u.v), F), RCOL);
+      });
+      const L0 = e * 0.25; [[[L0, 0, 0], 'x'], [[0, L0, 0], 'y'], [[0, 0, L0], 'z']].forEach(([p, n]) => { arrow3(v, V([0, 0, 0]), V(p), COL.axis, 1.3); v.label(V(p.map((x) => x * 1.1)), n, COL.axis); });
       v.autoBounds(); return;
     }
     if (g.kind === 'particle') {
@@ -359,6 +403,20 @@
       expect: [{ k: 'T_B', v: 7.071 }, { k: 'A_x', v: 5 }] },
     { name: 'L-shaped bracket on a pin and a short link', units: 'US',
       state: { mode: 'rigid', fu: 'lb', rb: { outline: [{ x: 0, y: 0 }, { x: 0, y: 3 }, { x: 4, y: 3 }], supports: [{ type: 'pin', x: 0, y: 0, ang: 90 }, { type: 'link', x: 4, y: 3, ang: 60 }], loads: [ld(200, 270, 2, 3), ld(80, 180, 0, 1.5)], couples: [], dists: [] } } },
+    { name: 'Test: Prob. 5-23, largest w when the roller at A carries 4 kN and the pin at B 8 kN (w = 3 kN/m entered)', units: 'SI',
+      state: { mode: 'rigid', fu: 'kN', rb: { outline: [{ x: -6.598076, y: 1.5 }, { x: -4, y: 0 }, { x: 0, y: 0 }], supports: [{ type: 'roller', name: 'A', x: -6.598076, y: 1.5, ang: 60 }, { type: 'pin', name: 'B', x: 0, y: 0, ang: 90 }], loads: [], couples: [], dists: [{ x1: -4, x2: 0, y: 0, w1: 3, w2: 3 }] }, cap: { on: true, T: 0, sup: [4, 8] } },
+      expect: [{ k: 'Load factor λ (largest load = λ × loads entered)', v: 0.8910 }, { k: 'N_A', v: 3.713 }, { k: 'B_y', v: 8.7846 }] },
+    { name: 'Test: Prob. 5-73, triangular plate on a ball joint and two cables, T_BD = T_CD = 70.2 lb', units: 'US',
+      state: { mode: 'rigid3d', fu: 'lb' },
+      expect: [{ k: 'T_BD', v: 70.16 }, { k: 'T_CD', v: 70.16 }, { k: 'A_x', v: 37.5 }, { k: 'A_z', v: 37.5 }] },
+    { name: 'Test: Prob. 5-70, 100 lb door on two hinges, B_y = −37.5 lb, A_z = 100 lb', units: 'US',
+      state: { mode: 'rigid3d', fu: 'lb', r3: { members: [{ x1: 0, y1: 0, z1: 0, x2: 0, y2: 0, z2: 48 }, { x1: 0, y1: 0, z1: 48, x2: 0, y2: 36, z2: 48 }, { x1: 0, y1: 36, z1: 48, x2: 0, y2: 36, z2: 0 }, { x1: 0, y1: 36, z1: 0, x2: 0, y2: 0, z2: 0 }], supports: [{ type: 'thrust', name: 'A', x: 0, y: 0, z: 0, ax: 'z', bx: 0, by: 0, bz: 0 }, { type: 'journal', name: 'B', x: 0, y: 0, z: 48, ax: 'z', bx: 0, by: 0, bz: 0 }], loads: [{ kind: 'force', m: 10, Fx: 0, Fy: 0, Fz: -100, x: 0, y: 18, z: 24 }], couples: [] } },
+      expect: [{ k: 'B_y', v: -37.5 }, { k: 'A_y', v: 37.5 }, { k: 'A_z', v: 100 }] },
+    { name: 'Shaft on a thrust bearing and a journal bearing with a 3D load and a couple', units: 'SI',
+      state: { mode: 'rigid3d', fu: 'N', r3: { members: [{ x1: 0, y1: 0, z1: 0, x2: 2, y2: 0, z2: 0 }, { x1: 1.2, y1: 0, z1: 0, x2: 1.2, y2: 0.5, z2: 0 }], supports: [{ type: 'thrust', name: 'A', x: 0, y: 0, z: 0, ax: 'x', bx: 0, by: 0, bz: 0 }, { type: 'journal', name: 'B', x: 2, y: 0, z: 0, ax: 'x', bx: 0, by: 0, bz: 0 }, { type: 'cable', name: 'CD', x: 1.2, y: 0.5, z: 0, ax: 'z', bx: 1.2, by: 0.5, bz: 1.5 }], loads: [{ kind: 'force', m: 10, Fx: 100, Fy: 0, Fz: -300, x: 1.2, y: -0.4, z: 0 }], couples: [] } } },
+    { name: 'Test: largest weight when no cable carries more than 600 N (60 kg entered)', units: 'SI',
+      state: { mode: 'particle', fu: 'N', pa: { known: [newLoad({ kind: 'mass', m: 60 })], how: 'two', u1: U1('BA', 150), u2: U1('BC', 45) }, cap: { on: true, T: 600, sup: [] } },
+      expect: [{ k: 'Load factor λ (largest load = λ × loads entered)', v: 1.13696 }] },
     { name: 'Not valid: beam on three rollers with a horizontal load (improperly constrained)', units: 'SI', fails: true,
       state: { mode: 'rigid', fu: 'kN', rb: { outline: [{ x: 0, y: 0 }, { x: 8, y: 0 }], supports: [{ type: 'roller', x: 0, y: 0, ang: 90 }, { type: 'roller', x: 4, y: 0, ang: 90 }, { type: 'roller', x: 8, y: 0, ang: 90 }], loads: [ld(5, 0, 4, 0)], couples: [], dists: [] } } },
   ];

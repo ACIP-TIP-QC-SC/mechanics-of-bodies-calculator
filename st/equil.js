@@ -4,6 +4,10 @@
  *   particle   coplanar particle: two unknown magnitudes, or one magnitude and one angle (3.3)
  *   particle3d particle held by three cables in space (3.4)
  *   rigid      2D rigid body on pins, rollers, fixed supports, cables and links (5.1 to 5.4)
+ *   rigid3d    rigid body in space on ball-and-socket joints, journal and thrust bearings, hinges,
+ *              cables, smooth surfaces, links and fixed supports (5.5 to 5.7, Table 5-2)
+ * Particles and plane rigid bodies can also give the largest load: when every load is scaled by the
+ * same factor, the factor that brings the most heavily loaded cable or support to its capacity.
  * Forces are in the chosen force unit `fu`, lengths in m or ft.
  * ===================================================================== */
 (function (root) {
@@ -33,6 +37,13 @@
         loads: [{ by: 'polar', F: 750, ang: 270, Fx: 0, Fy: 0, dx: 4, dy: 3, x: 3, y: 0 }],
         couples: [], dists: [],
       },
+      r3: {
+        members: [{ x1: -2, y1: 0, z1: 0, x2: 2, y2: -4, z2: 0 }, { x1: 2, y1: -4, z1: 0, x2: 2, y2: 4, z2: 0 }, { x1: 2, y1: 4, z1: 0, x2: -2, y2: 0, z2: 0 }],
+        supports: [{ type: 'ball', name: 'A', x: -2, y: 0, z: 0, ax: 'z', bx: 0, by: 0, bz: 0 }, { type: 'cable', name: 'BD', x: 2, y: -4, z: 0, ax: 'z', bx: 0, by: 0, bz: 6 }, { type: 'cable', name: 'CD', x: 2, y: 4, z: 0, ax: 'z', bx: 0, by: 0, bz: 6 }],
+        loads: [{ kind: 'force', m: 10, Fx: 0, Fy: 0, Fz: -150, x: 1, y: 0, z: 0 }],
+        couples: [],
+      },
+      cap: { on: false, T: 500, sup: [] },
     };
   }
   const gOf = (U) => (U.id === 'US' ? 32.2 : 9.81);
@@ -42,8 +53,10 @@
 
   function solve(st, U) {
     const c = { F: st.fu, Lu: U.len, FL: `${st.fu}·${U.len}`, U };
-    if (st.mode === 'particle3d') return particle3d(st, c);
-    if (st.mode === 'rigid') return rigid(st, c);
+    if (st.mode === 'rigid') return capWrap(rigid(st, c), st, c);
+    if (st.mode === 'rigid3d') return capWrap(rigid3d(st, c), st, c);
+    if (st.mode === 'particle3d') return capWrap(particle3d(st, c), st, c);
+    if (st.mode === 'particle') return capWrap(particle(st, c), st, c);
     return particle(st, c);
   }
 
@@ -262,10 +275,120 @@
     return ok(det.text, out, S, { kind: 'rigid', c, outline: (q.outline || []).map((p) => [+p.x, +p.y]), sups: sups.map((sp, i) => ({ type: sp.type, p: [+sp.x, +sp.y], ang: +sp.ang || 0, L: sp.name || LET[i] })), unk: unk.map((u, i) => ({ name: u.name, p: u.p, d: u.d, m: !!u.m, v: x[i], type: u.sup != null && sups[u.sup] ? sups[u.sup].type : '' })), loads: loads.map((l) => ({ p: l.p, v: [l.Fx, l.Fy], F: l.F, dist: !!l.dist, name: l.name })), dists: (q.dists || []).map((d) => ({ x1: +d.x1, x2: +d.x2, y: +d.y || 0, w1: +d.w1, w2: +d.w2 })), couples: (q.couples || []).map((m, i) => ({ M: cps[i], p: [+m.x || 0, +m.y || 0] })) }, warn, det.cls === 'warn' ? 'warn' : 'ok');
   }
 
+
+  /* ------------------------------------------------------------------ */
+  /* Rigid body in three dimensions                                     */
+  /* ------------------------------------------------------------------ */
+  const AXI = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
+  const perp = (ax) => ['x', 'y', 'z'].filter((k) => k !== ax);
+  const S3 = {
+    ball: 'ball-and-socket joint', cable: 'cable', smooth: 'smooth surface or roller', link: 'short link or strut', journal: 'journal bearing (forces only)', journalM: 'journal bearing with couple moments',
+    thrust: 'thrust bearing, hinge or pin (forces only)', thrustM: 'thrust bearing, hinge or pin with couple moments', collar: 'collar on a square rod', fixed: 'fixed support',
+  };
+  function unknowns3(sups, err) {
+    const U = [];
+    sups.forEach((sp, i) => {
+      const L = sp.name || LET[i], p = [+sp.x, +sp.y, +sp.z], ax = sp.ax || 'z';
+      if (p.some((v) => !isFinite(v))) { err.push(`Support ${L}: enter its position.`); return; }
+      const F = (k) => U.push({ name: `${L}_${k}`, sup: i, p, d: AXI[k] }), Mo = (k) => U.push({ name: `(M_${L})_${k}`, sup: i, p, d: AXI[k], m: true });
+      const t = sp.type;
+      if (t === 'cable' || t === 'link' || t === 'smooth') {
+        const r = t === 'smooth' ? [+sp.bx, +sp.by, +sp.bz] : sub([+sp.bx, +sp.by, +sp.bz], p), Lr = mag(r);
+        if (!(Lr > 0)) { err.push(`Support ${L}: ${t === 'smooth' ? 'enter the direction of the push (its components)' : 'the other end must be a different point'}.`); return; }
+        U.push({ name: `${t === 'cable' ? 'T' : t === 'smooth' ? 'N' : 'F'}_${L}`, sup: i, p, d: mul(r, 1 / Lr), pull: t === 'cable', push: t === 'smooth', end: t === 'smooth' ? null : [+sp.bx, +sp.by, +sp.bz] });
+      } else if (t === 'ball' || t === 'thrust') ['x', 'y', 'z'].forEach(F);
+      else if (t === 'journal') perp(ax).forEach(F);
+      else if (t === 'journalM') { perp(ax).forEach(F); perp(ax).forEach(Mo); }
+      else if (t === 'thrustM') { ['x', 'y', 'z'].forEach(F); perp(ax).forEach(Mo); }
+      else if (t === 'collar') { perp(ax).forEach(F); ['x', 'y', 'z'].forEach(Mo); }
+      else { ['x', 'y', 'z'].forEach(F); ['x', 'y', 'z'].forEach(Mo); }
+    });
+    return U;
+  }
+  const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  function rigid3d(st, c) {
+    const q = st.r3, { F, Lu, FL } = c, err = [];
+    const sups = q.supports || [];
+    if (!sups.length) err.push('Add at least one support.');
+    const unk = unknowns3(sups, err);
+    const loads = (q.loads || []).map((l, i) => {
+      const p = [+l.x, +l.y, +l.z]; if (p.some((v) => !isFinite(v))) err.push(`Load ${i + 1}: enter where it acts.`);
+      if (l.kind === 'mass') { if (!(+l.m > 0)) { err.push(`Load ${i + 1}: the mass must be greater than zero.`); return null; } const W = weight(+l.m, c.U, F); return { name: `W${i + 1}`, v: [0, 0, -W], p, how: `W = mg = ${fmt(+l.m)}(${fmt(gOf(c.U))}) = ${fmt(W)} ${F}, along −z` }; }
+      const v = [+l.Fx, +l.Fy, +l.Fz]; if (v.some((x) => !isFinite(x))) { err.push(`Load ${i + 1}: enter its three components.`); return null; }
+      return { name: `F${i + 1}`, v, p, how: `F = ${vs(v)} ${F}` };
+    });
+    const cps = (q.couples || []).map((m, i) => { const v = [+m.Mx, +m.My, +m.Mz]; if (v.some((x) => !isFinite(x))) err.push(`Couple ${i + 1}: enter its three components.`); return v; });
+    if (err.length) return fail(err);
+    const n = unk.length, S = Steps(), out = [];
+    const P0 = unk.length ? unk[0].p : [0, 0, 0];
+    S.add({ t: 'Free-body diagram and unknowns', n: 'Each support is replaced by the reactions it can give (Hibbeler Table 5-2): a ball-and-socket joint or a thrust bearing, hinge or pin gives three force components; a journal bearing gives the two force components across its shaft (and two couple moments if it is not aligned with other bearings); a cable pulls along the cable, a smooth surface pushes along its normal, and a fixed support gives three forces and three couple moments. Each unknown is assumed positive along +x, +y, +z or along its cable; a negative answer means the opposite sense.',
+      table: { head: ['Unknown', 'Support', 'Acts at', 'Along'], rows: unk.map((u) => [u.name, S3[sups[u.sup].type], `(${u.p.map(fmt).join(', ')}) ${Lu}`, `${u.m ? 'couple about ' : ''}${vs(u.d.map((v) => +v.toFixed(4)))}`]) } });
+    const Ks = loads.reduce((sm, l) => add(sm, l.v), [0, 0, 0]);
+    const Mk = (cpt) => add(loads.reduce((sm, l) => add(sm, cross3(sub(l.p, cpt), l.v)), [0, 0, 0]), cps.reduce((sm, v) => add(sm, v), [0, 0, 0]));
+    if (loads.length || cps.length) S.add({ t: 'Loads as Cartesian vectors', n: `Moments of the loads are taken about the point (${P0.map(fmt).join(', ')}) ${Lu}, where the first support is, so that its reactions drop out of the moment equations: M = r × F.`,
+      table: { head: ['Load', 'Vector', 'Acts at', `r × F (${FL})`], rows: loads.map((l) => [l.name, l.how, `(${l.p.map(fmt).join(', ')})`, vs(cross3(sub(l.p, P0), l.v))]).concat(cps.map((v, i) => [`M${i + 1}`, `couple ${vs(v)} ${FL}`, '—', vs(v)])) } });
+    const col = (u, P) => (u.m ? [0, 0, 0].concat(u.d) : u.d.concat(cross3(sub(u.p, P), u.d)));
+    const A = [0, 1, 2, 3, 4, 5].map((k) => unk.map((u) => col(u, P0)[k])), Mo = Mk(P0), b = [-Ks[0], -Ks[1], -Ks[2], -Mo[0], -Mo[1], -Mo[2]];
+    const scale = Math.max(1, ...loads.map((l) => mag(l.v)), ...cps.map(mag));
+    const eqn = (k) => { const terms = unk.map((u, j) => ({ a: A[k][j], n: u.name })).filter((t) => Math.abs(t.a) > 1e-9); const kv = -b[k]; return `${terms.length ? terms.map((t, j) => `${j ? (t.a < 0 ? ' − ' : ' + ') : t.a < 0 ? '−' : ''}${Math.abs(Math.abs(t.a) - 1) < 1e-12 ? '' : fmt(Math.abs(t.a))} ${t.n}`).join('') : '0'}${Math.abs(kv) > 1e-12 * scale ? (kv < 0 ? ' − ' : ' + ') + fmt(Math.abs(kv)) : ''} = 0`; };
+    ['x', 'y', 'z'].forEach((ax, k) => S.add({ t: `Sum of forces along ${ax}`, f: `ΣF_${ax} = 0`, s: eqn(k) }));
+    ['x', 'y', 'z'].forEach((ax, k) => S.add({ t: `Sum of moments about the ${ax} axis through (${P0.map(fmt).join(', ')})`, f: `ΣM_${ax} = 0`, s: eqn(k + 3) }));
+    if (n > 6) return Object.assign(fail(`Statically indeterminate: there are ${n} unknown reactions and only 6 equilibrium equations. Use bearings that give forces only, or remove a support.`), { det: { cls: 'err', text: 'Statically indeterminate' } });
+    const sol = linSolve(A, b);
+    if (sol.rank < n) return Object.assign(fail('Improperly constrained: the supports cannot fix the body, because some of their reactions are parallel or all pass through one axis (the equations cannot be solved for every unknown). Change a support or its direction.'), { det: { cls: 'err', text: 'Improperly constrained' } });
+    if (!sol.consistent) return Object.assign(fail(`Partially constrained: with only ${n} reactions the body cannot resist these loads (one of the six equations cannot be satisfied), so it would move. Add a support or a couple-moment reaction.`), { det: { cls: 'err', text: 'Partially constrained' } });
+    const x = sol.x.map((v) => (Math.abs(v) < 1e-9 * scale ? 0 : v));
+    S.add({ t: `Solve the ${n < 6 ? `${n} independent` : 'six'} equations together`, n: n < 6 ? `Only ${n} of the six equations are independent here; the other is satisfied by the loads as given.` : undefined, r: unk.map((u, i) => `${u.name} = ${fmt(x[i])} ${u.m ? FL : F}`).join(', ') });
+    const chk = [P0[0] + 1.37, P0[1] - 0.61, P0[2] + 0.89], rc = add(unk.reduce((sm, u, i) => add(sm, u.m ? mul(u.d, x[i]) : cross3(sub(u.p, chk), mul(u.d, x[i]))), [0, 0, 0]), Mk(chk));
+    S.add({ t: 'Check', n: 'Moments about any other point must also add to zero.', r: `ΣM = ${vs(rc.map((v) => (Math.abs(v) < 1e-8 * scale * 10 ? 0 : v)))} ≈ 0` });
+    const warn = [];
+    unk.forEach((u, i) => {
+      if (u.pull && x[i] < -1e-9 * scale) warn.push(`${u.name} comes out negative: the cable would have to push, so it would go slack.`);
+      if (u.push && x[i] < -1e-9 * scale) warn.push(`${u.name} comes out negative: a smooth surface can only push, so the body would lift off there.`);
+    });
+    if (n < 6) warn.push(`Only ${n} reactions: the body is held for these loads, but a load along the free direction would move it.`);
+    unk.forEach((u, i) => out.push({ k: u.name, v: x[i], u: u.m ? FL : F, hl: true }));
+    sups.forEach((sp, j) => { const L = sp.name || LET[j], fs = unk.map((u, i) => [u, x[i]]).filter(([u]) => u.sup === j && !u.m && !u.pull && !u.push && !/^F_/.test(u.name)); if (fs.length > 1) out.push({ k: `Resultant force at ${L}`, v: Math.hypot(...fs.map((t) => t[1])), u: F }); });
+    return ok(n === 6 ? 'Statically determinate' : 'Solved (partially constrained)', out, S, { kind: 'rigid3d', c, members: (q.members || []).map((m) => [[+m.x1, +m.y1, +m.z1], [+m.x2, +m.y2, +m.z2]]), sups: sups.map((sp, i) => ({ type: sp.type, p: [+sp.x, +sp.y, +sp.z], L: sp.name || LET[i], ax: sp.ax })), unk: unk.map((u, i) => ({ name: u.name, p: u.p, d: u.d, m: !!u.m, v: x[i], end: u.end })), loads: loads.map((l) => ({ name: l.name, p: l.p, v: l.v })), couples: cps }, warn, n === 6 ? 'ok' : 'warn');
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Largest load from cable or support capacities                      */
+  /* ------------------------------------------------------------------ */
+  /** All loads scale with one factor λ; each unknown force scales with it, so λ = min(capacity / |force|). */
+  function capWrap(r, st, c) {
+    const cp = st.cap; if (!r.ok || !cp || !cp.on) return r;
+    const { F } = c, g = r.geo, items = [];
+    if (g.kind === 'particle') g.U.forEach((u, i) => items.push({ name: u.name, f: Math.abs(u.F), cap: +cp.T }));
+    else if (g.kind === 'particle3d') g.cables.forEach((cb) => items.push({ name: `F_${cb.name}`, f: Math.abs(cb.T), cap: +cp.T }));
+    else {
+      const list = g.kind === 'rigid' ? g.sups : g.sups;
+      list.forEach((sp, j) => {
+        const capj = cp.sup && +cp.sup[j] > 0 ? +cp.sup[j] : +cp.T; if (!(capj > 0)) return;
+        const fs = g.unk.filter((u) => !u.m && (g.kind === 'rigid' ? u.p[0] === sp.p[0] && u.p[1] === sp.p[1] : u.p.every((v, k) => v === sp.p[k])) && u.name.indexOf(sp.L) >= 0);
+        if (!fs.length) return;
+        items.push({ name: fs.length > 1 ? `resultant at ${sp.L}` : fs[0].name, f: Math.hypot(...fs.map((u) => u.v)), cap: capj });
+      });
+    }
+    const S = { list: r.steps };
+    const used = items.filter((it) => it.cap > 0 && it.f > 1e-12);
+    if (!(+cp.T > 0) && !used.length) return Object.assign(fail('Enter the largest force a cable or support can carry.'));
+    if (!used.length) return r;
+    const lam = Math.min(...used.map((it) => it.cap / it.f)), gov = used.find((it) => it.cap / it.f === lam);
+    r.steps.push({ t: 'Largest load', f: 'λ = smallest of (capacity / force) over the members', n: 'Equilibrium is linear: if every load is multiplied by λ, every reaction is multiplied by λ too. The member that reaches its capacity first sets λ.',
+      table: { head: ['Member', `Force for the loads entered (${F})`, `Capacity (${F})`, 'Capacity / force'], rows: used.map((it) => [it.name, fmt(it.f), fmt(it.cap), fmt(it.cap / it.f)]) }, r: `λ = ${fmt(lam)}, set by ${gov.name}` });
+    r.out.unshift({ k: 'Load factor λ (largest load = λ × loads entered)', v: lam, u: '', hl: true }, { k: `${gov.name} at the largest load (its capacity)`, v: gov.cap, u: F });
+    const W = g.kind === 'particle' || g.kind === 'particle3d' ? g.K.reduce((s, k) => s + Math.hypot(...k.v), 0) : (g.loads || []).reduce((s, l) => s + (l.F != null ? l.F : Math.hypot(...l.v)), 0);
+    if (W > 0) r.out.splice(1, 0, { k: 'Largest total load (λ × sum of load magnitudes)', v: lam * W, u: F, hl: true });
+    r.warn = (r.warn || []).concat([`Every load entered is scaled by λ = ${fmt(lam)}; the results below the load factor are for the loads as entered.`]);
+    r.status = { cls: 'ok', text: `Largest load: λ = ${fmt(lam)} (${gov.name} at capacity)` };
+    return r;
+  }
+
   /* ------------------------------------------------------------------ */
   /* Units                                                              */
   /* ------------------------------------------------------------------ */
-  const LEN = new Set(['x', 'y', 'z', 'x1', 'x2']), FOR = new Set(['F', 'Fx', 'Fy', 'Fz', 'P']), MOM = new Set(['M']), DIS = new Set(['w1', 'w2', 'k']);
+  const LEN = new Set(['x', 'y', 'z', 'x1', 'x2', 'y1', 'y2', 'z1', 'z2', 'bx', 'by', 'bz']), FOR = new Set(['F', 'Fx', 'Fy', 'Fz', 'P', 'T']), MOM = new Set(['M', 'Mx', 'My', 'Mz']), DIS = new Set(['w1', 'w2', 'k']);
   function convertState(st, from, to) {
     if (from === to) return st;
     const { convert, twin, tidy, UNITS } = Core;
@@ -282,7 +405,8 @@
         } else walk(v);
       });
     };
-    ['pa', 'p3', 'rb'].forEach((k) => walk(st[k]));
+    ['pa', 'p3', 'rb', 'r3'].forEach((k) => walk(st[k]));
+    if (st.cap) { if (typeof st.cap.T === 'number') st.cap.T = tidy(st.cap.T * kF, 8); st.cap.sup = (st.cap.sup || []).map((v) => (v === '' || v == null ? v : tidy(+v * kF, 8))); }
     st.fu = f1;
     return st;
   }

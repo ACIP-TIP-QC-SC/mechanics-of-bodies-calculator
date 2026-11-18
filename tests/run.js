@@ -224,6 +224,17 @@ group('equilibrium module', () => {
   close('unit round trip', out(Equil.solve(st, US), 'N_B'), 536.2);
 });
 
+group('equilibrium: 3D rigid bodies and largest load', () => {
+  const mk = (o) => Core.deepMerge(Equil.defaults(), o);
+  let r = Equil.solve(mk({ mode: 'rigid3d', fu: 'lb' }), U.US);
+  close('5-73 T_BD', out(r, 'T_BD'), 70.16, 2e-3); close('5-73 A_x', out(r, 'A_x'), 37.5); close('5-73 A_z', out(r, 'A_z'), 37.5); close('5-73 A_y', out(r, 'A_y'), 0);
+  r = Equil.solve(mk({ mode: 'rigid3d', fu: 'lb', r3: { supports: [{ type: 'thrust', name: 'A', x: 0, y: 0, z: 0 }, { type: 'journal', name: 'B', x: 0, y: 0, z: 48, ax: 'z' }], loads: [{ kind: 'force', Fx: 0, Fy: 0, Fz: -100, x: 0, y: 18, z: 24 }] } }), U.US);
+  close('5-70 B_y', out(r, 'B_y'), -37.5); close('5-70 A_z', out(r, 'A_z'), 100);
+  truthy('7 unknowns is indeterminate', !Equil.solve(mk({ mode: 'rigid3d', r3: { supports: [{ type: 'fixed', name: 'A', x: 0, y: 0, z: 0 }, { type: 'cable', name: 'B', x: 1, y: 0, z: 0, bx: 1, by: 0, bz: 2 }] } }), U.SI).ok);
+  r = Equil.solve(mk({ mode: 'rigid', fu: 'kN', rb: { outline: [], supports: [{ type: 'roller', name: 'A', x: -6.598076, y: 1.5, ang: 60 }, { type: 'pin', name: 'B', x: 0, y: 0 }], loads: [], couples: [], dists: [{ x1: -4, x2: 0, y: 0, w1: 3, w2: 3 }] }, cap: { on: true, T: 0, sup: [4, 8] } }), U.SI);
+  close('5-22 N_A', out(r, 'N_A'), 3.713); close('5-23 w_max', 3 * out(r, 'Load factor λ (largest load = λ × loads entered)'), 2.673, 2e-3);
+  { const st = Equil.convertState(mk({ mode: 'rigid3d', fu: 'lb' }), 'US', 'SI'); close('rigid3d units round trip', out(Equil.solve(Equil.convertState(st, 'SI', 'US'), U.US), 'T_BD'), 70.156, 1e-3); }
+});
 group('trusses module', () => {
   const D = Truss.defaults, mk = (o) => Object.assign(D(), o), SI = U.SI;
   const J = (s) => s.split(' ').map((t) => { const [name, x, y] = t.split(','); return { name, x: +x, y: +y }; });
