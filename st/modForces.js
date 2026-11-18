@@ -56,6 +56,17 @@
     C.seg(sec, { label: 'Force unit', get: () => st.fu, set: (v) => (st.fu = v), options: U.forces.map((f) => [f, f]) });
     const list = (items, title, fields, mk, max) => C.list(sec, { items, max: max || 6, min: 1, color: (it, i) => FC[i % FC.length] + '33', title, fields, add: [['Force', mk]] });
     if (st.mode === 'coplanar') {
+      const q = st.co;
+      C.seg(sec, { label: 'Find', get: () => q.find || 'R', set: (v) => (q.find = v), options: [['R', 'The resultant'], ['unk', 'An unknown force']] });
+      if (q.find === 'unk') {
+        sec = C.section(c, 'Unknown force and the resultant required');
+        C.select(sec, { label: 'Unknown force', get: () => String(q.uk), set: (v) => (q.uk = +v), options: q.forces.map((f, i) => [String(i + 1), `F${i + 1}`]) });
+        C.select(sec, { label: 'What is unknown', get: () => q.unk, set: (v) => (q.unk = v), options: [['both', 'Its magnitude and angle'], ['mag', 'Its magnitude (angle known)'], ['ang', 'Its angle (magnitude known)']] });
+        C.select(sec, { label: 'The resultant must', get: () => q.req, set: (v) => (q.req = v), options: [['both', 'Have a given magnitude and direction'], ['dir', 'Act along a given direction'], ['mag', 'Have a given magnitude'], ['min', 'Be as small as possible']] });
+        if (q.req === 'both' || q.req === 'mag') C.num(sec, { label: 'Resultant magnitude F_R', get: () => q.FR, set: (v) => (q.FR = v), unit: F });
+        if (q.req === 'both' || q.req === 'dir') C.num(sec, { label: 'Resultant direction φ (↺ from +x)', get: () => q.phi, set: (v) => (q.phi = v), unit: '°' });
+        C.note(sec, q.unk === 'both' && q.req === 'dir' ? 'Many forces turn the resultant onto this line; the smallest one is found (perpendicular to the line).' : q.unk === 'both' ? 'The values typed for the unknown force are ignored.' : `Enter F${q.uk} by magnitude and angle; the ${q.unk === 'mag' ? 'magnitude' : 'angle'} typed is ignored.`);
+      }
       sec = C.section(c, 'Forces');
       C.note(sec, 'Angles are measured counterclockwise from the +x axis. A slope is the run and rise of the little triangle drawn on the force (for example 4 and 3 for a 3-4-5 slope), with signs giving the direction.');
       list(st.co.forces, (it, i) => `F${i + 1}`, (it) => fields2(it, F, Lu, false), () => new2(), 6);
@@ -374,6 +385,16 @@
   /* ------------------------------------------------------------------ */
   const P = (F, ang, o) => new2(Object.assign({ by: 'polar', F, ang }, o)), C2 = (Fx, Fy, o) => new2(Object.assign({ by: 'comp', Fx, Fy }, o));
   M.presets = [
+    { name: 'Test: Prob. 2-26, F_A so that F_R = 1250 N along +x (686 N, θ = 54.3° from y)', units: 'SI',
+      state: { mode: 'coplanar', fu: 'N', co: { find: 'unk', uk: 1, unk: 'both', req: 'both', FR: 1250, phi: 0, forces: [P(500, 90), P(800, -30)] } }, expect: [{ k: 'F1 magnitude', v: 685.89 }, { k: 'F1 angle θ (↺ from +x)', v: 35.675 }] },
+    { name: 'Test: Prob. 2-31, smallest tugboat force F_B so that F_R is along +x (1 kN, F_R = 1.73 kN)', units: 'SI',
+      state: { mode: 'coplanar', fu: 'kN', co: { find: 'unk', uk: 2, unk: 'both', req: 'dir', FR: 0, phi: 0, forces: [P(2, 30), P(1, 300)] } }, expect: [{ k: 'F2 magnitude (smallest force)', v: 1 }, { k: 'Resultant magnitude F_R', v: 1.7321 }] },
+    { name: 'Test: Prob. 2-57, F₁ at 60° for the least resultant (57.8 N, F_R = 380 N)', units: 'SI',
+      state: { mode: 'coplanar', fu: 'N', co: { find: 'unk', uk: 1, unk: 'mag', req: 'min', forces: [P(100, 60), P(200, 0), new2({ by: 'slope', F: 260, dx: 5, dy: -12 })] } }, expect: [{ k: 'F1 magnitude', v: 57.846 }, { k: 'Resultant magnitude F_R', v: 379.81 }] },
+    { name: 'Test: Prob. 2-58, F so that F_R = 8 kN along x′ at 30° (1.97 kN, θ = 86.0° from y)', units: 'SI',
+      state: { mode: 'coplanar', fu: 'kN', co: { find: 'unk', uk: 1, unk: 'both', req: 'both', FR: 8, phi: 30, forces: [P(2, 0), P(4, 105), P(6, 0)] } }, expect: [{ k: 'F1 magnitude', v: 1.9682 }, { k: 'F1 angle θ (↺ from +x)', v: 3.9709 }] },
+    { name: 'Two possible magnitudes of P for a given resultant magnitude', units: 'SI',
+      state: { mode: 'coplanar', fu: 'N', co: { find: 'unk', uk: 2, unk: 'mag', req: 'mag', FR: 800, phi: 0, forces: [P(600, 20), P(300, 250)] } } },
     { name: 'Test: two forces 100 N at 15° and 150 N at 80°, F_R = 212.6 N at 54.76°', units: 'SI',
       state: { mode: 'coplanar', fu: 'N', co: { forces: [P(100, 15), P(150, 80)] } }, expect: [{ k: 'Resultant magnitude F_R', v: 212.6 }, { k: 'Direction θ (↺ from +x)', v: 54.76 }] },
     { name: 'Test: three forces, one on a 3-4-5 slope, F_R = 484.7 N at 142.2°', units: 'SI',

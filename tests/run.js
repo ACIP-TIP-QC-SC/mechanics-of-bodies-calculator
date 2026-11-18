@@ -152,6 +152,22 @@ group('force systems module', () => {
   const P = (F, ang) => ({ by: 'polar', F, ang }), C2 = (Fx, Fy) => ({ by: 'comp', Fx, Fy });
   // Example 2.1
   let r = Forces.solve(mk({ mode: 'coplanar', fu: 'N', co: { forces: [P(100, 15), P(150, 80)] } }), SI);
+  { // one unknown force from the required resultant: Problems 2-26, 2-31, 2-57, 2-58
+    const U1 = (co) => Forces.solve(mk({ mode: 'coplanar', fu: 'N', co: Object.assign({ find: 'unk', FR: 0, phi: 0 }, co) }), SI);
+    let q = U1({ uk: 1, unk: 'both', req: 'both', FR: 1250, forces: [P(0, 0), P(800, -30)] });
+    close('2-26 F_A', out(q, 'F1 magnitude'), 686, 1e-3); close('2-26 θ from y', 90 - out(q, 'F1 angle θ (↺ from +x)'), 54.3, 1e-3);
+    q = U1({ uk: 2, unk: 'both', req: 'dir', forces: [P(2, 30), P(1, 0)] });
+    close('2-31 F_B min', out(q, 'F2 magnitude (smallest force)'), 1); close('2-31 F_R', out(q, 'Resultant magnitude F_R'), 1.7321, 1e-4);
+    q = U1({ uk: 1, unk: 'mag', req: 'min', forces: [P(1, 60), P(200, 0), { by: 'slope', F: 260, dx: 5, dy: -12 }] });
+    close('2-57 F1', out(q, 'F1 magnitude'), 57.846, 1e-4); close('2-57 F_R', out(q, 'Resultant magnitude F_R'), 380, 1e-3);
+    q = U1({ uk: 1, unk: 'both', req: 'both', FR: 8, phi: 30, forces: [P(1, 0), P(4, 105), P(6, 0)] });
+    close('2-58 F', out(q, 'F1 magnitude'), 1.968, 1e-3); close('2-58 θ from y', 90 - out(q, 'F1 angle θ (↺ from +x)'), 86.03, 1e-3);
+    q = U1({ uk: 2, unk: 'ang', req: 'mag', FR: 3, forces: [P(2, 30), P(1.5, 0)] });
+    close('unknown angle: resultant magnitude met', out(q, 'Resultant magnitude F_R'), 3);
+    q = U1({ uk: 2, unk: 'mag', req: 'dir', phi: 0, forces: [P(2, 30), P(1, 270)] });
+    close('unknown magnitude: resultant along +x', out(q, 'Resultant (F_R)_y'), 0); close('unknown magnitude value', out(q, 'F2 magnitude'), 1);
+    truthy('unknown angle: force too small fails', !U1({ uk: 2, unk: 'ang', req: 'dir', phi: 0, forces: [P(2, 30), P(0.5, 0)] }).ok);
+  }
   close('2.1 F_R', out(r, 'Resultant magnitude F_R'), 212.6); close('2.1 θ', out(r, 'Direction θ (↺ from +x)'), 54.76);
   // Example 2.7 (one force by a 3-4-5 slope)
   r = Forces.solve(mk({ mode: 'coplanar', co: { forces: [P(400, 180), P(250, 45), { by: 'slope', F: 200, dx: -4, dy: 3 }] } }), SI);

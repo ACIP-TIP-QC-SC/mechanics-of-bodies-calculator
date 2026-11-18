@@ -1,7 +1,9 @@
 /* =====================================================================
  * STATICS · Force Systems (physics only; runs in the browser and in Node)
  * Hibbeler, Engineering Mechanics: Statics, Chapters 2 and 4.
- *   coplanar   resultant of coplanar forces (2.4, 2.5)
+ *   coplanar   resultant of coplanar forces (2.4, 2.5), or one unknown force (its magnitude, angle or both)
+ *              found from what is required of the resultant: its magnitude, direction, both, or the least
+ *              resultant; with only a direction required and both unknown, the smallest force is found
  *   vector3d   Cartesian vectors, magnitude and direction angles, force along a line (2.5 to 2.8)
  *   dot        component of a force along a line, angle between them (2.9)
  *   moment     moment of forces about a point (r × F) and about an axis (u · (r × F)) (4.1 to 4.5)
@@ -21,7 +23,7 @@
   function defaults() {
     return {
       mode: 'coplanar', fu: 'N',
-      co: { forces: [{ by: 'polar', F: 100, ang: 15, Fx: 0, Fy: 0, dx: 4, dy: 3 }, { by: 'polar', F: 150, ang: 80, Fx: 0, Fy: 0, dx: 4, dy: 3 }] },
+      co: { find: 'R', uk: 1, unk: 'both', req: 'both', FR: 1250, phi: 0, forces: [{ by: 'polar', F: 100, ang: 15, Fx: 0, Fy: 0, dx: 4, dy: 3 }, { by: 'polar', F: 150, ang: 80, Fx: 0, Fy: 0, dx: 4, dy: 3 }] },
       v3: { forces: [f3({ by: 'comp', Fx: 35.36, Fy: -35.36, Fz: 86.6 })] },
       dot: { force: f3({ by: 'line', F: 300, ax: 0, ay: 0, az: 0, bx: 2, by_: 3, bz: 6 }), P: { x: 0, y: 0, z: 0 }, Q: { x: 0, y: 4, z: 0 } },
       mom: { forces: [f3({ by: 'comp', Fx: 0, Fy: 0, Fz: 10, x: 2, y: 3, z: 0 })], O: { x: 0, y: 0, z: 0 }, axis: true, P: { x: 0, y: 0, z: 0 }, Q: { x: 1, y: 0, z: 0 } },
@@ -107,6 +109,78 @@
     return { th: t, ref, txt: `${fmt(ref)}° ${side}` };
   }
 
+
+  /* ------------------------------------------------------------------ */
+  /* One unknown force from what is required of the resultant           */
+  /* ------------------------------------------------------------------ */
+  function unknownForce(st, rows, S, F) {
+    const q = st.co, k = Math.round(+q.uk) - 1, unk = q.unk, req = q.req, FRr = +q.FR, phi = +q.phi;
+    if (!(k >= 0 && k < rows.length)) return { err: 'Pick which force is unknown.' };
+    if (rows.length < 2) return { err: 'Add at least one known force besides the unknown one.' };
+    const f = st.co.forces[k], name = `F${k + 1}`;
+    if (unk !== 'both' && f.by !== 'polar') return { err: `${name}: enter it by magnitude and angle, so that the part that is known can be used.` };
+    const Sx = rows.reduce((a, r, i) => a + (i === k ? 0 : r.Fx), 0), Sy = rows.reduce((a, r, i) => a + (i === k ? 0 : r.Fy), 0), Sm = Math.hypot(Sx, Sy);
+    const e = [Math.cos(phi * DEG), Math.sin(phi * DEG)], F0 = +f.F, th0 = +f.ang, u0 = [Math.cos(th0 * DEG), Math.sin(th0 * DEG)];
+    S.add({ t: 'Sum of the known forces', f: 'ΣF_known = (ΣF_x, ΣF_y)', n: `All forces except ${name}.`, r: `ΣF_x = ${fmt(Sx)} ${F},  ΣF_y = ${fmt(Sy)} ${F}` });
+    const reqTxt = { both: `F_R = ${fmt(FRr)} ${F} at ${fmt(phi)}° from +x`, dir: `F_R along ${fmt(phi)}° from +x`, mag: `F_R = ${fmt(FRr)} ${F}`, min: 'F_R as small as possible' }[req];
+    let sols = [], how, note;
+    if (req !== 'dir' && req !== 'min' && !(FRr >= 0)) return { err: 'Enter the magnitude required of the resultant.' };
+    if (unk === 'both') {
+      if (req === 'both') {
+        const v = [FRr * e[0] - Sx, FRr * e[1] - Sy]; sols = [v];
+        how = `${name} = F_R − ΣF_known = (${fmt(FRr * e[0])} − ${fmt(Sx)}, ${fmt(FRr * e[1])} − ${fmt(Sy)})`;
+      } else if (req === 'dir') {
+        const c = Sx * e[1] - Sy * e[0], v = [-c * e[1], c * e[0]]; sols = [v];
+        how = `Many forces give a resultant along this line; the smallest is perpendicular to it, cancelling the part of ΣF_known across the line: ${name}_min = |ΣF_known × e| = |${fmt(Sx)}(${fmt(e[1])}) − ${fmt(Sy)}(${fmt(e[0])})| = ${fmt(Math.abs(c))} ${F}`;
+        note = 'smallest force';
+      } else if (req === 'min') { sols = [[-Sx, -Sy]]; how = `The resultant is zero when ${name} = −ΣF_known.`; }
+      else return { err: 'With both the magnitude and the angle unknown, give the direction of the resultant too (or ask for the smallest force with only the direction).' };
+    } else if (unk === 'mag') {
+      const Su = Sx * u0[0] + Sy * u0[1];
+      if (req === 'dir') {
+        const den = u0[0] * e[1] - u0[1] * e[0];
+        if (Math.abs(den) < 1e-12) return { err: `${name} is parallel to the required resultant, so it cannot turn the resultant onto that line.` };
+        const P = -(Sx * e[1] - Sy * e[0]) / den; sols = [[P * u0[0], P * u0[1]]];
+        how = `(ΣF_known + P u) × e = 0  →  P = −(ΣF_x e_y − ΣF_y e_x)/(u_x e_y − u_y e_x) = ${fmt(P)} ${F}`;
+      } else if (req === 'mag') {
+        const disc = Su * Su - (Sm * Sm - FRr * FRr);
+        if (disc < 0) return { err: `No magnitude of ${name} at ${fmt(th0)}° gives a resultant of ${fmt(FRr)} ${F}; the smallest resultant possible is ${fmt(Math.sqrt(Math.max(0, Sm * Sm - Su * Su)))} ${F}.` };
+        [-Su + Math.sqrt(disc), -Su - Math.sqrt(disc)].filter((P) => P >= -1e-9).forEach((P) => sols.push([P * u0[0], P * u0[1]]));
+        if (!sols.length) return { err: `Only a negative magnitude of ${name} would give that resultant; reverse its direction (add 180° to its angle).` };
+        how = `|ΣF_known + P u|² = F_R²  →  P² + 2(${fmt(Su)})P + ${fmt(Sm * Sm - FRr * FRr)} = 0`;
+      } else if (req === 'min') {
+        const P = Math.max(0, -Su); sols = [[P * u0[0], P * u0[1]]];
+        how = `F_R² = |ΣF_known|² + 2P(ΣF_known · u) + P²; dF_R²/dP = 0 gives P = −ΣF_known · u = ${fmt(-Su)} ${F}${-Su < 0 ? ', which is negative, so P = 0' : ''}`;
+      } else return { err: 'With only the magnitude unknown, require the direction of the resultant, its magnitude, or the least resultant.' };
+    } else {
+      if (!(F0 >= 0)) return { err: `${name}: enter its magnitude.` };
+      const al = Math.atan2(Sy, Sx);
+      if (req === 'dir') {
+        const c = Sx * e[1] - Sy * e[0], sv = -c / (F0 || 1e-300);
+        if (Math.abs(sv) > 1) return { err: `${name} = ${fmt(F0)} ${F} is too small to turn the resultant onto that line; it needs at least ${fmt(Math.abs(c))} ${F}.` };
+        const b = Math.asin(sv);
+        [phi * DEG - b, phi * DEG - (Math.PI - b)].forEach((t) => { const v = [F0 * Math.cos(t), F0 * Math.sin(t)]; if ((Sx + v[0]) * e[0] + (Sy + v[1]) * e[1] > -1e-9) sols.push(v); });
+        if (!sols.length) return { err: `With ${name} = ${fmt(F0)} ${F} the resultant can only point the opposite way along that line.` };
+        how = `(ΣF_known + F u(θ)) × e = 0  →  F sin(φ − θ) = −(ΣF_x e_y − ΣF_y e_x) = ${fmt(-c)}`;
+      } else if (req === 'mag') {
+        const cv = (FRr * FRr - Sm * Sm - F0 * F0) / (2 * F0 * (Sm || 1e-300));
+        if (Math.abs(cv) > 1) return { err: `No angle of ${name} gives a resultant of ${fmt(FRr)} ${F}: it ranges from ${fmt(Math.abs(Sm - F0))} to ${fmt(Sm + F0)} ${F}.` };
+        const b = Math.acos(cv); [al + b, al - b].forEach((t) => sols.push([F0 * Math.cos(t), F0 * Math.sin(t)]));
+        if (Math.abs(b) < 1e-12 || Math.abs(b - Math.PI) < 1e-12) sols = sols.slice(0, 1);
+        how = `F_R² = |ΣF_known|² + F² + 2F|ΣF_known| cos(θ − α), α = ${fmt(((al / DEG) + 360) % 360)}°  →  cos(θ − α) = ${fmt(cv)}`;
+      } else if (req === 'min') { sols = [[-F0 * Math.cos(al), -F0 * Math.sin(al)]]; how = `The resultant is least when ${name} points opposite to ΣF_known.`; }
+      else return { err: 'With only the angle unknown, require the direction of the resultant, its magnitude, or the least resultant.' };
+    }
+    const dirOf = (v) => ((Math.atan2(v[1], v[0]) / DEG) + 360) % 360;
+    S.add({ t: `Unknown force ${name}`, f: `Required: ${reqTxt}`, n: { both: 'Both the magnitude and the direction of the force are unknown.', mag: `The direction of ${name} is known (${fmt(th0)}° from +x); its magnitude P is unknown.`, ang: `The magnitude of ${name} is known (${fmt(F0)} ${F}); its angle θ is unknown.` }[unk], s: how,
+      r: sols.map((v, i) => `${sols.length > 1 ? `solution ${i + 1}: ` : ''}${name} = ${fmt(Math.hypot(...v))} ${F} at θ = ${fmt(dirOf(v))}° from +x`).join(';  ') });
+    const v = sols[0];
+    rows[k] = { Fx: v[0], Fy: v[1], F: Math.hypot(...v), how: 'found from the required resultant' };
+    const out = [{ k: `${name} magnitude${note ? ` (${note})` : ''}`, v: Math.hypot(...v), u: F, hl: true }, { k: `${name} angle θ (↺ from +x)`, v: dirOf(v), u: '°', hl: true }];
+    if (sols[1]) out.push({ k: `${name} second solution: magnitude`, v: Math.hypot(...sols[1]), u: F }, { k: `${name} second solution: angle`, v: dirOf(sols[1]), u: '°' });
+    return { out, k };
+  }
+
   /* ------------------------------------------------------------------ */
   /* Coplanar resultant                                                 */
   /* ------------------------------------------------------------------ */
@@ -116,6 +190,8 @@
     const err = [], rows = fs.map((f, i) => { const r = comp2(f, `F${i + 1}`); if (r.err) err.push(r.err); return r; });
     if (err.length) return fail(err);
     const S = Steps(), out = [], { F } = c;
+    let unkRes = null;
+    if (st.co.find === 'unk') { unkRes = unknownForce(st, rows, S, F); if (unkRes.err) return fail(unkRes.err); }
     S.add({ t: 'Rectangular components of each force', n: 'Each force is resolved along the x and y axes. A component pointing in −x or −y is negative.', table: { head: ['Force', `F (${F})`, 'How', `F_x (${F})`, `F_y (${F})`], rows: rows.map((r, i) => [`F${i + 1}`, fmt(r.F), r.how, fmt(r.Fx), fmt(r.Fy)]) } });
     const Rx = rows.reduce((s, r) => s + r.Fx, 0), Ry = rows.reduce((s, r) => s + r.Fy, 0), sc = Math.max(...rows.map((r) => r.F), 1e-300);
     const FRx = Math.abs(Rx) < 1e-12 * sc ? 0 : Rx, FRy = Math.abs(Ry) < 1e-12 * sc ? 0 : Ry, FR = Math.hypot(FRx, FRy);
@@ -128,7 +204,8 @@
     } else S.add({ t: 'Resultant', n: 'The components cancel, so the forces are in balance.', r: 'F_R = 0' });
     out.push({ k: 'Resultant (F_R)_x', v: FRx, u: F }, { k: 'Resultant (F_R)_y', v: FRy, u: F }, { k: 'Resultant magnitude F_R', v: FR, u: F, hl: true });
     if (FR > 0) out.push({ k: 'Direction θ (↺ from +x)', v: d.th, u: '°', hl: true }, { k: 'Angle with the x axis', v: d.txt, u: '' });
-    return ok(FR > 0 ? 'Resultant found' : 'Forces in balance', out, S, { kind: 'coplanar', c, vecs: rows.map((r) => [r.Fx, r.Fy]), R: [FRx, FRy], FR, th: d.th });
+    if (unkRes) out.unshift(...unkRes.out);
+    return ok(unkRes ? `F${unkRes.k + 1} = ${fmt(rows[unkRes.k].F)} ${F} at ${fmt(((Math.atan2(rows[unkRes.k].Fy, rows[unkRes.k].Fx) / DEG) + 360) % 360)}°` : FR > 0 ? 'Resultant found' : 'Forces in balance', out, S, { kind: 'coplanar', c, vecs: rows.map((r) => [r.Fx, r.Fy]), R: [FRx, FRy], FR, th: d.th });
   }
 
   /* ------------------------------------------------------------------ */
@@ -336,7 +413,7 @@
   /* Units                                                              */
   /* ------------------------------------------------------------------ */
   const LEN = new Set(['x', 'y', 'z', 'ax', 'ay', 'az', 'bx', 'by_', 'bz', 'x1', 'x2']);
-  const FOR = new Set(['F', 'Fx', 'Fy', 'Fz']);
+  const FOR = new Set(['F', 'Fx', 'Fy', 'Fz', 'FR']);
   const MOM = new Set(['M', 'Mx', 'My', 'Mz']);
   const DIS = new Set(['w1', 'w2']);
   function convertState(st, from, to) {
