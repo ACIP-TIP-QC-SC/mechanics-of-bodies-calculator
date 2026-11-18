@@ -108,6 +108,9 @@
           if (f.options) {
             input = h('select', { class: 'lyr-sel', onchange: () => { it[f.key] = input.value; if (f.onset) f.onset(it); app.rebuild(); } },
               ...f.options.map(([v, t]) => h('option', { value: v, selected: String(it[f.key]) === String(v) }, t)));
+          } else if (f.text) {
+            input = h('input', { type: 'text', class: 'num', value: it[f.key] == null ? '' : String(it[f.key]), spellcheck: false });
+            input.addEventListener('change', () => { it[f.key] = input.value.trim(); app.rebuild(); });
           } else {
             input = h('input', { type: 'number', class: 'num', step: f.step || 'any', value: round(it[f.key], f.step || 0.001) });
             input.addEventListener('input', () => { const v = parseFloat(input.value); if (!isFinite(v)) return; it[f.key] = v; app.update(); });

@@ -251,6 +251,21 @@ group('equilibrium: 3D rigid bodies and largest load', () => {
   close('5-22 N_A', out(r, 'N_A'), 3.713); close('5-23 w_max', 3 * out(r, 'Load factor λ (largest load = λ × loads entered)'), 2.673, 2e-3);
   { const st = Equil.convertState(mk({ mode: 'rigid3d', fu: 'lb' }), 'US', 'SI'); close('rigid3d units round trip', out(Equil.solve(Equil.convertState(st, 'SI', 'US'), U.US), 'T_BD'), 70.156, 1e-3); }
 });
+group('equilibrium: frames and machines', () => {
+  const mk = (o) => Core.deepMerge(Equil.defaults(), o), FP = (s2) => s2.split(' ').map((t) => { const [name, x, y] = t.split(','); return { name, x: +x, y: +y }; });
+  const L = (at, Fx, Fy, mem) => ({ mem: mem || '', at, by: 'comp', Fx, Fy });
+  let r = Equil.solve(mk({ mode: 'frame', fu: 'kN' }), U.SI);
+  close('6-66 A_x', out(r, 'A_x'), 24); close('6-66 A_y', out(r, 'A_y'), -12); close('6-66 D_x', out(r, 'D_x'), -18); close('6-66 D_y', out(r, 'D_y'), 24); close('6-66 F_BD', out(r, 'Pin B: resultant'), 30);
+  const beam = (o) => mk({ mode: 'frame', fu: 'kN', fm: Object.assign({ loads: [], couples: [], dists: [], sel: '' }, o) });
+  r = Equil.solve(beam({ points: FP('A,0,0 B,6,0 D,9,0 C,12,0'), members: [{ name: 'ABD', pts: 'A B D' }, { name: 'DC', pts: 'D C' }], supports: [{ at: 'A', type: 'roller', ang: 90 }, { at: 'B', type: 'pin', ang: 90 }, { at: 'C', type: 'roller', ang: 90 }], dists: [{ mem: 'ABD', from: 'A', to: 'D', w1: 2, w2: 2 }, { mem: 'DC', from: 'D', to: 'C', w1: 2, w2: 2 }] }), U.SI);
+  close('6-78 N_A', out(r, 'N_A'), 3); close('6-78 B_y', out(r, 'B_y'), 18); close('6-78 N_C', out(r, 'N_C'), 3);
+  r = Equil.solve(mk({ mode: 'frame', fu: 'lb', fm: { points: FP('P,-5,0 A,0,0 B,10,0 C,15,0 Q,19,0 D,25,0 E,30,0'), members: [{ name: 'ABC', pts: 'P A B C' }, { name: 'CD', pts: 'C Q D' }, { name: 'DE', pts: 'D E' }], supports: [{ at: 'A', type: 'roller', ang: 90 }, { at: 'B', type: 'roller', ang: 90 }, { at: 'E', type: 'fixed', ang: 90 }], loads: [L('P', 0, -800), L('B', 0, -1200), L('Q', 0, -600, 'CD')], couples: [], dists: [], sel: '' } }), U.US);
+  close('6-82 B_y', out(r, 'N_B'), 1340); close('6-82 A_y', out(r, 'N_A'), 1020); close('6-82 E_y', out(r, 'E_y'), 240); close('6-82 M_E', out(r, 'M_E'), -1200);
+  truthy('two-force member found', r.ok && Equil.solve(mk({ mode: 'frame', fu: 'kN' }), U.SI).steps.some((s2) => /two-force member/.test(s2.t)));
+  truthy('frame: too many supports is indeterminate', !Equil.solve(beam({ points: FP('A,0,0 B,6,0 D,9,0 C,12,0'), members: [{ name: 'ABD', pts: 'A B D' }, { name: 'DC', pts: 'D C' }], supports: [{ at: 'A', type: 'pin' }, { at: 'B', type: 'pin' }, { at: 'C', type: 'roller', ang: 90 }] }), U.SI).ok);
+  truthy('frame: a mechanism fails', !Equil.solve(beam({ points: FP('A,0,0 B,6,0 D,9,0 C,12,0'), members: [{ name: 'ABD', pts: 'A B D' }, { name: 'DC', pts: 'D C' }], supports: [{ at: 'A', type: 'pin' }, { at: 'B', type: 'roller', ang: 90 }] }), U.SI).ok);
+  { const st = Equil.convertState(mk({ mode: 'frame', fu: 'kN' }), 'SI', 'US'); close('frame units round trip', out(Equil.solve(Equil.convertState(st, 'US', 'SI'), U.SI), 'A_x'), 24, 1e-6); }
+});
 group('trusses module', () => {
   const D = Truss.defaults, mk = (o) => Object.assign(D(), o), SI = U.SI;
   const J = (s) => s.split(' ').map((t) => { const [name, x, y] = t.split(','); return { name, x: +x, y: +y }; });

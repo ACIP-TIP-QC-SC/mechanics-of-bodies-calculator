@@ -6,6 +6,8 @@
  *   rigid      2D rigid body on pins, rollers, fixed supports, cables and links (5.1 to 5.4)
  *   rigid3d    rigid body in space on ball-and-socket joints, journal and thrust bearings, hinges,
  *              cables, smooth surfaces, links and fixed supports (5.5 to 5.7, Table 5-2)
+ *   frame      frames, machines and compound beams (6.6): members joined by pins, each member a rigid
+ *              body with three equations; the pin forces and support reactions are solved together
  * Particles and plane rigid bodies can also give the largest load: when every load is scaled by the
  * same factor, the factor that brings the most heavily loaded cable or support to its capacity.
  * Forces are in the chosen force unit `fu`, lengths in m or ft.
@@ -43,6 +45,13 @@
         loads: [{ kind: 'force', m: 10, Fx: 0, Fy: 0, Fz: -150, x: 1, y: 0, z: 0 }],
         couples: [],
       },
+      fm: {
+        points: [{ name: 'A', x: 0, y: 0 }, { name: 'B', x: 1.5, y: 0 }, { name: 'C', x: 3, y: 0 }, { name: 'E', x: 3.3, y: 0 }, { name: 'G', x: 3, y: 0.3 }, { name: 'D', x: 0, y: 2 }],
+        members: [{ name: 'AC', pts: 'A B C E G' }, { name: 'BD', pts: 'B D' }],
+        supports: [{ at: 'A', type: 'pin', ang: 90, mem: '' }, { at: 'D', type: 'pin', ang: 90, mem: '' }],
+        loads: [{ mem: '', at: 'G', by: 'comp', Fx: -6, Fy: 0, F: 6, ang: 180, dx: 4, dy: 3 }, { mem: '', at: 'C', by: 'comp', Fx: 0, Fy: -6, F: 6, ang: 270, dx: 4, dy: 3 }, { mem: '', at: 'E', by: 'comp', Fx: 0, Fy: -6, F: 6, ang: 270, dx: 4, dy: 3 }],
+        couples: [], dists: [], sel: '',
+      },
       cap: { on: false, T: 500, sup: [] },
     };
   }
@@ -57,6 +66,7 @@
     if (st.mode === 'rigid3d') return capWrap(rigid3d(st, c), st, c);
     if (st.mode === 'particle3d') return capWrap(particle3d(st, c), st, c);
     if (st.mode === 'particle') return capWrap(particle(st, c), st, c);
+    if (st.mode === 'frame') return frame(st, c);
     return particle(st, c);
   }
 
@@ -285,6 +295,114 @@
     ball: 'ball-and-socket joint', cable: 'cable', smooth: 'smooth surface or roller', link: 'short link or strut', journal: 'journal bearing (forces only)', journalM: 'journal bearing with couple moments',
     thrust: 'thrust bearing, hinge or pin (forces only)', thrustM: 'thrust bearing, hinge or pin with couple moments', collar: 'collar on a square rod', fixed: 'fixed support',
   };
+
+  /* ------------------------------------------------------------------ */
+  /* Frames, machines and compound beams (6.6)                          */
+  /* ------------------------------------------------------------------ */
+  function frame(st, c) {
+    const q = st.fm, { F, Lu, FL } = c, err = [], idx = {};
+    const P = (q.points || []).map((p, i) => {
+      const name = String(p.name || '').trim() || LET[i];
+      if (idx[name] !== undefined) err.push(`Two points are named ${name}.`);
+      idx[name] = i;
+      if (!isFinite(+p.x) || !isFinite(+p.y)) err.push(`Point ${name}: enter its coordinates.`);
+      return { name, x: +p.x, y: +p.y };
+    });
+    const Mb = (q.members || []).map((m, i) => {
+      const nm = String(m.name || '').trim() || `M${i + 1}`, pts = String(m.pts || '').trim().split(/[\s,]+/).filter(Boolean);
+      const ix = pts.map((t) => { if (idx[t] === undefined) err.push(`Member ${nm}: there is no point ${t}.`); return idx[t]; });
+      if (pts.length < 2) err.push(`Member ${nm}: list at least two of its points.`);
+      return { name: nm, pts: ix, loads: [], cps: [] };
+    });
+    if (Mb.length < 1) err.push('Add the members.');
+    if (err.length) return fail([...new Set(err)]);
+    const memOf = (ptName, memName, what) => {
+      const pi = idx[ptName]; if (pi === undefined) { err.push(`${what}: there is no point ${ptName}.`); return null; }
+      if (memName) { const k = Mb.findIndex((m) => m.name === memName); if (k < 0) { err.push(`${what}: there is no member ${memName}.`); return null; } if (!Mb[k].pts.includes(pi)) { err.push(`${what}: point ${ptName} is not on member ${memName}.`); return null; } return k; }
+      const k = Mb.findIndex((m) => m.pts.includes(pi)); if (k < 0) { err.push(`${what}: point ${ptName} is not on any member.`); return null; } return k;
+    };
+    // unknowns: support reactions, then the pin forces at points shared by two or more members
+    const sups = (q.supports || []).map((sp, i) => ({ name: sp.at, type: sp.type, x: P[idx[sp.at]] ? P[idx[sp.at]].x : NaN, y: P[idx[sp.at]] ? P[idx[sp.at]].y : NaN, ang: sp.ang, mem: memOf(sp.at, sp.mem, `Support ${i + 1}`) }));
+    if (!sups.length) err.push('Add the supports.');
+    const unk = unknowns(sups, err);
+    unk.forEach((u) => { u.on = [[sups[u.sup].mem, 1]]; u.kind = 'support'; });
+    const pins = [];
+    P.forEach((p, i) => {
+      const ms = Mb.map((m, k) => k).filter((k) => Mb[k].pts.includes(i));
+      if (ms.length < 2) return;
+      pins.push({ pt: i, ms });
+      ms.slice(1).forEach((k) => {
+        const tag = ms.length > 2 ? ` (on ${Mb[k].name})` : '';
+        [['x', [1, 0]], ['y', [0, 1]]].forEach(([a, d]) => unk.push({ name: `${p.name}_${a}${tag}`, p: [p.x, p.y], d, on: [[k, 1], [ms[0], -1]], kind: 'pin', pin: i, mk: k, m0: ms[0] }));
+      });
+    });
+    (q.loads || []).forEach((f, i) => {
+      const k = memOf(f.at, f.mem, `Load ${i + 1}`); if (k === null) return;
+      const r = comp2(f, `Load ${i + 1}`); if (r.err) { err.push(r.err); return; }
+      const p = P[idx[f.at]]; Mb[k].loads.push({ Fx: r.Fx, Fy: r.Fy, F: r.F, p: [p.x, p.y], at: f.at, name: `P${i + 1}` });
+    });
+    (q.couples || []).forEach((m, i) => {
+      const k = Mb.findIndex((b) => b.name === m.mem); if (k < 0) { err.push(`Couple ${i + 1}: pick its member.`); return; }
+      Mb[k].cps.push((m.dir === 'ccw' ? 1 : -1) * Math.abs(+m.M || 0));
+    });
+    const dists = [];
+    (q.dists || []).forEach((d, i) => {
+      const k = Mb.findIndex((b) => b.name === d.mem); if (k < 0) { err.push(`Distributed load ${i + 1}: pick its member.`); return; }
+      const a = P[idx[d.from]], b = P[idx[d.to]]; if (!a || !b) { err.push(`Distributed load ${i + 1}: pick the points where it starts and ends.`); return; }
+      const L = Math.abs(b.x - a.x); if (!(L > 0)) { err.push(`Distributed load ${i + 1}: its two points must be at different x (the load is vertical, per horizontal length).`); return; }
+      const w1 = +d.w1, w2 = +d.w2, R = ((w1 + w2) / 2) * L, x1 = Math.min(a.x, b.x), wl = a.x < b.x ? w1 : w2, wr = a.x < b.x ? w2 : w1;
+      const xb = x1 + (wl + wr === 0 ? L / 2 : (L * (wl + 2 * wr)) / (3 * (wl + wr))), t = (xb - a.x) / (b.x - a.x), yb = a.y + t * (b.y - a.y);
+      if (R) Mb[k].loads.push({ Fx: 0, Fy: -R, F: Math.abs(R), p: [xb, yb], name: `R${i + 1}`, dist: true, how: `½(${fmt(w1)} + ${fmt(w2)})(${fmt(L)}) = ${fmt(R)} ${F} at x = ${fmt(xb)} ${Lu}` });
+      dists.push({ k, a: [a.x, a.y], b: [b.x, b.y], w1, w2 });
+    });
+    if (err.length) return fail([...new Set(err)]);
+    const nm = Mb.length, n = unk.length, S = Steps(), out = [], warn = [];
+    // two-force members: two points, no loads or couples on them, and no support at an end
+    Mb.forEach((m) => { m.two = m.pts.length === 2 && !m.loads.length && !m.cps.length && !sups.some((sp) => sp.mem === Mb.indexOf(m) && sp.type === 'fixed'); });
+    S.add({ t: 'Members and connections', n: 'The frame is taken apart into its members. Where two members share a point they are joined by a pin, which pushes on one member with components (P_x, P_y) and on the other with the equal and opposite components (Newton\'s third law). A member with only two pins and no load on it is a two-force member: its two forces act along the line joining the pins.',
+      table: { head: ['Member', 'Points', 'Note'], rows: Mb.map((m) => [m.name, m.pts.map((i) => P[i].name).join(', '), m.two ? 'two-force member' : `${m.loads.length} load${m.loads.length === 1 ? '' : 's'}${m.cps.length ? `, ${m.cps.length} couple${m.cps.length > 1 ? 's' : ''}` : ''}`]) } });
+    if (Mb.some((m) => m.loads.some((l) => l.dist))) S.add({ t: 'Distributed loads', n: 'Each is replaced by its resultant on the member it acts on.', table: { head: ['Member', 'Load', 'Resultant'], rows: [].concat(...Mb.map((m) => m.loads.filter((l) => l.dist).map((l) => [m.name, l.name, l.how]))) } });
+    S.add({ t: 'Unknowns and equations', f: 'unknowns = 3 × (number of members)', s: `${n} unknowns (${unk.filter((u) => u.kind === 'support').length} support reactions and ${unk.filter((u) => u.kind === 'pin').length} pin components);  3 × ${nm} = ${3 * nm} equations` });
+    if (n > 3 * nm) return fail(`Statically indeterminate: ${n} unknowns but only ${3 * nm} equations (three for each member). Remove a support or change a pin support to a roller.`);
+    if (n < 3 * nm) return fail(`The frame can move: only ${n} unknowns for ${3 * nm} equations. It needs more supports, or the members are joined so that they form a mechanism.`);
+    const A = [], b = [];
+    Mb.forEach((m, k) => {
+      const O = [P[m.pts[0]].x, P[m.pts[0]].y];
+      [{ kind: 'x' }, { kind: 'y' }, { kind: 'm', c: O }].forEach((eq) => {
+        A.push(unk.map((u) => u.on.reduce((s2, [mk, sg]) => s2 + (mk === k ? sg * coef(u, eq) : 0), 0)));
+        const kv = eq.kind === 'x' ? m.loads.reduce((s2, l) => s2 + l.Fx, 0) : eq.kind === 'y' ? m.loads.reduce((s2, l) => s2 + l.Fy, 0) : m.loads.reduce((s2, l) => s2 + crossz([l.p[0] - O[0], l.p[1] - O[1]], [l.Fx, l.Fy]), 0) + m.cps.reduce((s2, v) => s2 + v, 0);
+        b.push(-kv);
+      });
+    });
+    const sol = linSolve(A, b);
+    if (sol.rank < n || !sol.x) return fail('The supports and pins are arranged so that the frame (or one of its members) can still move: for example, three pins in a line, or supports whose reactions are all parallel. Change a support or a connection.');
+    const scale = Math.max(1, ...[].concat(...Mb.map((m) => m.loads.map((l) => l.F))));
+    const x = sol.x.map((v) => (Math.abs(v) < 1e-9 * scale ? 0 : v));
+    unk.forEach((u, i) => (u.v = x[i]));
+    // book-style steps: each member's free-body diagram with its three equations
+    const order = Mb.map((m, k) => k).sort((a, b2) => (Mb[b2].two ? 1 : 0) - (Mb[a].two ? 1 : 0));
+    order.forEach((k) => {
+      const m = Mb[k], O = P[m.pts[0]], on = unk.map((u, i) => ({ u, i, sg: u.on.reduce((s2, [mk, sg]) => s2 + (mk === k ? sg : 0), 0) })).filter((t) => t.sg);
+      const eqTxt = (eq, lbl) => {
+        const terms = on.map((t) => ({ t, a: t.sg * coef(t.u, eq) })).filter((z) => Math.abs(z.a) > 1e-12).map((z) => `(${fmt(z.a)}) ${z.t.u.name}`);
+        const kv = eq.kind === 'x' ? m.loads.reduce((s2, l) => s2 + l.Fx, 0) : eq.kind === 'y' ? m.loads.reduce((s2, l) => s2 + l.Fy, 0) : m.loads.reduce((s2, l) => s2 + crossz([l.p[0] - eq.c[0], l.p[1] - eq.c[1]], [l.Fx, l.Fy]), 0) + m.cps.reduce((s2, v) => s2 + v, 0);
+        let s2 = terms.join(' + ') || '0'; if (Math.abs(kv) > 1e-12 * scale) s2 += kv < 0 ? ` − ${fmt(-kv)}` : ` + ${fmt(kv)}`;
+        return `${lbl}: ${s2} = 0`;
+      };
+      S.add({ t: `Member ${m.name}${m.two ? ' (two-force member)' : ''}`, f: `→+ ΣF_x = 0;  +↑ ΣF_y = 0;  ↺+ ΣM_${O.name} = 0`,
+        n: `Free-body diagram of ${m.name}: ${on.map((t) => (t.sg < 0 ? `−${t.u.name}` : t.u.name)).join(', ')}${m.loads.length ? ` and ${m.loads.length} load${m.loads.length > 1 ? 's' : ''}` : ''}. A pin force drawn on the other member acts here with the opposite sign.`,
+        s: [eqTxt({ kind: 'x' }, 'ΣF_x'), eqTxt({ kind: 'y' }, 'ΣF_y'), eqTxt({ kind: 'm', c: [O.x, O.y] }, `ΣM_${O.name}`)].join(';   '),
+        r: on.map((t) => `${t.u.name} = ${fmt(t.u.v)} ${t.u.m ? FL : F}`).join(';  '), mem: k });
+    });
+    S.add({ t: 'Solving', n: `The ${3 * nm} equations are solved together for the ${n} unknowns (a negative value means the component acts opposite to the direction assumed: +x or +y on the member named, or along the support's direction).` });
+    unk.filter((u) => u.kind === 'support').forEach((u) => out.push({ k: u.name, v: u.v, u: u.m ? FL : F, hl: true }));
+    pins.forEach((pn) => pn.ms.slice(1).forEach((k) => {
+      const ux = unk.find((u) => u.kind === 'pin' && u.pin === pn.pt && u.mk === k && u.d[0] === 1), uy = unk.find((u) => u.kind === 'pin' && u.pin === pn.pt && u.mk === k && u.d[1] === 1);
+      out.push({ k: `${ux.name} on ${Mb[k].name}`, v: ux.v, u: F, hl: true }, { k: `${uy.name} on ${Mb[k].name}`, v: uy.v, u: F, hl: true }, { k: `Pin ${P[pn.pt].name}: resultant${pn.ms.length > 2 ? ` on ${Mb[k].name}` : ''}`, v: Math.hypot(ux.v, uy.v), u: F });
+    }));
+    unk.forEach((u) => { if (u.kind === 'support' && sups[u.sup].type === 'roller' && u.v < -1e-9 * scale) warn.push(`${u.name} comes out negative: a roller or rocker can only push, so the frame would lift off at ${sups[u.sup].name} unless it is held down.`); });
+    return ok(`Frame solved: ${nm} member${nm > 1 ? 's' : ''}, ${n} unknowns`, out, S, { kind: 'frame', c, P, Mb, unk, sups, pins, dists }, warn, warn.length ? 'warn' : 'ok');
+  }
   function unknowns3(sups, err) {
     const U = [];
     sups.forEach((sp, i) => {
@@ -405,7 +523,7 @@
         } else walk(v);
       });
     };
-    ['pa', 'p3', 'rb', 'r3'].forEach((k) => walk(st[k]));
+    ['pa', 'p3', 'rb', 'r3', 'fm'].forEach((k) => walk(st[k]));
     if (st.cap) { if (typeof st.cap.T === 'number') st.cap.T = tidy(st.cap.T * kF, 8); st.cap.sup = (st.cap.sup || []).map((v) => (v === '' || v == null ? v : tidy(+v * kF, 8))); }
     st.fu = f1;
     return st;
