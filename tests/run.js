@@ -833,6 +833,13 @@ group('dynamics: rectilinear kinematics', () => {
   { const r = run({ mode: 'func', given: 'v', c: [0, -6, 3, 0, 0], s0: 0, t: 3.5 }, 'SI'); [{ k: 'Position s', v: 6.125 }, { k: 'Distance travelled s_T', v: 14.125 }, { k: 'Average velocity v_avg', v: 1.75 }, { k: 'Average speed (v_sp)_avg', v: 4.036 }].forEach((e) => close('Book Example 12.5, v = 3t² − 6t over 0 to 3.5 s: ' + e.k, out(r, e.k), e.v)); }
   { const r = run({ mode: 'graph', gtype: 'vt', s0: 0, pts: [{ t: 0, v: 0 }, { t: 10, v: 20 }, { t: 30, v: 20 }], t: 30 }, 'US'); [{ k: 'Position s', v: 500 }, { k: 'Velocity v', v: 20 }].forEach((e) => close('Book Example 12.6, bicycle v–t graph to 30 s: ' + e.k, out(r, e.k), e.v)); }
   { const r = run({ mode: 'graph', gtype: 'at', s0: 0, v0: 0, segs: [{ t: 10, a: 10 }, { t: 60, a: -2 }], t: 10 }, 'SI'); [{ k: 'First instant with v = 0 (after start)', v: 60 }, { k: 'Velocity v', v: 100 }, { k: 'Displacement Δs', v: 3000 }].forEach((e) => close('Book Example 12.7, car at 10 m/s² for 10 s then −2 m/s²: ' + e.k, out(r, e.k), e.v)); }
+  const B = (name, given, v, a) => ({ name, given, v: v || 0, a: a || 0, ds: 0 }), C = (o) => Object.assign({ cA: 0, cB: 0, cC: 0, cD: 0, cE: 0 }, o);
+  { const r = run({ mode: 'dep', dep: { bodies: [B('A', 'yes', 2), B('B', 'no'), B('C', 'no')], cords: [C({ cA: 1, cB: 2, cC: -2 }), C({ cB: 1, cC: 1 })] } }, 'SI'); close('Prob. 12-195 v_B', out(r, 'v_B'), -0.5); }
+  { const r = run({ mode: 'dep', dep: { bodies: [B('A', 'yes', 3), B('B', 'no'), B('D', 'no')], cords: [C({ cB: 2, cC: 1 }), C({ cA: 1, cC: -2 })] } }, 'SI'); close('Prob. 12-202 v_B', out(r, 'v_B'), -0.75); }
+  { const r = run({ mode: 'dep', dep: { bodies: [B('A', 'yes', 0, 3), B('B', 'no'), B('C', 'no')], cords: [C({ cB: 3, cC: -2 }), C({ cA: 1, cC: 1 })], tgt: true, tB: 'B', tv: 10 } }, 'SI'); close('Prob. 12-203 t', out(r, 'Time for B to reach 10 m/s'), 5); }
+  { const r = run({ mode: 'dep', dep: { bodies: [B('A', 'yes', -2), B('C', 'no')], cords: [C({ cA: -1, cB: 3 })] } }, 'SI'); close('Prob. 12-209 v_C', out(r, 'v_C'), -0.6667, 1e-3); }
+  truthy('dependent motion: too few cords fails', !run({ mode: 'dep', dep: { bodies: [B('A', 'yes', 2), B('B', 'no'), B('C', 'no')], cords: [C({ cA: 1, cB: 2, cC: -2 })] } }, 'SI').ok);
+  { const st = Object.assign(Rect.defaults(), { mode: 'dep' }); Rect.convertState(st, 'SI', 'US'); close('dependent motion units', st.dep.bodies[0].v, 2 / 0.3048, 1e-6); }
 });
 
 group('dynamics: curvilinear motion', () => {

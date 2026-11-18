@@ -21,7 +21,7 @@
     let sec = C.section(c, 'Problem');
     C.select(sec, { label: 'Motion', get: () => st.mode, set: (v) => (st.mode = v), options: [
       ['const', 'Constant acceleration or free fall'], ['two', 'Two particles on the same line'], ['func', 's, v or a given as a function of time'],
-      ['av', 'Acceleration given as a function of velocity'], ['as', 'Acceleration given as a function of position'], ['graph', 'Erratic motion from a v–t or a–t graph']] });
+      ['av', 'Acceleration given as a function of velocity'], ['as', 'Acceleration given as a function of position'], ['graph', 'Erratic motion from a v–t or a–t graph'], ['dep', 'Blocks joined by cords and pulleys (dependent motion)']] });
     if (st.mode === 'const') {
       C.toggle(sec, { label: 'Free fall (a_c = −g, s measured upward)', get: () => st.grav, set: (v) => (st.grav = v) });
       sec = C.section(c, 'Starting values (t = 0)');
@@ -55,6 +55,19 @@
       C.note(sec, `a = c₀ + c₁s + c₂s² (${u.A}, s in ${u.L})`);
       ['c₀', 'c₁', 'c₂'].forEach((n, i) => C.num(sec, { label: n, get: () => st.cs[i], set: (v) => (st.cs[i] = v) }));
       num(sec, st, 's0', 'Starting position s₀', u.L); num(sec, st, 'v0', 'Velocity at s₀', u.V); num(sec, st, 'sT', 'Target position s', u.L);
+    } else if (st.mode === 'dep') {
+      const q = st.dep, nm = q.bodies.map((b) => b.name);
+      sec = C.section(c, 'Blocks and points on the cords');
+      C.note(sec, 'Measure every position coordinate s from a fixed datum, positive in the same sense (for example downward, or toward the motor). Mark the ones whose motion is given.');
+      C.list(sec, { items: q.bodies, min: 2, max: 5, title: (b) => `${b.name}`, add: [['Block', () => { const used = new Set(q.bodies.map((b) => b.name)); const n = 'ABCDE'.split('').find((x) => !used.has(x)) || 'E'; q.cords.forEach((cd) => (cd['c' + n] = cd['c' + n] || 0)); return { name: n, given: 'no', v: 0, a: 0, ds: 0 }; }]],
+        fields: (b) => [{ key: 'given', label: 'Motion', options: [['yes', 'Given'], ['no', 'Find']], wide: true }].concat(b.given === 'yes' ? [{ key: 'v', label: 'v', unit: u.V }, { key: 'a', label: 'a', unit: u.A }, { key: 'ds', label: 'Δs (optional)', unit: u.L }] : []) });
+      sec = C.section(c, 'Cords: l = Σ c s');
+      C.note(sec, `For each cord, enter how many times each coordinate appears in its length, with its sign. Example: l = s_A + 2s_B − 2s_C gives c_A = 1, c_B = 2, c_C = −2.`);
+      C.list(sec, { items: q.cords, min: 1, max: 4, title: (cd, i) => `Cord ${i + 1}`, add: [['Cord', () => ({ cA: 0, cB: 0, cC: 0, cD: 0, cE: 0 })]],
+        fields: () => nm.map((n, i) => ({ key: ['cA', 'cB', 'cC', 'cD', 'cE'][i], label: `c_${n}` })) });
+      sec = C.section(c, 'Time to reach a speed');
+      C.toggle(sec, { label: 'Find when a block reaches a speed (constant accelerations)', get: () => !!q.tgt, set: (v) => (q.tgt = v) });
+      if (q.tgt) { C.select(sec, { label: 'Block', get: () => q.tB, set: (v) => (q.tB = v), options: nm.map((n) => [n, n]) }); num(sec, q, 'tv', 'Speed', u.V); }
     } else {
       sec = C.section(c, 'Graph');
       C.seg(sec, { label: 'Given', get: () => st.gtype, set: (v) => (st.gtype = v), options: [['vt', 'v–t graph (straight lines)'], ['at', 'a–t graph (constant pieces)']] });
@@ -82,12 +95,13 @@
   M.compute = (U) => Rect.solve(S(), U);
   M.onUnits = (from, to) => Rect.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => 'Particle on its straight path';
+  M.cap2D = () => (S().mode === 'dep' ? 'Blocks on their cords (+s downward)' : 'Particle on its straight path');
   M.cap3D = () => '3D view';
   M.plotCaption = 's–t, v–t and a–t graphs';
   M.plotTall = true;
   M.hint = () => 'The particle is drawn at the instant asked for, with its velocity (green) and acceleration (magenta). Press Play to run the motion; the dashed cursor on the graphs follows it.';
-  M.legend = () => (S().mode === 'two' ? [[CA, 'Particle A'], [CB, 'Particle B'], [K.vel, 'Velocity v'], [K.acc, 'Acceleration a']] : [[K.pos, 'Particle and s–t'], [K.vel, 'Velocity v'], [K.acc, 'Acceleration a']]);
+  const DCOLS = ['#2f7fc1', '#d4612a', '#2e9e5b', '#8e44ad', '#b8860b'];
+  M.legend = () => (S().mode === 'dep' ? (S().dep.bodies || []).map((b, i) => [DCOLS[i], b.name]).concat([[K.vel, 'Velocity v'], [K.acc, 'Acceleration a']]) : S().mode === 'two' ? [[CA, 'Particle A'], [CB, 'Particle B'], [K.vel, 'Velocity v'], [K.acc, 'Acceleration a']] : [[K.pos, 'Particle and s–t'], [K.vel, 'Velocity v'], [K.acc, 'Acceleration a']]);
   const motion = DYUI.motion(S, () => (root.App && root.App.res && root.App.res.geo ? root.App.res.geo.span : [0, 1]));
   M.anim = () => motion;
 
@@ -105,7 +119,31 @@
   /* ------------------------------------------------------------------ */
   /* 2D                                                                 */
   /* ------------------------------------------------------------------ */
+  /** Dependent motion: one vertical column per block, hanging from the datum, +s downward. */
+  function draw2DDep(svg, g, opt) {
+    const u = g.u, n = g.names.length, T = g.span[1], t = tNow(g);
+    let lo = 0, hi = 0; g.Ms.forEach((m) => { for (let i = 0; i <= 40; i++) { const x = m.s((T * i) / 40); lo = Math.min(lo, x); hi = Math.max(hi, x); } });
+    const k = 2.4 / Math.max(hi - lo, 1e-9), span = 2.4, L0 = 1.2, H = L0 + span + L0 * 0.6;
+    const D = UI.Draw2D(svg, { xmin: -0.6, xmax: n - 0.4, ymin: -H, ymax: L0 * 0.25 }, { pad: 46 });
+    D.poly([[-0.6, 0], [n - 0.4, 0], [n - 0.4, L0 * 0.08], [-0.6, L0 * 0.08]], { fill: '#d5dbe1', stroke: K.ink, sw: 1.4 });
+    D.text([-0.55, -L0 * 0.08], 'datum (s = 0)', { color: '#5a6b75', size: 11, base: 'hanging' });
+    const vmax = Math.max(1e-12, ...g.Ms.map((m) => Math.max(Math.abs(m.v(0)), Math.abs(m.v(T))))), amax = Math.max(1e-12, ...g.Ms.map((m) => Math.abs(m.a(0))));
+    g.names.forEach((nm, i) => {
+      const m = g.Ms[i], y = -(L0 + (m.s(t) - lo) * k), col = DCOLS[i], bw = 0.42, bh = 0.5;
+      D.line([i, 0], [i, y], { stroke: '#6b4f2a', sw: 2 });
+      DYUI.block(D, [i, y - bh], bw, bh, 0, { fill: col, stroke: '#1d2733', label: nm, lcolor: '#fff' });
+      const c = [i + bw / 2 + 0.04, y - bh / 2], vn = m.v(t), an = m.a(t);
+      if (dopt('showV', true) && Math.abs(vn) > 1e-9 * vmax) DYUI.vec(D, c, [0, -Math.sign(vn)], 22 + 50 * Math.abs(vn) / vmax, { color: K.vel, label: opt.showP ? `v = ${fmt(vn)} ${u.V}` : 'v', size: 11.5, ldx: 6, ldy: vn > 0 ? 12 : -2, anchor: 'start' });
+      if (dopt('showA', true) && Math.abs(an) > 1e-9 * amax) DYUI.vec(D, [i - bw / 2 - 0.04, y - bh / 2], [0, -Math.sign(an)], 18 + 40 * Math.abs(an) / amax, { color: K.acc, label: opt.showP ? `a = ${fmt(an)} ${u.A}` : 'a', size: 11.5, ldx: -6, ldy: an > 0 ? 12 : -2, anchor: 'end' });
+      D.text([i, L0 * 0.12], g.giv[i] ? 'given' : 'found', { anchor: 'middle', color: '#5a6b75', size: 11 });
+    });
+    const eq = g.cords.map((r) => r.map((c, i) => (c ? `${c === 1 ? '' : c === -1 ? '−' : fmt(c)}s_${g.names[i]}` : null)).filter(Boolean).join(' + ').replace(/\+ −/g, '− ') + ' = const');
+    eq.forEach((e, k) => DYUI.title(D, 12, 20 + 18 * k, e, { size: 12.5 }));
+    DYUI.title(D, 12, 20 + 18 * eq.length, `t = ${fmt(t)} s`, { size: 12, color: '#5a6b75' });
+    return true;
+  }
   M.draw2D = function (svg, res, U, opt) {
+    if (res.geo.mode === 'dep') return draw2DDep(svg, res.geo, opt);
     const g = res.geo, u = g.u, vert = dopt('track', 'h') === 'v', [lo, hi] = range(g), span = hi - lo;
     const P = (s, off) => (vert ? [off || 0, s] : [s, off || 0]);
     // the arrows need room past both ends of the path: find the scale first, then widen the bounds by 110 px
@@ -153,6 +191,14 @@
     tt.sort((a, b) => a - b);
     const ser = (m, k) => tt.filter((x) => x >= T0 && x <= T1).map((x) => [x, m[k](x)]);
     const cur = dopt('cursor', true) ? tNow(g) : NaN;
+    if (g.mode === 'dep') {
+      const more = (k) => g.Ms.slice(1).map((m, i) => ({ pts: ser(m, k), color: DCOLS[i + 1], at: m[k] }));
+      return DYUI.stack(svg, [
+        { label: `Δs (${u.L})`, color: DCOLS[0], pts: ser(g.Ms[0], 's'), at: g.Ms[0].s, more: more('s') },
+        { label: `v (${u.V})`, color: DCOLS[0], pts: ser(g.Ms[0], 'v'), at: g.Ms[0].v, more: more('v') },
+        { label: `a (${u.A})`, color: DCOLS[0], pts: ser(g.Ms[0], 'a'), at: g.Ms[0].a, more: more('a') },
+      ], { xlabel: 't (s)', cursor: cur, xmin: T0, xmax: T1 });
+    }
     if (g.mode === 'two') {
       return DYUI.stack(svg, [
         { label: `s (${u.L})`, color: CA, pts: ser(g.MA, 's'), at: g.MA.s, more: [{ pts: ser(g.MB, 's'), color: CB, at: g.MB.s }], marks: g.meets.filter((x) => x <= T1).map((x) => ({ x, y: g.MA.s(x), label: `meet ${fmt(x)} s`, color: K.ink })) },
@@ -172,6 +218,21 @@
   /* 3D                                                                 */
   /* ------------------------------------------------------------------ */
   M.draw3D = function (v, res, U, opt) {
+    if (res.geo.mode === 'dep') {
+      const g = res.geo, n = g.names.length, T = g.span[1], t = tNow(g);
+      let lo = 0, hi = 0; g.Ms.forEach((m) => { for (let i = 0; i <= 40; i++) { const x = m.s((T * i) / 40); lo = Math.min(lo, x); hi = Math.max(hi, x); } });
+      const span = Math.max(hi - lo, 1e-9), sc = 1 / span, L0 = 1.2, w = 0.2;
+      v.box(-0.6, 0, -0.4, n - 0.4, 0.08, 0.4, '#d5dbe1', 1, '#7f8c8d');
+      g.names.forEach((nm, i) => {
+        const y = -(L0 + (g.Ms[i].s(t) - lo) * sc), x = i;
+        v.line([[x, 0, 0], [x, y, 0]], '#6b4f2a', 2.4);
+        v.box(x - w, y - 0.35, -w, x + w, y, w, DCOLS[i], 1, '#1d2733');
+        v.label([x + w * 1.4, y - 0.17, 0], nm, DCOLS[i]);
+        const vn = g.Ms[i].v(t);
+        if (Math.abs(vn) > 1e-12) { const o = [x - w * 1.6, y - 0.17, 0]; DYUI.arrow3(v, o, [o[0], o[1] - Math.sign(vn) * 0.35, 0], K.vel, 2.4); if (opt.showP) v.label([o[0], o[1] - Math.sign(vn) * 0.4, 0], `v = ${fmt(vn)} ${g.u.V}`, K.vel); }
+      });
+      v.autoBounds(); return;
+    }
     const g = res.geo, u = g.u, vert = dopt('track', 'h') === 'v', [lo, hi] = range(g), span = hi - lo, w = span * 0.02;
     const P = (s, z) => (vert ? [0, s, z || 0] : [s, 0, z || 0]);
     const a0 = lo - span * 0.08, a1 = hi + span * 0.08;
@@ -197,7 +258,10 @@
   /* ------------------------------------------------------------------ */
   /* Presets                                                            */
   /* ------------------------------------------------------------------ */
-  const P0 = (o) => Object.assign(Rect.defaults(), o);
+  const P0 = (o) => {
+    if (o.dep) { o.dep.bodies = o.dep.bodies.map((b) => Object.assign({ v: 0, a: 0, ds: 0 }, b)); o.dep.cords = o.dep.cords.map((c) => Object.assign({ cA: 0, cB: 0, cC: 0, cD: 0, cE: 0 }, c)); o.dep = Object.assign({ tgt: false, tB: 'B', tv: 10 }, o.dep); }
+    return Object.assign(Rect.defaults(), o);
+  };
   M.presets = [
     { name: 'Test: Book Example 12.1, v = 3t² + 2t ft/s, at t = 3 s (s = 36 ft, a = 20 ft/s²)', units: 'US', state: P0({ mode: 'func', given: 'v', c: [0, 2, 3, 0, 0], s0: 0, t: 3 }),
       expect: [{ k: 'Position s', v: 36 }, { k: 'Acceleration a', v: 20 }] },
@@ -213,6 +277,14 @@
       expect: [{ k: 'Position s', v: 500 }, { k: 'Velocity v', v: 20 }] },
     { name: 'Test: Book Example 12.7, car at 10 m/s² for 10 s then −2 m/s² (stops at t = 60 s)', units: 'SI', state: P0({ mode: 'graph', gtype: 'at', s0: 0, v0: 0, segs: [{ t: 10, a: 10 }, { t: 60, a: -2 }], t: 10 }),
       expect: [{ k: 'First instant with v = 0 (after start)', v: 60 }, { k: 'Velocity v', v: 100 }, { k: 'Displacement Δs', v: 3000 }] },
+    { name: 'Test: Prob. 12-195, end A pulled down at 2 m/s, two cords (v_B = 0.5 m/s up)', units: 'SI', state: P0({ mode: 'dep', dep: { bodies: [{ name: 'A', given: 'yes', v: 2, a: 0, ds: 0 }, { name: 'B', given: 'no' }, { name: 'C', given: 'no' }], cords: [{ cA: 1, cB: 2, cC: -2 }, { cB: 1, cC: 1 }] } }),
+      expect: [{ k: 'v_B', v: -0.5 }] },
+    { name: 'Test: Prob. 12-202, end A at 3 m/s (v_B = 0.75 m/s)', units: 'SI', state: P0({ mode: 'dep', dep: { bodies: [{ name: 'A', given: 'yes', v: 3, a: 0, ds: 0 }, { name: 'B', given: 'no' }, { name: 'D', given: 'no' }], cords: [{ cB: 2, cC: 1 }, { cA: 1, cC: -2 }] } }),
+      expect: [{ k: 'v_B', v: -0.75 }, { k: 'v_D', v: 1.5 }] },
+    { name: 'Test: Prob. 12-203, cable drawn in at 3 m/s²: time for B to reach 10 m/s (5 s)', units: 'SI', state: P0({ mode: 'dep', dep: { bodies: [{ name: 'A', given: 'yes', v: 0, a: 3, ds: 0 }, { name: 'B', given: 'no' }, { name: 'C', given: 'no' }], cords: [{ cB: 3, cC: -2 }, { cA: 1, cC: 1 }], tgt: true, tB: 'B', tv: 10 } }),
+      expect: [{ k: 'Time for B to reach 10 m/s', v: 5 }, { k: 'a_B', v: -2 }] },
+    { name: 'Test: Prob. 12-209, cylinder lifted with A drawn in at 2 m/s (v_C = 0.667 m/s up)', units: 'SI', state: P0({ mode: 'dep', dep: { bodies: [{ name: 'A', given: 'yes', v: -2, a: 0, ds: 0 }, { name: 'C', given: 'no' }], cords: [{ cA: -1, cB: 3 }] } }),
+      expect: [{ k: 'v_C', v: -0.6667 }] },
     { name: 'Car braking from 25 m/s at 6 m/s² (when it stops)', units: 'SI', state: P0({ mode: 'const', s0: 0, v0: 25, ac: -6, find: 'v', at: 0 }) },
     { name: 'Car starting from rest catches a truck 60 m ahead at 12 m/s', units: 'SI', state: P0({ mode: 'two', A: { s0: 0, v0: 0, a: 2.5 }, B: { s0: 60, v0: 12, a: 0 } }) },
     { name: 'Two trains approaching each other on one track (ft)', units: 'US', state: P0({ mode: 'two', A: { s0: 0, v0: 60, a: -1.5 }, B: { s0: 2000, v0: -45, a: 0.5 } }) },

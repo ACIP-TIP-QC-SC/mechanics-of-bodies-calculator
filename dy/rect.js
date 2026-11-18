@@ -10,6 +10,8 @@
  *   av     a = f(v): a = −kv, −kv², −kv³ or a₀ − kv
  *   as     a = f(s) as a polynomial in s, from a starting point to a target position
  *   graph  erratic motion from a v–t graph (straight pieces) or an a–t graph (constant pieces)
+ *   dep    dependent motion of blocks joined by cords over pulleys (12.9): each cord gives Σ cᵢ sᵢ = l,
+ *          so Σ cᵢ Δsᵢ = 0, Σ cᵢ vᵢ = 0 and Σ cᵢ aᵢ = 0
  * Every mode reports s, v and a at the instant, the displacement, the distance travelled and the
  * average velocity and speed over the motion, and gives the app a sampler for the s–t, v–t, a–t graphs.
  * ===================================================================== */
@@ -17,7 +19,7 @@
   'use strict';
   const Core = root.Core || require('../shared/core.js');
   const DY = root.DY || require('./dycore.js');
-  const { fmt, fail, Steps, polyStr } = Core;
+  const { fmt, fail, Steps, polyStr, linSolve } = Core;
   const { peval, pder, pint, quad, rootsOf, rk4 } = DY;
 
   function defaults() {
@@ -28,6 +30,8 @@
       given: 'v', c: [0, 2, 3, 0, 0], t: 3,
       form: 'kv3', k: 0.4, a0: 9.81,
       cs: [0, 4, 0], sT: 0.2,
+      dep: { bodies: [{ name: 'A', given: 'yes', v: 2, a: 0, ds: 0 }, { name: 'B', given: 'no', v: 0, a: 0, ds: 0 }, { name: 'C', given: 'no', v: 0, a: 0, ds: 0 }],
+        cords: [{ cA: 1, cB: 2, cC: -2, cD: 0, cE: 0 }, { cA: 0, cB: 1, cC: 1, cD: 0, cE: 0 }], tgt: false, tB: 'B', tv: 10 },
       gtype: 'vt', pts: [{ t: 0, v: 0 }, { t: 10, v: 20 }, { t: 30, v: 20 }], segs: [{ t: 10, a: 10 }, { t: 60, a: -2 }],
     };
   }
@@ -46,6 +50,7 @@
     st.k = t(st.k, Math.pow(fL, 1 - n));
     st.pts.forEach((p) => (p.v = t(p.v, fL)));
     st.segs.forEach((p) => (p.a = t(p.a, fL)));
+    if (st.dep) { st.dep.bodies.forEach((b) => DY.convertObj(b, { v: 'V', a: 'A', ds: 'L' }, from, to)); st.dep.tv = t(st.dep.tv, fL); }
     return st;
   }
 
@@ -80,6 +85,7 @@
     if (m === 'av') return av(st, u);
     if (m === 'as') return as(st, u);
     if (m === 'graph') return graph(st, u);
+    if (m === 'dep') return dep(st.dep, u);
     return cst(st, u);
   }
   const R = DY.result;
@@ -290,6 +296,66 @@
     summary(S, out, M, 0, Tend, u);
     S.list[S.list.length - 2].t += ` (whole graph, 0 to ${fmt(Tend)} s)`;
     return R(`At t = ${fmt(t)} s: s = ${fmt(M.s(t))} ${u.L}, v = ${fmt(M.v(t))} ${u.V}`, 'ok', out, S, { mode: 'graph', u, M, span: [0, Tend], t, marks: zeros, breaks: pieces.map((q) => q.t1) });
+  }
+
+
+  /* Dependent motion (12.9) ------------------------------------------- */
+  const KEYS = ['cA', 'cB', 'cC', 'cD', 'cE'];
+  function dep(q, u) {
+    const B = (q.bodies || []).slice(0, 5), nb = B.length, cords = q.cords || [];
+    if (nb < 2) return fail('Add at least two blocks or points.');
+    if (!cords.length) return fail('Add the cords.');
+    const names = B.map((b, i) => String(b.name || '').trim() || 'ABCDE'[i]);
+    const giv = B.map((b) => b.given === 'yes'), unk = B.map((b, i) => i).filter((i) => !giv[i]), kn = B.map((b, i) => i).filter((i) => giv[i]);
+    if (!kn.length) return fail('Give the motion of at least one block or point.');
+    if (!unk.length) return fail('Mark at least one block or point as unknown ("find").');
+    const C = cords.map((c) => KEYS.slice(0, nb).map((k) => +c[k] || 0));
+    C.forEach((r, j) => { if (r.every((v) => v === 0)) C[j] = null; });
+    const Cs = C.filter(Boolean);
+    if (!Cs.length) return fail('Enter the coefficients of each cord (how many times each position coordinate appears in its length).');
+    const S = Steps(), out = [], term = (c, x) => (c === 1 ? x : c === -1 ? `−${x}` : `${fmt(c)}${x}`);
+    const eqs = (sym, row) => row.map((c, i) => (c ? term(c, `${sym}_${names[i]}`) : null)).filter(Boolean).join(' + ').replace(/\+ −/g, '− ');
+    S.add({ t: 'Position-coordinate equations', f: 'l = Σ cᵢ sᵢ for each cord', n: 'Each position coordinate s is measured from a fixed datum, positive in the same sense for every block (the book usually takes downward or toward the motor positive). A coordinate appears once for each segment of the cord whose length changes with it.',
+      s: Cs.map((r, j) => `cord ${j + 1}: ${eqs('s', r)} = l${Cs.length > 1 ? j + 1 : ''}`).join(';   ') });
+    S.add({ t: 'Time derivatives', f: 'Σ cᵢ vᵢ = 0;  Σ cᵢ aᵢ = 0;  Σ cᵢ Δsᵢ = 0', n: 'The cord lengths are constant, so their changes, rates and accelerations are zero.',
+      s: Cs.map((r) => `${eqs('v', r)} = 0`).join(';   ') });
+    const solveFor = (k) => {
+      const A = Cs.map((r) => unk.map((i) => r[i])), b = Cs.map((r) => -kn.reduce((s2, i) => s2 + r[i] * (+B[i][k] || 0), 0));
+      return linSolve(A, b);
+    };
+    const sv = solveFor('v'), sa = solveFor('a'), sd = solveFor('ds');
+    if (sv.rank < unk.length) return fail(`The cords give ${sv.rank} independent equation${sv.rank === 1 ? '' : 's'} for ${unk.length} unknown motion${unk.length > 1 ? 's' : ''}: add a cord or give the motion of another block.`);
+    if (!sv.consistent || !sa.consistent || !sd.consistent) return fail('The given motions do not fit the cord equations (too many given values that disagree). Mark one of them as unknown.');
+    const v = B.map((b) => +b.v || 0), a = B.map((b) => +b.a || 0), d = B.map((b) => +b.ds || 0);
+    unk.forEach((i, k) => { v[i] = sv.x[k]; a[i] = sa.x[k]; d[i] = sd.x[k]; });
+    const dirw = (x) => (Math.abs(x) < 1e-12 ? '' : x > 0 ? ' (in the +s sense)' : ' (against the +s sense)');
+    S.add({ t: 'Given', r: kn.map((i) => `v_${names[i]} = ${fmt(v[i])} ${u.V}, a_${names[i]} = ${fmt(a[i])} ${u.A}${d[i] ? `, Δs_${names[i]} = ${fmt(d[i])} ${u.L}` : ''}`).join(';  ') });
+    S.add({ t: 'Velocities', s: `Solving ${Cs.length} equation${Cs.length > 1 ? 's' : ''} for ${unk.map((i) => 'v_' + names[i]).join(', ')}`, r: unk.map((i) => `v_${names[i]} = ${fmt(v[i])} ${u.V}${dirw(v[i])}`).join(';  ') });
+    if (a.some((x) => x)) S.add({ t: 'Accelerations', f: 'Σ cᵢ aᵢ = 0', r: unk.map((i) => `a_${names[i]} = ${fmt(a[i])} ${u.A}${dirw(a[i])}`).join(';  ') });
+    if (d.some((x) => x)) S.add({ t: 'Displacements', f: 'Σ cᵢ Δsᵢ = 0', r: unk.map((i) => `Δs_${names[i]} = ${fmt(d[i])} ${u.L}${dirw(d[i])}`).join(';  ') });
+    unk.forEach((i) => { out.push({ k: `v_${names[i]}`, v: v[i], u: u.V, hl: true }); if (a.some((x) => x)) out.push({ k: `a_${names[i]}`, v: a[i], u: u.A, hl: true }); if (d.some((x) => x)) out.push({ k: `Δs_${names[i]}`, v: d[i], u: u.L, hl: true }); });
+    const rel = [];
+    for (let i = 0; i < nb && rel.length < 6; i++) for (let j = i + 1; j < nb && rel.length < 6; j++) rel.push([i, j]);
+    S.add({ t: 'Relative velocities', f: 'v_X/Y = v_X − v_Y', r: rel.map(([i, j]) => `v_${names[i]}/${names[j]} = ${fmt(v[i] - v[j])} ${u.V}`).join(';  ') });
+    rel.forEach(([i, j]) => out.push({ k: `v_${names[i]}/${names[j]}`, v: v[i] - v[j], u: u.V }));
+    let T = 1, warn = [];
+    if (q.tgt) {
+      const i = names.indexOf(q.tB), vt = Math.abs(+q.tv);
+      if (i < 0) return fail(`There is no block named ${q.tB}.`);
+      if (!(Math.abs(a[i]) > 0)) warn.push(`${names[i]} does not accelerate, so its speed stays ${fmt(Math.abs(v[i]))} ${u.V}.`);
+      else {
+        const sg = v[i] !== 0 ? Math.sign(v[i]) : Math.sign(a[i]), t = (sg * vt - v[i]) / a[i];
+        if (!(t >= 0)) warn.push(`${names[i]} is slowing down and never reaches a speed of ${fmt(vt)} ${u.V}.`);
+        else {
+          T = t || 1;
+          S.add({ t: `Time for ${names[i]} to reach ${fmt(vt)} ${u.V}`, f: 'v = v₀ + a_c t', s: `${fmt(sg * vt)} = ${fmt(v[i])} + (${fmt(a[i])}) t`, r: `t = ${fmt(t)} s` });
+          out.unshift({ k: `Time for ${names[i]} to reach ${fmt(vt)} ${u.V}`, v: t, u: 's', hl: true });
+          out.push({ k: `Distance ${names[i]} moves in that time`, v: Math.abs(v[i] * t + 0.5 * a[i] * t * t), u: u.L });
+        }
+      }
+    }
+    const Ms = B.map((b, i) => ({ s: (t) => v[i] * t + 0.5 * a[i] * t * t, v: (t) => v[i] + a[i] * t, a: () => a[i] }));
+    return R(`${unk.map((i) => `v_${names[i]} = ${fmt(v[i])} ${u.V}`).join(', ')}`, warn.length ? 'warn' : 'ok', out, S, { mode: 'dep', u, Ms, M: Ms[0], names, giv, span: [0, T], t: T, marks: [], cords: Cs, v, a }, warn);
   }
 
   const Rect = { defaults, convertState, solve };
