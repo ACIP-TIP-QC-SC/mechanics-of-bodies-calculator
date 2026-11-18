@@ -8,22 +8,31 @@
  *   wedge   wedge lifting a block in a guide or a lever pinned at one end (8.3)
  *   screw   square-threaded screw: M = W r tan(θ ± φs) (8.4)
  *   belt    flat belt or rope over one or more drums: T2 = T1 e^(μβ) (8.5)
+ *   bearing collar, disk and pivot bearings M = ⅔ μs P (R₂³ − R₁³)/(R₂² − R₁²) (8.6), journal bearings
+ *           M = R r sin φk (8.7), rolling resistance P ≈ W a / r (8.8)
+ *   vehicle car, truck or cart on two axles on a level road or a slope; each axle rolls freely,
+ *           is braked (locked) or driven: axle reactions, friction needed and μs needed when parked,
+ *           the force P that starts it moving (towing) or that it can pull, and the steepest slope
+ *           before it slips or tips (8.2)
  * Forces are in the chosen force unit `fu`, lengths in m or ft, screw sizes in mm or in.
  * ===================================================================== */
 (function (root) {
   'use strict';
   const Core = root.Core || require('../shared/core.js');
-  const { fmt, fail, Steps, tidy } = Core;
+  const { fmt, fail, Steps, tidy, bisect } = Core;
   const DEG = Math.PI / 180;
 
   function defaults() {
     return {
       mode: 'block', fu: 'N',
       bk: { wBy: 'mass', m: 20, W: 196.2, b: 0.8, H: 0.6, phi: 0, mu: 0.3, task: 'check', P: 80, psi: -30, hP: 0.2 },
-      ic: { wBy: 'mass', m: 20, W: 196.2, phi: 30, mus: 0.3, muk: 0.25, task: 'release', psi: 0, acc: 0, d: 3 },
+      ic: { wBy: 'mass', m: 20, W: 196.2, phi: 30, mus: 0.3, muk: 0.25, task: 'release', psi: 0, acc: 0, d: 3, P: 0 },
+      be: { kind: 'collar', P: 5000, R1: 0.075, R2: 0.1, mu: 0.3, rs: 0.05, a: 0.003, rw: 0.075, task: 'M', M: 100, W: 2000, aB: 0 },
       ld: { wBy: 'mass', m: 10, W: 98.1, L: 4, muA: 0.3, muB: 0, task: 'minAngle', th: 65, person: false, mp: 75, Wp: 735.8, wpBy: 'mass', s: 3 },
       wd: { load: 'lever', wBy: 'mass', m: 500, W: 4905, al: 7, mu: 0.3, muC: 0.3, muG: 0, a: 1, xW: 0.5, task: 'lower' },
       sc: { W: 2000, r: 5, l: 2, mu: 0.25, n: 2, task: 'raise' },
+      vh: { wBy: 'mass', m: 1500, W: 14715, a: 1.5, b: 3, h: 1.1, phi: 12, rise: 'A', mu: 0.6, axA: 'locked', axB: 'free', task: 'park', front: 'B',
+        hasP: false, P: 0, xP: -0.75, yP: 0.3, psi: 150, move: 'A' },
       bt: { known: 'high', T: 500, drums: [{ beta: 135, turns: 0, mu: 0.25 }, { beta: 135, turns: 0, mu: 0.25 }] },
     };
   }
@@ -45,6 +54,8 @@
     if (st.mode === 'wedge') return wedge(st.wd, c);
     if (st.mode === 'screw') return screw(st.sc, c);
     if (st.mode === 'belt') return belt(st.bt, c);
+    if (st.mode === 'vehicle') return vehicle(st.vh, c);
+    if (st.mode === 'bearing') return bearing(st.be, c);
     return block(st.bk, c);
   }
 
@@ -95,7 +106,7 @@
     const Fmax = mu * N, slips = Math.abs(Ff) > Fmax * (1 + 1e-9), tips = Math.abs(x) > (b / 2) * (1 + 1e-9);
     S.add({ t: 'Check slipping', f: 'F_max = μs N', s: `F_max = ${fmt(mu)}(${fmt(N)}) = ${fmt(Fmax)} ${F}`, r: `|F| = ${fmt(Math.abs(Ff))} ${F} ${slips ? '>' : '≤'} ${fmt(Fmax)} ${F}: ${slips ? 'the block slips' : 'no slipping'}` });
     S.add({ t: 'Check tipping', f: '|x| ≤ b/2', s: `|x| = ${fmt(Math.abs(x))} ${Lu}, b/2 = ${fmt(b / 2)} ${Lu}`, r: tips ? `N would have to act outside the base: the block tips about its ${x > 0 ? 'front' : 'back'} corner` : 'N acts within the base: no tipping' });
-    out.push({ k: 'Friction needed F', v: Ff, u: F, hl: true }, { k: 'Normal force N', v: N, u: F, hl: true }, { k: 'Position of N, x', v: x, u: Lu, hl: true }, { k: 'Largest friction μs N', v: Fmax, u: F });
+    out.push({ k: 'Friction needed F', v: Ff, u: F, hl: true }, { k: 'Normal force N', v: N, u: F, hl: true }, { k: 'Position of N, x', v: x, u: Lu, hl: true }, { k: 'Largest friction μs N', v: Fmax, u: F }, { k: 'μs needed to prevent slipping', v: N > 0 ? Math.abs(Ff) / N : 0, u: '' });
     const text = slips && tips ? 'Not in equilibrium: slips and tips' : slips ? 'Not in equilibrium: slips' : tips ? 'Not in equilibrium: tips' : 'In equilibrium: no slipping or tipping';
     const warn = []; if (!slips && Math.abs(Ff) > 0.95 * Fmax && Fmax > 0) warn.push(`F is ${fmt((100 * Math.abs(Ff)) / Fmax, 3)} % of the largest friction force, so slipping is close.`);
     return res(text, slips || tips ? 'warn' : 'ok', out, S, { kind: 'block', c, W, b, H, phi, mu, psi, hP, P, N, Ff, x, verdict: slips && tips ? 'both' : slips ? 'slip' : tips ? 'tip' : 'none' }, warn);
@@ -109,7 +120,7 @@
     const w = weight(q, U, F), W = w.W, phi = +q.phi, ms = +q.mus, mk = +q.muk, psi = +q.psi || 0, acc = +q.acc || 0, d = +q.d;
     if (!(W > 0)) err.push('The weight must be greater than zero.');
     if (!(phi > 0 && phi < 90)) err.push('The slope angle must be between 0° and 90°.');
-    if (!(ms >= 0) || !(mk >= 0)) err.push('The coefficients of friction must be zero or more.');
+    if (q.task !== 'mu' && (!(ms >= 0) || !(mk >= 0))) err.push('The coefficients of friction must be zero or more.');
     if (q.task === 'release' && !(d > 0)) err.push('Enter the distance the block slides.');
     if (q.task !== 'release' && !(psi > -90 && psi < 90)) err.push('The angle of P from the slope must be between −90° and 90°.');
     if (q.task === 'up' && !(acc >= 0)) err.push('The acceleration up the slope must be zero or more.');
@@ -141,6 +152,16 @@
       S.add({ t: `Sliding ${fmt(d)} ${Lu} from rest`, f: 'd = ½ a t²;  v = a t', s: `t = √(2 · ${fmt(d)} / ${fmt(aa)});   v = ${fmt(aa)} · t`, r: `t = ${fmt(t)} s, v = ${fmt(v)} ${U.vel}` });
       out.push({ k: 'Acceleration down the slope a', v: aa, u: U.acc, hl: true }, { k: `Time to slide ${fmt(d)} ${Lu}`, v: t, u: 's' }, { k: 'Speed after that distance', v, u: U.vel }, { k: 'Kinetic friction F', v: Fk, u: F }, { k: 'Normal force N', v: N, u: F }, { k: 'Angle of repose φs', v: rep, u: '°' });
       return res(`Slides down: a = ${fmt(aa)} ${U.acc}`, 'warn', out, S, Object.assign(geo, { N, Ff: Fk, fUp: true, a: aa, t, v, moving: true }), warn);
+    }
+    if (q.task === 'mu') {
+      const P = +q.P || 0, N = W * cp - P * sv, Fn = W * sp - P * cv;
+      if (!(N > 0)) return fail('P lifts the block off the slope. Use a smaller P or angle.');
+      S.add({ t: 'Sum of forces normal to the slope', f: '+↖ ΣF_y = 0', s: `N − ${fmt(W)} cos ${fmt(phi)}° + ${fmt(P)} sin ${fmt(psi)}° = 0`, r: `N = ${fmt(N)} ${F}` });
+      S.add({ t: 'Friction needed for equilibrium', f: '+↗ ΣF_x = 0', s: `${fmt(P)} cos ${fmt(psi)}° − ${fmt(W)} sin ${fmt(phi)}° + F = 0`, r: `F = ${fmt(Math.abs(Fn))} ${F}, ${Fn >= 0 ? 'up' : 'down'} the slope` });
+      const mu = Math.abs(Fn) / N;
+      S.add({ t: 'Motion about to happen', f: 'F = μs N', n: `When motion is about to happen the friction is at its largest value, so the block is about to slide ${Fn > 0 ? 'down' : Fn < 0 ? 'up' : 'neither way'} the slope with`, s: `μs = ${fmt(Math.abs(Fn))} / ${fmt(N)}`, r: `μs = ${fmt(mu)} (friction angle ${fmt(Math.atan(mu) / DEG)}°)` });
+      out.push({ k: 'μs for impending motion', v: mu, u: '', hl: true }, { k: 'Friction force F', v: Math.abs(Fn), u: F }, { k: 'Normal force N', v: N, u: F }, { k: 'Friction angle φs', v: Math.atan(mu) / DEG, u: '°' });
+      return res(`Motion impends at μs = ${fmt(mu)}`, 'ok', out, S, Object.assign(geo, { rep: Math.atan(mu) / DEG, P, N, Ff: Math.abs(Fn), fUp: Fn >= 0, moving: false }), warn);
     }
     const upMax = cv + ms * sv > 1e-12 ? (W * (sp + ms * cp)) / (cv + ms * sv) : Infinity;
     if (q.task === 'hold') {
@@ -316,16 +337,194 @@
   /* ------------------------------------------------------------------ */
   /* Units                                                              */
   /* ------------------------------------------------------------------ */
-  const LEN = new Set(['b', 'H', 'hP', 'L', 's', 'a', 'xW', 'd', 'acc']), SML = new Set(['r', 'l']), FOR = new Set(['W', 'P', 'Wp', 'T']), MAS = new Set(['m', 'mp']);
+  const LEN = new Set(['b', 'H', 'hP', 'L', 's', 'a', 'xW', 'd', 'acc', 'h', 'xP', 'yP', 'R1', 'R2', 'rw', 'aB', 'rs']), SML = new Set(['r', 'l']), FOR = new Set(['W', 'P', 'Wp', 'T']), MAS = new Set(['m', 'mp']), MOM = new Set(['M']);
+
+
+  /* ------------------------------------------------------------------ */
+  /* Bearings and rolling resistance (8.6 to 8.8)                       */
+  /* ------------------------------------------------------------------ */
+  function bearing(q, c) {
+    const { F, Lu, FL } = c, err = [], S = Steps(), out = [], kind = q.kind, findMu = q.task === 'mu';
+    const mu = +q.mu, M = +q.M;
+    if (!findMu && kind !== 'rolling' && !(mu >= 0)) err.push('The coefficient of friction must be zero or more.');
+    if (findMu && !(M > 0)) err.push('Enter the moment that turns the shaft.');
+    const geo = { kind: 'bearing', c, type: kind };
+    if (kind === 'collar' || kind === 'disk') {
+      const P = +q.P, R2 = +q.R2, R1 = kind === 'disk' ? 0 : +q.R1;
+      if (!(P > 0)) err.push('Enter the axial force P.');
+      if (!(R2 > 0) || !(R1 >= 0 && R1 < R2)) err.push(kind === 'disk' ? 'Enter the radius of the bearing surface.' : 'The outer radius must be larger than the inner radius.');
+      if (err.length) return fail(err);
+      const k = (2 / 3) * (R2 ** 3 - R1 ** 3) / (R2 ** 2 - R1 ** 2), p = P / (Math.PI * (R2 ** 2 - R1 ** 2));
+      S.add({ t: 'Pressure on the bearing surface', n: 'The axial force is taken as spread uniformly over the contact area.', f: 'p = P / [π(R₂² − R₁²)]', s: `p = ${fmt(P)} / [π(${fmt(R2)}² − ${fmt(R1)}²)]`, r: `p = ${fmt(p)} ${F}/${Lu}²` });
+      S.add({ t: 'Friction moment', n: 'Each ring of area dA = 2πr dr carries a friction force μs p dA at radius r; summing r dF over the surface gives', f: 'M = ⅔ μs P (R₂³ − R₁³)/(R₂² − R₁²)' + (kind === 'disk' ? '  →  M = ⅔ μs P R for a solid disk' : '') });
+      if (findMu) {
+        const m = M / (P * k);
+        S.add({ t: 'Coefficient of friction from the moment', s: `μs = ${fmt(M)} / [${fmt(P)} × ⅔(${fmt(R2)}³ − ${fmt(R1)}³)/(${fmt(R2)}² − ${fmt(R1)}²)]`, r: `μs = ${fmt(m)}` });
+        out.push({ k: 'Coefficient of friction μs', v: m, u: '', hl: true }, { k: 'Effective radius ⅔(R₂³ − R₁³)/(R₂² − R₁²)', v: k, u: Lu }, { k: 'Pressure p', v: p, u: `${F}/${Lu}²` });
+        return res(`μs = ${fmt(m)}`, 'ok', out, S, Object.assign(geo, { P, R1, R2, M, mu: m }));
+      }
+      const Mv = mu * P * k;
+      S.add({ t: 'Moment to overcome friction', s: `M = ${fmt(mu)}(${fmt(P)}) × ⅔(${fmt(R2)}³ − ${fmt(R1)}³)/(${fmt(R2)}² − ${fmt(R1)}²)`, r: `M = ${fmt(Mv)} ${FL}` });
+      out.push({ k: 'Moment to turn M', v: Mv, u: FL, hl: true }, { k: 'Effective radius ⅔(R₂³ − R₁³)/(R₂² − R₁²)', v: k, u: Lu }, { k: 'Pressure p', v: p, u: `${F}/${Lu}²` });
+      return res(`M = ${fmt(Mv)} ${FL}`, 'ok', out, S, Object.assign(geo, { P, R1, R2, M: Mv, mu }));
+    }
+    if (kind === 'journal') {
+      const Rl = +q.W, r = +q.rs;
+      if (!(Rl > 0)) err.push('Enter the load on the bearing.');
+      if (!(r > 0)) err.push('Enter the radius of the shaft.');
+      if (err.length) return fail(err);
+      S.add({ t: 'Free-body diagram', n: 'As the shaft turns it climbs the bearing until the resultant R of the normal and friction forces at the contact leans at the angle of kinetic friction φk from the normal; R is tangent to the friction circle of radius r_f = r sin φk.' });
+      if (findMu) {
+        const sf = M / (Rl * r);
+        if (!(sf < 1)) return fail('The moment is too large for this load and radius: M must be less than R r.');
+        const ph = Math.asin(sf) / DEG, m = Math.tan(ph * DEG);
+        S.add({ t: 'Moment about the shaft centre', f: 'M = R r_f', n: 'The bearing reaction R balances the load and is offset by the friction-circle radius r_f, so it supplies the moment M.' });
+        S.add({ t: 'Angle of friction from the moment', f: 'M = R r sin φk', s: `sin φk = ${fmt(M)} / (${fmt(Rl)} × ${fmt(r)})`, r: `φk = ${fmt(ph)}°, μk = tan φk = ${fmt(m)}` });
+        out.push({ k: 'Coefficient of kinetic friction μk', v: m, u: '', hl: true }, { k: 'Angle of kinetic friction φk', v: ph, u: '°' }, { k: 'Friction circle radius r_f', v: r * sf, u: Lu });
+        return res(`μk = ${fmt(m)}`, 'ok', out, S, Object.assign(geo, { R: Rl, r, ph, M }));
+      }
+      const ph = Math.atan(mu) / DEG, Mv = Rl * r * Math.sin(ph * DEG);
+      S.add({ t: 'Angle of kinetic friction and the friction circle', f: 'φk = tan⁻¹ μk;  r_f = r sin φk', s: `φk = tan⁻¹ ${fmt(mu)};  r_f = ${fmt(r)} sin φk`, r: `φk = ${fmt(ph)}°, r_f = ${fmt(r * Math.sin(ph * DEG))} ${Lu}` });
+      S.add({ t: 'Moment to keep the shaft turning', f: 'M = R r_f = R r sin φk ≈ μk R r', s: `M = ${fmt(Rl)}(${fmt(r)}) sin ${fmt(ph)}°`, r: `M = ${fmt(Mv)} ${FL}` });
+      out.push({ k: 'Moment to turn M', v: Mv, u: FL, hl: true }, { k: 'Approximation μk R r', v: mu * Rl * r, u: FL }, { k: 'Angle of kinetic friction φk', v: ph, u: '°' }, { k: 'Friction circle radius r_f', v: r * Math.sin(ph * DEG), u: Lu });
+      return res(`M = ${fmt(Mv)} ${FL}`, 'ok', out, S, Object.assign(geo, { R: Rl, r, ph, M: Mv }));
+    }
+    // rolling resistance: a wheel or roller of radius r carrying W, coefficient a (and aB at a second surface on top)
+    const W = +q.W, r = +q.rw, a = +q.a, aB = +q.aB || 0;
+    if (!(W > 0)) err.push('Enter the load W.');
+    if (!(r > 0)) err.push('Enter the radius of the wheel.');
+    if (!(a >= 0) || !(aB >= 0)) err.push('The coefficients of rolling resistance must be zero or more.');
+    if (err.length) return fail(err);
+    S.add({ t: 'Free-body diagram', n: `The ground deforms under the wheel, so its resultant reaction acts a distance a ahead of the lowest point${aB ? ' and the load on top acts a distance a_B behind the highest point' : ''}. For small a the moments about the contact give`, f: aB ? 'P ≈ W (a + a_B) / (2r)  (roller between the load and the ground, P on the load)' : 'P ≈ W a / r' });
+    S.add({ t: 'Moments about the point where R acts', f: aB ? 'P(2r) ≈ W(a + a_B)' : 'P r ≈ W a', n: 'R passes through the centre of the wheel; for small a the moment arm of P about the point where R meets the ground is about r.' });
+    const P = aB ? (W * (a + aB)) / (2 * r) : (W * a) / r;
+    S.add({ t: 'Force to overcome rolling resistance', s: aB ? `P = ${fmt(W)}(${fmt(a)} + ${fmt(aB)}) / (2 × ${fmt(r)})` : `P = ${fmt(W)}(${fmt(a)}) / ${fmt(r)}`, r: `P = ${fmt(P)} ${F}` });
+    out.push({ k: 'Force to roll P', v: P, u: F, hl: true }, { k: 'Rolling resistance ratio P/W', v: P / W, u: '' });
+    return res(`P = ${fmt(P)} ${F}`, 'ok', out, S, Object.assign(geo, { W, r, a, aB, P }));
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Vehicle on two axles                                               */
+  /* ------------------------------------------------------------------ */
+  /* Axes along the road: x from axle A (x = 0) toward axle B (x = L), y normal to the road.
+   * Forces on the vehicle: W at G (a, h), N_A, N_B normal, F_A, F_B along the road (+x), and P at
+   * (xP, yP) at the angle ψ measured counterclockwise from +x. Moments are taken about the contact at A. */
+  const AXN = { free: 'free to roll', locked: 'braked (locked)', driven: 'driven' };
+  function vehicle(q, c) {
+    const { F, Lu, U } = c, err = [];
+    const w = weight(q, U, F), W = w.W, a = +q.a, b = +q.b, h = +q.h, mu = +q.mu, L = a + b;
+    const task = q.task, useP = task === 'force' || (task === 'park' && q.hasP);
+    if (!(W > 0)) err.push('The weight must be greater than zero.');
+    if (!(a > 0) || !(b > 0)) err.push('G must lie between the axles: enter both distances from G to the axles.');
+    if (!(h >= 0)) err.push('The height of G must be zero or more.');
+    if (!(mu >= 0)) err.push('The coefficient of static friction must be zero or more.');
+    if (task !== 'slope' && !(+q.phi >= 0 && +q.phi < 90)) err.push('The slope angle must be from 0° to less than 90°.');
+    if (task === 'park' && q.hasP && !isFinite(+q.P)) err.push('Enter the force P.');
+    if (task === 'force' && q.axA === 'free' && q.axB === 'free') err.push('With both axles rolling freely nothing resists the motion: brake or drive at least one axle.');
+    if (task === 'slope' && q.axA === 'free' && q.axB === 'free') err.push('With both axles rolling freely the vehicle rolls on any slope: brake at least one axle.');
+    if (err.length) return fail(err);
+    const S = Steps(), out = [], warn = [];
+    const sg = q.rise === 'B' ? -1 : 1; // the x component of W is −W sin φ when the road rises toward B
+    const pd = useP ? [Math.cos(+q.psi * DEG), Math.sin(+q.psi * DEG)] : [0, 0], xP = +q.xP || 0, yP = +q.yP || 0;
+    const mP = useP ? xP * pd[1] - yP * pd[0] : 0; // moment about A per unit P
+    const braked = ['A', 'B'].filter((k) => q['ax' + k] !== 'free');
+    const both = braked.length === 2;
+    const ax = (phi) => { const sp = Math.sin(phi * DEG), cp = Math.cos(phi * DEG); return { gx: sg * W * sp, gy: -W * cp, sp, cp }; };
+    /** N_A and N_B for a slope φ and a force P. */
+    const normals = (phi, P) => { const g = ax(phi), NB = -(a * g.gy - h * g.gx + P * mP) / L, NA = -g.gy - P * pd[1] - NB; return { NA, NB, g }; };
+    const rd = q.rise === 'A' ? 'A' : 'B';
+    const fbd = `Axes: x along the road from A toward B, y normal to it. The wheels at A are ${AXN[q.axA]} and at B ${AXN[q.axB]}; a freely rolling axle has no friction force. G is ${fmt(a)} ${Lu} from A, ${fmt(b)} ${Lu} from B (L = ${fmt(L)} ${Lu}) and ${fmt(h)} ${Lu} above the road${task === 'slope' ? `; the road rises toward ${rd}` : +q.phi > 0 ? `; the road rises toward ${rd} at ${fmt(+q.phi)}°` : ' on a level road'}.${useP ? ` P acts at ${fmt(xP)} ${Lu} along the road from A, ${fmt(yP)} ${Lu} above it, at ${fmt(+q.psi)}° counterclockwise from the direction A → B.` : ''}`;
+    S.add({ t: 'Free-body diagram', n: fbd, r: w.how });
+    const Wx = (phi) => (phi > 0 ? `${sg > 0 ? '+' : '−'} ${fmt(W)} sin ${fmt(phi)}°` : '');
+    const geoBase = { kind: 'vehicle', c, W, a, b, h, L, mu, axA: q.axA, axB: q.axB, front: q.front, rise: q.rise, xP, yP, psi: +q.psi, useP, task };
+
+    if (task === 'slope') {
+      // largest φ: slip (needed friction > μ ΣN of the braked axles) or tip (an axle unloads)
+      const need = (phi) => { const r = normals(phi, 0), Nb = braked.reduce((s, k) => s + r['N' + k], 0); return { r, slip: Math.abs(r.g.gx) - mu * Nb, NA: r.NA, NB: r.NB }; };
+      const lim = (fn) => { if (fn(0.0001) >= 0) return 0; if (fn(89.99) < 0) return Infinity; return bisect(fn, 0.0001, 89.99, 200); };
+      const phS = lim((p) => need(p).slip), phTA = lim((p) => -need(p).NA), phTB = lim((p) => -need(p).NB), phT = Math.min(phTA, phTB);
+      const k = braked.length === 1 ? braked[0] : null, up = sg > 0 ? 'B' : 'A';
+      S.add({ t: 'At the slope where slipping is about to happen', f: both ? 'F_A + F_B = μs (N_A + N_B)' : `F_${k} = μs N_${k}`,
+        n: `The friction at the ${both ? 'braked axles' : `braked axle ${k}`} holds the whole down-slope component of the weight.`,
+        s: `${fmt(W)} sin φ = ${fmt(mu)}(${both ? `${fmt(W)} cos φ` : `N_${k}(φ)`})${both ? '' : `, with N_${k} from ↺+ ΣM about the other axle`}`, r: isFinite(phS) ? `φ = ${fmt(phS)}°` : 'It never slips before 90°' });
+      S.add({ t: 'At the slope where tipping is about to happen', f: 'N = 0 at the uphill axle', n: 'The vehicle is about to tip about the downhill axle, so the resultant of the weight passes through it.',
+        s: `tan φ = (distance from G to the downhill axle) / h = ${fmt(sg > 0 ? a : b)} / ${fmt(h)}`, r: isFinite(phT) ? `φ = ${fmt(phT)}°` : 'It cannot tip' });
+      const gov = Math.min(phS, phT); if (!isFinite(gov)) return fail('The vehicle neither slips nor tips at any slope below 90°.');
+      const tips = phT < phS, r = normals(gov, 0), Ft = -r.g.gx;
+      S.add({ t: 'Governing case', n: 'The smaller angle is reached first.', r: `${tips ? 'Tipping' : 'Slipping'} governs: φ_max = ${fmt(gov)}°` });
+      out.push({ k: 'Steepest slope φ_max', v: gov, u: '°', hl: true }, { k: 'Slope at which it slips', v: isFinite(phS) ? phS : 90, u: isFinite(phS) ? '°' : '° (never)' }, { k: 'Slope at which it tips', v: isFinite(phT) ? phT : 90, u: isFinite(phT) ? '°' : '° (never)' },
+        { k: 'Normal force at A, N_A', v: r.NA, u: F }, { k: 'Normal force at B, N_B', v: r.NB, u: F });
+      const split = both ? [Ft * r.NA / (r.NA + r.NB), Ft * r.NB / (r.NA + r.NB)] : k === 'A' ? [Ft, 0] : [0, Ft];
+      return res(`${tips ? 'Tips' : 'Slips'} first at φ = ${fmt(gov)}°`, 'ok', out, S, Object.assign(geoBase, { phi: gov, NA: r.NA, NB: r.NB, FA: split[0], FB: split[1], P: 0, verdict: tips ? 'tip' : 'slip' }), warn);
+    }
+
+    const phi = +q.phi;
+    if (task === 'park') {
+      const P = useP ? +q.P : 0, r = normals(phi, P), g = r.g, Ft = -(g.gx + P * pd[0]);
+      S.add({ t: 'Moments about A', f: '↺+ ΣM_A = 0', n: 'The friction forces act along the road through A and B, so they have no moment about A.',
+        s: `N_B(${fmt(L)}) − ${fmt(W)} cos ${fmt(phi)}°(${fmt(a)})${phi > 0 ? ` ${sg > 0 ? '−' : '+'} ${fmt(W)} sin ${fmt(phi)}°(${fmt(h)})` : ''}${useP ? ` + P(${fmt(xP)} sin ${fmt(+q.psi)}° − ${fmt(yP)} cos ${fmt(+q.psi)}°)` : ''} = 0`, r: `N_B = ${fmt(r.NB)} ${F}` });
+      S.add({ t: 'Sum of forces normal to the road', f: '+↑ ΣF_y = 0', s: `N_A + ${fmt(r.NB)} − ${fmt(W)} cos ${fmt(phi)}°${useP ? ` + ${fmt(P)} sin ${fmt(+q.psi)}°` : ''} = 0`, r: `N_A = ${fmt(r.NA)} ${F}` });
+      S.add({ t: 'Sum of forces along the road', f: '→+ ΣF_x = 0', s: `F_A + F_B ${Wx(phi)}${useP ? ` + ${fmt(P)} cos ${fmt(+q.psi)}°` : ''} = 0`, r: `F_A + F_B = ${fmt(Ft)} ${F} (toward ${Ft >= 0 ? 'B' : 'A'})` });
+      if (r.NA < -1e-9 * W || r.NB < -1e-9 * W) {
+        const k = r.NA < 0 ? 'A' : 'B';
+        out.push({ k: 'Normal force at A, N_A', v: r.NA, u: F, hl: true }, { k: 'Normal force at B, N_B', v: r.NB, u: F, hl: true });
+        S.add({ t: 'Check tipping', f: 'N ≥ 0 at both axles', r: `N_${k} would have to pull on the road: the vehicle tips about axle ${k === 'A' ? 'B' : 'A'}` });
+        return res('Not in equilibrium: the vehicle tips', 'warn', out, S, Object.assign(geoBase, { phi, NA: r.NA, NB: r.NB, FA: 0, FB: 0, P, verdict: 'tip' }), warn);
+      }
+      if (Math.abs(Ft) > 1e-9 * W && !braked.length) {
+        out.push({ k: 'Normal force at A, N_A', v: r.NA, u: F, hl: true }, { k: 'Normal force at B, N_B', v: r.NB, u: F, hl: true }, { k: 'Friction needed F_A + F_B', v: Ft, u: F });
+        S.add({ t: 'Check slipping', r: 'Both axles roll freely, so no friction can act: the vehicle rolls.' });
+        return res('Not in equilibrium: it rolls (no axle is braked)', 'warn', out, S, Object.assign(geoBase, { phi, NA: r.NA, NB: r.NB, FA: 0, FB: 0, P, verdict: 'roll' }), warn);
+      }
+      let FA, FB, Nb;
+      if (both) { Nb = r.NA + r.NB; FA = Ft * r.NA / Nb; FB = Ft * r.NB / Nb; S.add({ t: 'Friction at the two braked axles', n: 'With both axles braked the split of the friction between them is statically indeterminate; only the total is fixed by equilibrium. It is shown here split in proportion to the normal forces (the same friction ratio at both axles).', s: `F_A = ${fmt(Ft)} × ${fmt(r.NA)} / ${fmt(Nb)};  F_B = ${fmt(Ft)} × ${fmt(r.NB)} / ${fmt(Nb)}`, r: `F_A = ${fmt(FA)} ${F}, F_B = ${fmt(FB)} ${F}` }); }
+      else { const k = braked[0] || 'A'; Nb = r['N' + k]; FA = k === 'A' ? Ft : 0; FB = k === 'B' ? Ft : 0; S.add({ t: `Friction at the ${q['ax' + k] === 'driven' ? 'driven' : 'braked'} axle ${k}`, n: `The other axle rolls freely, so all of the friction acts at ${k}.`, r: `F_${k} = ${fmt(Ft)} ${F}` }); }
+      const need = Nb > 0 ? Math.abs(Ft) / Nb : Infinity, slips = need > mu * (1 + 1e-9);
+      S.add({ t: 'Check slipping', f: both ? '|F_A + F_B| ≤ μs (N_A + N_B)' : `|F| ≤ μs N`, s: `μs needed = ${fmt(Math.abs(Ft))} / ${fmt(Nb)} = ${fmt(need)}`, r: `${fmt(need)} ${slips ? '>' : '≤'} μs = ${fmt(mu)}: ${slips ? 'the wheels slip' : 'no slipping'}` });
+      out.push({ k: 'Normal force at A, N_A', v: r.NA, u: F, hl: true }, { k: 'Normal force at B, N_B', v: r.NB, u: F, hl: true }, { k: 'Friction at A, F_A', v: FA, u: F, hl: !!FA }, { k: 'Friction at B, F_B', v: FB, u: F, hl: !!FB },
+        { k: 'Friction needed F_A + F_B', v: Ft, u: F }, { k: 'μs needed to hold it', v: need, u: '' }, { k: 'Largest friction μs N', v: mu * Nb, u: F });
+      if (both) warn.push('Both axles are braked, so only the total friction is fixed by equilibrium; F_A and F_B are shown split in proportion to N_A and N_B.');
+      return res(slips ? 'Not in equilibrium: the wheels slip' : 'In equilibrium: no slipping or tipping', slips ? 'warn' : 'ok', out, S, Object.assign(geoBase, { phi, NA: r.NA, NB: r.NB, FA, FB, P, verdict: slips ? 'slip' : 'none' }), warn);
+    }
+
+    // task 'force': P that starts the motion toward A or B. Braked axles resist with μs N, driven axles push with μs N.
+    const m = q.move === 'B' ? 1 : -1, g0 = ax(phi);
+    const fr = (k) => (q['ax' + k] === 'locked' ? -m : q['ax' + k] === 'driven' ? m : 0); // friction direction × μ N
+    // ΣFx: μ Σ fr_k N_k(P) + gx + P cos ψ = 0 with N linear in P
+    const N0 = normals(phi, 0), N1 = normals(phi, 1), dNA = N1.NA - N0.NA, dNB = N1.NB - N0.NB;
+    const c0 = g0.gx + mu * (fr('A') * N0.NA + fr('B') * N0.NB), c1 = pd[0] + mu * (fr('A') * dNA + fr('B') * dNB);
+    if (Math.abs(c1) < 1e-12) return fail('P at this angle cannot start the motion: change its direction.');
+    const P = -c0 / c1, r = normals(phi, P);
+    if (!(P > 0)) return fail(`No pull P > 0 at ${fmt(+q.psi)}° moves the vehicle toward ${q.move} with these wheels: ${P <= 0 && Math.abs(P) < 1e-9 * W ? 'it is on the point of moving by itself' : 'it would move that way by itself, or P points the wrong way'}. Check the direction of P and of the motion.`);
+    const FA = mu * fr('A') * r.NA, FB = mu * fr('B') * r.NB;
+    const fe = (k) => (fr(k) ? `${fr(k) > 0 ? '+' : '−'} ${fmt(mu)} N_${k}` : '');
+    S.add({ t: 'Friction when the motion is about to start', f: 'F = μs N at each braked or driven axle', n: `The vehicle is about to move toward ${q.move}. ${['A', 'B'].map((k) => q['ax' + k] === 'locked' ? `The locked wheels at ${k} slide, so friction μs N_${k} opposes the motion.` : q['ax' + k] === 'driven' ? `The driven wheels at ${k} are about to spin, so friction μs N_${k} acts in the direction of travel.` : `The wheels at ${k} roll freely: F_${k} = 0.`).join(' ')}` });
+    S.add({ t: 'Equations of equilibrium', f: '→+ ΣF_x = 0;  +↑ ΣF_y = 0;  ↺+ ΣM_A = 0',
+      s: `P cos ${fmt(+q.psi)}° ${fe('A')} ${fe('B')} ${Wx(phi)} = 0;   N_A + N_B + P sin ${fmt(+q.psi)}° − ${fmt(W)} cos ${fmt(phi)}° = 0;   N_B(${fmt(L)}) + P(${fmt(xP)} sin ${fmt(+q.psi)}° − ${fmt(yP)} cos ${fmt(+q.psi)}°) − ${fmt(W)} cos ${fmt(phi)}°(${fmt(a)})${phi > 0 ? ` ${sg > 0 ? '−' : '+'} ${fmt(W)} sin ${fmt(phi)}°(${fmt(h)})` : ''} = 0`,
+      r: `P = ${fmt(P)} ${F}, N_A = ${fmt(r.NA)} ${F}, N_B = ${fmt(r.NB)} ${F}` });
+    out.push({ k: 'Force P', v: P, u: F, hl: true }, { k: 'Normal force at A, N_A', v: r.NA, u: F, hl: true }, { k: 'Normal force at B, N_B', v: r.NB, u: F, hl: true }, { k: 'Friction at A, F_A', v: FA, u: F }, { k: 'Friction at B, F_B', v: FB, u: F });
+    let text = `Moves at P = ${fmt(P)} ${F}`, cls = 'ok', verdict = 'slip';
+    if (r.NA < -1e-9 * W || r.NB < -1e-9 * W) {
+      // an axle lifts first: find the P at which it unloads
+      const k = r.NA < 0 ? 'A' : 'B', d = k === 'A' ? dNA : dNB, n0 = k === 'A' ? N0.NA : N0.NB, Pt = d < 0 ? -n0 / d : NaN;
+      S.add({ t: 'Check tipping', f: 'N ≥ 0 at both axles', s: `N_${k} = 0 when P = ${fmt(Pt)} ${F}`, r: `The wheels at ${k} lift off at P = ${fmt(Pt)} ${F}, before the wheels slip` });
+      out.push({ k: `P at which axle ${k} lifts off`, v: Pt, u: F, hl: true });
+      warn.push(`Axle ${k} lifts off the road before the wheels slip, so the slipping solution is not reached; the vehicle tips at P = ${fmt(Pt)} ${F}.`);
+      text = `Axle ${k} lifts off first, at P = ${fmt(Pt)} ${F}`; cls = 'warn'; verdict = 'tip';
+    } else S.add({ t: 'Check tipping', f: 'N ≥ 0 at both axles', r: 'Both normal forces are positive: the wheels slip before the vehicle tips' });
+    return res(text, cls, out, S, Object.assign(geoBase, { phi, NA: r.NA, NB: r.NB, FA, FB, P, move: q.move, verdict }), warn);
+  }
+
   function convertState(st, from, to) {
     if (from === to) return st;
     const { convert, twin, UNITS } = Core;
     const kL = convert(1, UNITS[from].len, UNITS[to].len), kS = convert(1, UNITS[from].lenS, UNITS[to].lenS), f1 = twin(st.fu, to), kF = convert(1, st.fu, f1), kM = convert(1, from === 'SI' ? 'kg' : 'slug', to === 'SI' ? 'kg' : 'slug');
-    ['bk', 'ic', 'ld', 'wd', 'sc', 'bt'].forEach((g) => {
+    const kML = kF * kL;
+    ['bk', 'ic', 'ld', 'wd', 'sc', 'bt', 'vh', 'be'].forEach((g) => {
       const o = st[g]; if (!o) return;
       Object.keys(o).forEach((k) => {
         const v = o[k]; if (typeof v !== 'number') return;
-        if (LEN.has(k)) o[k] = tidy(v * kL, 9); else if (SML.has(k)) o[k] = tidy(v * kS, 9); else if (FOR.has(k)) o[k] = tidy(v * kF, 9); else if (MAS.has(k)) o[k] = tidy(v * kM, 9);
+        if (LEN.has(k)) o[k] = tidy(v * kL, 9); else if (SML.has(k)) o[k] = tidy(v * kS, 9); else if (FOR.has(k)) o[k] = tidy(v * kF, 9); else if (MAS.has(k)) o[k] = tidy(v * kM, 9); else if (g === 'be' && MOM.has(k)) o[k] = tidy(v * kML, 9);
       });
     });
     st.fu = f1;

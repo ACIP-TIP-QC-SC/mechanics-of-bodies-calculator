@@ -28,7 +28,7 @@
   M.controls = function (c, C) {
     const st = S(), U = Core.UNITS[M.units], Lu = U.len, Ls = U.lenS, F = st.fu;
     let sec = C.section(c, 'Problem');
-    C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [['block', 'Block on a floor or slope: slip or tip'], ['incline', 'Block sliding on an incline'], ['ladder', 'Ladder against a wall'], ['wedge', 'Wedge'], ['screw', 'Square-threaded screw'], ['belt', 'Flat belt or rope over drums']] });
+    C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [['block', 'Block on a floor or slope: slip or tip'], ['incline', 'Block sliding on an incline'], ['ladder', 'Ladder against a wall'], ['wedge', 'Wedge'], ['screw', 'Square-threaded screw'], ['belt', 'Flat belt or rope over drums'], ['vehicle', 'Vehicle on wheels (car, truck, cart)'], ['bearing', 'Bearings and rolling resistance']] });
     C.seg(sec, { label: 'Force unit', get: () => st.fu, set: (v) => (st.fu = v), options: U.forces.map((f) => [f, f]) });
     if (st.mode === 'block') {
       const q = st.bk;
@@ -45,15 +45,18 @@
       C.num(sec, { label: 'Height above the base', get: () => q.hP, set: (v) => (q.hP = v), unit: Lu });
     } else if (st.mode === 'incline') {
       const q = st.ic;
-      C.seg(sec, { label: 'Find', get: () => q.task, set: (v) => (q.task = v), options: [['release', 'Does it slide?'], ['hold', 'Force to hold'], ['up', 'Force to push up']] });
+      C.seg(sec, { label: 'Find', get: () => q.task, set: (v) => (q.task = v), options: [['release', 'Does it slide?'], ['hold', 'Force to hold'], ['up', 'Force to push up'], ['mu', 'μs for impending motion']] });
       sec = C.section(c, 'Block and slope');
       weightIn(sec, C, q, F, 'Block');
       C.num(sec, { label: 'Slope angle φ', get: () => q.phi, set: (v) => (q.phi = v), unit: '°' });
-      C.num(sec, { label: 'Static friction μs', get: () => q.mus, set: (v) => (q.mus = v), unit: '' });
-      C.num(sec, { label: 'Kinetic friction μk (while sliding)', get: () => q.muk, set: (v) => (q.muk = v), unit: '' });
+      if (q.task !== 'mu') {
+        C.num(sec, { label: 'Static friction μs', get: () => q.mus, set: (v) => (q.mus = v), unit: '' });
+        C.num(sec, { label: 'Kinetic friction μk (while sliding)', get: () => q.muk, set: (v) => (q.muk = v), unit: '' });
+      }
       if (q.task === 'release') C.num(sec, { label: 'Distance it slides d', get: () => q.d, set: (v) => (q.d = v), unit: Lu });
       else {
         sec = C.section(c, 'Force P');
+        if (q.task === 'mu') C.num(sec, { label: 'P (0 = no force)', get: () => q.P, set: (v) => (q.P = v), unit: F });
         C.num(sec, { label: 'Angle from the slope (+ away from it)', get: () => q.psi, set: (v) => (q.psi = v), unit: '°' });
         if (q.task === 'up') C.num(sec, { label: 'Acceleration up the slope (0 = steady speed)', get: () => q.acc, set: (v) => (q.acc = v), unit: U.acc });
       }
@@ -92,6 +95,52 @@
       C.num(sec, { label: 'Lead l (advance per turn)', get: () => q.l, set: (v) => (q.l = v), unit: Ls });
       C.num(sec, { label: 'Static friction μs', get: () => q.mu, set: (v) => (q.mu = v), unit: '' });
       C.seg(sec, { label: 'Screws turned together', get: () => String(q.n), set: (v) => (q.n = +v), options: [['1', 'One'], ['2', 'Two (turnbuckle)']] });
+    } else if (st.mode === 'bearing') {
+      const q = st.be, FL = `${F}·${Lu}`;
+      C.select(sec, { label: 'Bearing', get: () => q.kind, set: (v) => (q.kind = v), options: [['collar', 'Collar bearing (ring of radii R₁, R₂)'], ['disk', 'Disk or pivot bearing (solid circle)'], ['journal', 'Journal bearing (shaft in a loose hole)'], ['rolling', 'Rolling resistance of a wheel']] });
+      if (q.kind !== 'rolling') C.seg(sec, { label: 'Find', get: () => q.task, set: (v) => (q.task = v), options: [['M', 'Moment to turn'], ['mu', 'μ from a measured moment']] });
+      sec = C.section(c, q.kind === 'rolling' ? 'Wheel' : 'Bearing');
+      if (q.kind === 'collar' || q.kind === 'disk') {
+        C.num(sec, { label: 'Axial force P', get: () => q.P, set: (v) => (q.P = v), unit: F });
+        if (q.kind === 'collar') C.num(sec, { label: 'Inner radius R₁', get: () => q.R1, set: (v) => (q.R1 = v), unit: Lu });
+        C.num(sec, { label: q.kind === 'collar' ? 'Outer radius R₂' : 'Radius R', get: () => q.R2, set: (v) => (q.R2 = v), unit: Lu });
+      } else if (q.kind === 'journal') {
+        C.num(sec, { label: 'Load on the bearing R', get: () => q.W, set: (v) => (q.W = v), unit: F });
+        C.num(sec, { label: 'Shaft radius r', get: () => q.rs, set: (v) => (q.rs = v), unit: Lu });
+      } else {
+        C.num(sec, { label: 'Load on the wheel W', get: () => q.W, set: (v) => (q.W = v), unit: F });
+        C.num(sec, { label: 'Wheel radius r', get: () => q.rw, set: (v) => (q.rw = v), unit: Lu });
+        C.num(sec, { label: 'Coefficient of rolling resistance a (ground)', get: () => q.a, set: (v) => (q.a = v), unit: Lu });
+        C.num(sec, { label: 'a_B at a load on top (0 = a wheel on an axle)', get: () => q.aB, set: (v) => (q.aB = v), unit: Lu });
+      }
+      if (q.kind !== 'rolling') {
+        if (q.task === 'mu') C.num(sec, { label: 'Moment that turns it M', get: () => q.M, set: (v) => (q.M = v), unit: FL });
+        else C.num(sec, { label: q.kind === 'journal' ? 'Kinetic friction μk' : 'Static friction μs', get: () => q.mu, set: (v) => (q.mu = v), unit: '' });
+      }
+    } else if (st.mode === 'vehicle') {
+      const q = st.vh, AX = [['free', 'Roll freely'], ['locked', 'Braked (locked)'], ['driven', 'Driven']];
+      C.seg(sec, { label: 'Find', get: () => q.task, set: (v) => (q.task = v), options: [['park', 'Reactions when parked'], ['force', 'Force P to move it'], ['slope', 'Steepest slope']] });
+      sec = C.section(c, 'Vehicle');
+      weightIn(sec, C, q, F, 'Vehicle');
+      C.num(sec, { label: 'G from axle A (along the road)', get: () => q.a, set: (v) => (q.a = v), unit: Lu });
+      C.num(sec, { label: 'G from axle B (along the road)', get: () => q.b, set: (v) => (q.b = v), unit: Lu });
+      C.num(sec, { label: 'Height of G above the road h', get: () => q.h, set: (v) => (q.h = v), unit: Lu });
+      C.seg(sec, { label: 'Front of the vehicle at', get: () => q.front, set: (v) => (q.front = v), options: [['B', 'B (right)'], ['A', 'A (left)']] });
+      sec = C.section(c, 'Wheels and road');
+      C.seg(sec, { label: 'Wheels at A', get: () => q.axA, set: (v) => (q.axA = v), options: AX });
+      C.seg(sec, { label: 'Wheels at B', get: () => q.axB, set: (v) => (q.axB = v), options: AX });
+      C.num(sec, { label: 'Static friction μs (tires on the road)', get: () => q.mu, set: (v) => (q.mu = v), unit: '' });
+      if (q.task !== 'slope') C.num(sec, { label: 'Slope angle φ (0 = level road)', get: () => q.phi, set: (v) => (q.phi = v), unit: '°' });
+      C.seg(sec, { label: 'The road rises toward', get: () => q.rise, set: (v) => (q.rise = v), options: [['A', 'A (left)'], ['B', 'B (right)']] });
+      if (q.task === 'park') { sec = C.section(c, 'Other force on the vehicle'); C.toggle(sec, { label: 'A force P acts (a tow rope, a push, a load)', get: () => !!q.hasP, set: (v) => (q.hasP = v) }); }
+      else if (q.task === 'force') sec = C.section(c, 'Force P');
+      if (q.task === 'force' || (q.task === 'park' && q.hasP)) {
+        if (q.task === 'park') C.num(sec, { label: 'P', get: () => q.P, set: (v) => (q.P = v), unit: F });
+        C.num(sec, { label: 'Point of P: distance from A along the road (− = beyond A)', get: () => q.xP, set: (v) => (q.xP = v), unit: Lu });
+        C.num(sec, { label: 'Point of P: height above the road', get: () => q.yP, set: (v) => (q.yP = v), unit: Lu });
+        C.num(sec, { label: 'Direction of P, counterclockwise from A → B', get: () => q.psi, set: (v) => (q.psi = v), unit: '°' });
+        if (q.task === 'force') C.seg(sec, { label: 'The vehicle is about to move toward', get: () => q.move, set: (v) => (q.move = v), options: [['A', 'A'], ['B', 'B']] });
+      }
     } else {
       const q = st.bt;
       sec = C.section(c, 'Tension');
@@ -105,7 +154,7 @@
   M.compute = (U) => Friction.solve(S(), U);
   M.onUnits = (from, to) => Friction.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => ({ block: 'Free-body diagram and friction cone', incline: 'Block on the incline', ladder: 'Free-body diagram of the ladder', wedge: 'Free-body diagram of the wedge and load', screw: 'Screw and the unwrapped thread', belt: 'Belt on the drums' }[mode()]);
+  M.cap2D = () => ({ block: 'Free-body diagram and friction cone', incline: 'Block on the incline', ladder: 'Free-body diagram of the ladder', wedge: 'Free-body diagram of the wedge and load', screw: 'Screw and the unwrapped thread', belt: 'Belt on the drums', vehicle: 'Free-body diagram of the vehicle', bearing: 'Bearing' }[mode()]);
   M.cap3D = '3D view';
   M.hint = () => ({
     block: 'Green: the normal force N at its position x and the friction force F. Orange dashed: the friction cone at ±φs = tan⁻¹ μs; while the resultant of N and F stays inside it, the block does not slip, and while N stays within the base, it does not tip.',
@@ -114,6 +163,8 @@
     wedge: 'Friction opposes the motion that is about to happen on each surface. Purple arrows are friction forces.',
     screw: 'The thread is unwrapped into a slope of rise l over a run of 2πr. The resultant R of the normal and friction forces leans at φs from the normal.',
     belt: 'The tension grows by e^(μβ) over each drum, toward the side the belt is about to slip to.',
+    bearing: 'Collar and disk bearings: the axial force is spread uniformly over the ring, and friction on each ring dA acts at its radius. Journal bearings: the resultant R is tangent to the friction circle r_f = r sin φk. Rolling: the ground reaction acts a distance a ahead of the lowest point.',
+    vehicle: 'Green: the normal forces at the two axles. Purple: friction, which acts only at braked or driven wheels; freely rolling wheels carry none. A wheel marked with a cross is locked by its brake. For tipping sideways on a road tilted across it, enter half the track width as the distances from G to A and B.',
   }[mode()]);
   M.legend = () => [[LCOL, 'Loads'], [RCOL, 'Normal forces'], [FCOL, 'Friction']].concat(mode() === 'block' ? [[CONE, 'Friction cone', 'ln']] : mode() === 'incline' ? [[CONE, 'Angle of repose', 'ln']] : []);
   /* Play slides the block down the slope (released) or up it (pushed); the clock shows the real time. */
@@ -173,6 +224,8 @@
     if (g.kind === 'ladder') return drawLadder(svg, g, opt);
     if (g.kind === 'wedge') return drawWedge(svg, g, opt);
     if (g.kind === 'screw') return drawScrew(svg, g, opt);
+    if (g.kind === 'vehicle') return drawVehicle(svg, g, opt);
+    if (g.kind === 'bearing') return drawBearing(svg, g, opt);
     return drawBelt(svg, g, opt);
   };
 
@@ -371,6 +424,105 @@
     lbl(g1, ox + 12, oy + qh - 14, g.lock ? `Self-locking: φs ≥ θ` : 'Not self-locking: φs < θ', { color: g.lock ? '#1e7a45' : '#a3281f', size: 12, weight: 800 });
   }
 
+
+
+  /* -------- bearings -------- */
+  function drawBearing(svg, g, opt) {
+    const { F, Lu, FL } = g.c, val = (k, t) => (opt.showP ? `${k} = ${t}` : k);
+    if (g.type === 'collar' || g.type === 'disk') {
+      const R2 = g.R2, R1 = g.R1, rs = R1 > 0 ? R1 * 0.8 : R2 * 0.3;
+      const D = UI.Draw2D(svg, { xmin: -R2 * 1.6, xmax: R2 * 2.8, ymin: -R2 * 1.1, ymax: R2 * 2.4 }, { pad: 50 }); hatch(svg);
+      const g0 = D.root, X = D.X, Y = D.Y;
+      // side section: shaft on the bearing, support block below
+      poly(g0, [[X(-R2 * 1.4), Y(0)], [X(R2 * 1.4), Y(0)], [X(R2 * 1.4), Y(-R2 * 0.7)], [X(-R2 * 1.4), Y(-R2 * 0.7)]], { fill: 'url(#hatchF)', stroke: '#4a5661' });
+      if (R1 > 0) poly(g0, [[X(-R1), Y(0)], [X(R1), Y(0)], [X(R1), Y(-R2 * 0.7)], [X(-R1), Y(-R2 * 0.7)]], { fill: '#fff', stroke: '#4a5661' });
+      poly(g0, [[X(-R2), Y(0)], [X(R2), Y(0)], [X(R2), Y(R2 * 0.25)], [X(-R2), Y(R2 * 0.25)]], { fill: '#c9d3da', stroke: '#4a5661', 'stroke-width': 1.5 });
+      poly(g0, [[X(-rs), Y(R2 * 0.25)], [X(rs), Y(R2 * 0.25)], [X(rs), Y(R2 * 1.7)], [X(-rs), Y(R2 * 1.7)]], { fill: '#dfe5ea', stroke: '#4a5661', 'stroke-width': 1.5 });
+      arrowPx(g0, X(0), Y(R2 * 2.35), X(0), Y(R2 * 1.72), LCOL, 2.6, 11); lbl(g0, X(0) + 8, Y(R2 * 2.2), val('P', `${fmt(g.P)} ${F}`), { color: LCOL });
+      const ey = Y(R2 * 1.2), ex = rs * D.sc + 26;
+      s('path', { d: `M ${X(0) - ex} ${ey} A ${ex} ${ex * 0.3} 0 0 0 ${X(0) + ex} ${ey}`, fill: 'none', stroke: FCOL, 'stroke-width': 2.2 }, g0);
+      arrowPx(g0, X(0) + ex - 2, ey - 8, X(0) + ex, ey + 1, FCOL, 2.2, 10); lbl(g0, X(0) + ex + 6, ey + 16, val('M', `${fmt(g.M)} ${FL}`), { color: FCOL });
+      // pressure on the contact surface
+      for (let k = -6; k <= 6; k++) { const x = (k / 6) * R2; if (Math.abs(x) < R1 * 0.999) continue; arrowPx(g0, X(x), Y(-R2 * 0.3), X(x), Y(-0.02 * R2), RCOL, 1.4, 6); }
+      lbl(g0, X(0), Y(-R2 * 0.95), 'uniform pressure p on the contact surface', { anchor: 'middle', color: RCOL, size: 11 });
+      // plan view of the contact ring
+      const cx = X(R2 * 2.1), cy = Y(R2 * 0.6), r2 = R2 * D.sc * 0.62, r1 = R1 * D.sc * 0.62;
+      s('circle', { cx, cy, r: r2, fill: '#c9d3da', stroke: '#4a5661', 'stroke-width': 1.4 }, g0); if (R1 > 0) s('circle', { cx, cy, r: r1, fill: '#fff', stroke: '#4a5661', 'stroke-width': 1.4 }, g0);
+      arrowPx(g0, cx, cy, cx + r2, cy, '#1d2733', 1.3, 7); lbl(g0, cx + r2 / 2, cy - 5, R1 > 0 ? 'R₂' : 'R', { anchor: 'middle', color: '#1d2733', size: 11 });
+      if (R1 > 0) { arrowPx(g0, cx, cy, cx - r1 * 0.7, cy + r1 * 0.7, '#1d2733', 1.3, 7); lbl(g0, cx - r1 * 0.5, cy + r1 * 0.5 + 14, 'R₁', { anchor: 'middle', color: '#1d2733', size: 11 }); }
+      lbl(g0, cx, cy + r2 + 18, `contact area, μ = ${fmt(g.mu)}`, { anchor: 'middle', color: '#5a6b75', size: 11 });
+      return;
+    }
+    if (g.type === 'journal') {
+      const r = 1, rf = Math.sin(g.ph * DEG), D = UI.Draw2D(svg, { xmin: -2.4, xmax: 2.4, ymin: -2.2, ymax: 2.2 }, { pad: 50 }), g0 = D.root, X = D.X, Y = D.Y, sc = D.sc;
+      s('circle', { cx: X(0), cy: Y(0), r: 1.45 * sc, fill: '#e3e9ed', stroke: '#4a5661', 'stroke-width': 1.5 }, g0);
+      const t = -g.ph * DEG, ox = Math.sin(t) * 0.12, oy = 0; // shaft rides up the side of the hole
+      s('circle', { cx: X(ox), cy: Y(oy + 0.12), r: r * sc, fill: '#c9d3da', stroke: '#4a5661', 'stroke-width': 1.5 }, g0);
+      s('circle', { cx: X(ox), cy: Y(oy + 0.12), r: Math.max(rf * sc, 3), fill: 'none', stroke: CONE, 'stroke-width': 1.4, 'stroke-dasharray': '5 4' }, g0);
+      lbl(g0, X(ox) + rf * sc + 6, Y(oy + 0.12) - 4, `r_f = ${fmt(Math.sin(g.ph * DEG) * g.r)} ${Lu}`, { color: CONE, size: 11 });
+      arrowPx(g0, X(ox - rf), Y(1.9), X(ox - rf), Y(0.12 + 0.05), LCOL, 2.4, 10); lbl(g0, X(ox - rf) - 6, Y(1.8), val('R (load)', `${fmt(g.R)} ${F}`), { anchor: 'end', color: LCOL });
+      arrowPx(g0, X(ox - rf), Y(-2.0), X(ox - rf), Y(-0.9), RCOL, 2.4, 10); lbl(g0, X(ox - rf) + 6, Y(-1.9), 'R (bearing)', { color: RCOL });
+      const ey = Y(0.12), ex = 0.6 * sc; s('path', { d: `M ${X(ox) - ex} ${ey} A ${ex} ${ex} 0 0 1 ${X(ox) + ex} ${ey}`, fill: 'none', stroke: FCOL, 'stroke-width': 2.2 }, g0);
+      arrowPx(g0, X(ox) + ex - 1, ey - 8, X(ox) + ex, ey + 2, FCOL, 2.2, 10); lbl(g0, X(ox) - ex - 6, ey - ex * 0.6, val('M', `${fmt(g.M)} ${FL}`), { anchor: 'end', color: FCOL });
+      lbl(g0, 14, 22, `φk = ${fmt(g.ph)}°: the shaft climbs the bearing until R is tangent to the friction circle`, { color: '#5a6b75', size: 11.5, weight: 700 });
+      return;
+    }
+    const D = UI.Draw2D(svg, { xmin: -2.2, xmax: 2.6, ymin: -0.6, ymax: 2.6 }, { pad: 50 }); hatch(svg);
+    const g0 = D.root, X = D.X, Y = D.Y, sc = D.sc, A = Math.max(0.12, Math.min(0.45, g.a / g.r));
+    poly(g0, [[X(-2.2), Y(0)], [X(2.6), Y(0)], [X(2.6), Y(-0.25)], [X(-2.2), Y(-0.25)]], { fill: 'url(#hatchF)' });
+    s('line', { x1: X(-2.2), y1: Y(0), x2: X(2.6), y2: Y(0), stroke: '#4a5661', 'stroke-width': 2 }, g0);
+    s('circle', { cx: X(0), cy: Y(1), r: sc, fill: '#3b444b', stroke: '#1d2733' }, g0); s('circle', { cx: X(0), cy: Y(1), r: sc * 0.4, fill: '#c9d3da' }, g0);
+    arrowPx(g0, X(0), Y(2.5), X(0), Y(1.05), LCOL, 2.4, 10); lbl(g0, X(0) + 7, Y(2.35), val('W', `${fmt(g.W)} ${F}`), { color: LCOL });
+    arrowPx(g0, X(-1.9), Y(1), X(-0.05), Y(1), LCOL, 2.4, 10); lbl(g0, X(-1.9), Y(1) - 8, val('P', `${fmt(g.P)} ${F}`), { color: LCOL });
+    arrowPx(g0, X(A * 1.55), Y(-0.55), X(A), Y(0.02), RCOL, 2.4, 10); lbl(g0, X(A) + 6, Y(-0.4), 'R', { color: RCOL });
+    s('line', { x1: X(0), y1: Y(-0.05), x2: X(A), y2: Y(-0.05), stroke: '#1d2733', 'stroke-width': 1.2 }, g0); lbl(g0, X(A / 2), Y(-0.05) + 14, `a = ${fmt(g.a)} ${Lu}`, { anchor: 'middle', color: '#1d2733', size: 11 });
+    lbl(g0, X(0.95), Y(1.25), `r = ${fmt(g.r)} ${Lu}`, { color: '#5a6b75', size: 11 });
+    lbl(g0, 14, 22, 'The ground reaction R acts a distance a ahead of the lowest point (a is drawn enlarged).', { color: '#5a6b75', size: 11.5, weight: 700 });
+  }
+
+  /* -------- vehicle -------- */
+  /** Body outline in road axes (x from axle A to B, y up from the road); the hood is at the front end. */
+  function carShape(g) {
+    const L = g.L, rw = Math.min(L * 0.1, Math.max(g.h * 0.5, L * 0.07)), sh = Math.max(g.h * 1.25, rw * 2.3), top = sh + L * 0.2;
+    const pts = [[-0.24 * L, rw * 0.75], [1.24 * L, rw * 0.75], [1.24 * L, sh * 0.95], [0.95 * L, sh], [0.72 * L, top], [0.18 * L, top], [-0.02 * L, sh * 1.02], [-0.24 * L, sh]];
+    const fl = g.front === 'A';
+    return { rw, sh, top, pts: fl ? pts.map(([x, y]) => [L - x, y]) : pts };
+  }
+  function drawVehicle(svg, g, opt) {
+    const { F, Lu } = g.c, L = g.L, ang = (g.rise === 'B' ? 1 : -1) * g.phi * DEG, ca = Math.cos(ang), sa = Math.sin(ang), R = (u, v) => [u * ca - v * sa, u * sa + v * ca];
+    const cs = carShape(g), ext = 0.55 * L, bb = [R(-ext, 0), R(L + ext, 0), R(-ext, cs.top), R(L + ext, cs.top), R(-0.3 * L, -0.3 * L), R(1.3 * L, -0.3 * L)];
+    const D = UI.Draw2D(svg, { xmin: Math.min(...bb.map((p) => p[0])), xmax: Math.max(...bb.map((p) => p[0])), ymin: Math.min(...bb.map((p) => p[1])), ymax: Math.max(...bb.map((p) => p[1])) + L * 0.3 }, { pad: 56 }); hatch(svg);
+    const g0 = D.root, P = (u, v) => { const w = R(u, v); return [D.X(w[0]), D.Y(w[1])]; }, sc = D.sc;
+    const into = [sa, ca]; // screen direction into the road
+    const r0 = P(-ext, 0), r1 = P(L + ext, 0);
+    poly(g0, [r0, r1, [r1[0] + into[0] * 12, r1[1] + into[1] * 12], [r0[0] + into[0] * 12, r0[1] + into[1] * 12]], { fill: 'url(#hatchF)' });
+    s('line', { x1: r0[0], y1: r0[1], x2: r1[0], y2: r1[1], stroke: '#4a5661', 'stroke-width': 2 }, g0);
+    if (g.phi > 0) { const lo = ang > 0 ? r0 : r1, dir = ang > 0 ? 1 : -1; s('line', { x1: lo[0], y1: lo[1], x2: lo[0] + dir * 80, y2: lo[1], stroke: '#9aa5ad', 'stroke-dasharray': '4 3' }, g0); if (dir > 0) arcPx(g0, lo[0], lo[1], 56, 0, g.phi, '#1d2733'); else arcPx(g0, lo[0], lo[1], 56, 180 - g.phi, 180, '#1d2733'); lbl(g0, lo[0] + dir * 64, lo[1] - 6, `φ = ${fmt(g.phi)}°`, { anchor: dir > 0 ? 'start' : 'end', color: '#1d2733', size: 11.5 }); }
+    poly(g0, cs.pts.map(([u, v]) => P(u, v)), { fill: '#7fb3d5', 'fill-opacity': 0.55, stroke: '#2e5f80', 'stroke-width': 1.6, 'stroke-linejoin': 'round' });
+    [['A', 0], ['B', L]].forEach(([k, x]) => {
+      const c = P(x, cs.rw); s('circle', { cx: c[0], cy: c[1], r: cs.rw * sc, fill: '#3b444b', stroke: '#1d2733', 'stroke-width': 1.4 }, g0); s('circle', { cx: c[0], cy: c[1], r: cs.rw * sc * 0.45, fill: '#c9d3da' }, g0);
+      if (g['ax' + k] === 'locked') { const d = cs.rw * sc * 0.32; s('path', { d: `M ${c[0] - d} ${c[1] - d} L ${c[0] + d} ${c[1] + d} M ${c[0] + d} ${c[1] - d} L ${c[0] - d} ${c[1] + d}`, stroke: '#a3281f', 'stroke-width': 2.4 }, g0); }
+      if (g['ax' + k] === 'driven') s('circle', { cx: c[0], cy: c[1], r: cs.rw * sc * 0.2, fill: '#1e7a45' }, g0);
+      const t = P(x, 0); lbl(g0, t[0] + 6 * (k === 'A' ? -1 : 1), t[1] + 20, k, { anchor: k === 'A' ? 'end' : 'start', color: '#1d2733', size: 13, weight: 800 });
+    });
+    const G = P(g.a, g.h); s('circle', { cx: G[0], cy: G[1], r: 4.5, fill: '#1d2733' }, g0); lbl(g0, G[0] + 7, G[1] - 7, 'G', { color: '#1d2733' });
+    force(g0, G[0], G[1], 0, 1, 52, LCOL, null, true, 6); lbl(g0, G[0] + 7, G[1] + 50, opt.showP ? `W = ${fmt(g.W)} ${F}` : 'W', { color: LCOL });
+    const nrm = [-sa, -ca], tg = [ca, -sa]; // screen: out of the road, along +x
+    [['A', 0, g.NA, g.FA], ['B', L, g.NB, g.FB]].forEach(([k, x, N, Ff]) => {
+      const o = P(x, 0);
+      force(g0, o[0], o[1], nrm[0] * Math.sign(N || 1), nrm[1] * Math.sign(N || 1), 44, RCOL, opt.showP ? `N_${k} = ${fmt(N)} ${F}` : `N_${k}`, false, 3);
+      if (Math.abs(Ff) > 1e-9 * g.W) { const sg = Math.sign(Ff), q = P(x, -0.02 * L); force(g0, q[0], q[1], tg[0] * sg, tg[1] * sg, 44, FCOL, opt.showP ? `F_${k} = ${fmt(Math.abs(Ff))} ${F}` : `F_${k}`, true, 4); }
+    });
+    if (g.useP && g.P > 0) { const at = P(g.xP, g.yP), d = R(Math.cos(g.psi * DEG), Math.sin(g.psi * DEG)); s('circle', { cx: at[0], cy: at[1], r: 3, fill: LCOL }, g0); force(g0, at[0], at[1], d[0], -d[1], 56, LCOL, opt.showP ? `P = ${fmt(g.P)} ${F}` : 'P', true, 2); }
+    // dimensions a, b along the road below it, and h
+    const dy = cs.top + 0.14 * L, a0 = P(0, dy), a1 = P(g.a, dy), b1 = P(L, dy);
+    [[0, a0], [g.a, a1], [L, b1]].forEach(([x, e]) => { const f = P(x, x === g.a ? g.h : cs.rw * 2); s('line', { x1: f[0], y1: f[1], x2: e[0], y2: e[1], stroke: '#c3ccd2', 'stroke-dasharray': '2 3' }, g0); });
+    [[a0, a1, `${fmt(g.a)} ${Lu}`], [a1, b1, `${fmt(g.b)} ${Lu}`]].forEach(([p, q, t]) => { s('line', { x1: p[0], y1: p[1], x2: q[0], y2: q[1], stroke: '#5a6b75', 'stroke-width': 1.2 }, g0); [p, q].forEach((e) => s('circle', { cx: e[0], cy: e[1], r: 2.2, fill: '#5a6b75' }, g0)); lbl(g0, (p[0] + q[0]) / 2, (p[1] + q[1]) / 2 - 6, t, { anchor: 'middle', color: '#5a6b75', size: 11 }); });
+    const hb = P(g.a, 0); s('line', { x1: hb[0], y1: hb[1], x2: G[0], y2: G[1], stroke: '#9aa5ad', 'stroke-dasharray': '3 3' }, g0); if (g.h > 0) lbl(g0, (hb[0] + G[0]) / 2 - 8, (hb[1] + G[1]) / 2 + 4, `h = ${fmt(g.h)} ${Lu}`, { anchor: 'end', color: '#5a6b75', size: 11 });
+    const vt = g.task === 'slope' ? `${g.verdict === 'tip' ? 'Tips' : 'Slips'} first at φ = ${fmt(g.phi)}°` : g.task === 'force' ? (g.verdict === 'tip' ? 'An axle lifts off before the wheels slip' : `Starts to move toward ${g.move} at P = ${fmt(g.P)} ${F}`) : { none: 'Parked: no slipping or tipping', slip: 'The wheels slip', tip: 'The vehicle tips', roll: 'It rolls: no axle is braked' }[g.verdict];
+    lbl(g0, 14, 22, vt, { color: g.verdict === 'none' || (g.task !== 'park' && g.verdict !== 'tip') ? '#1e7a45' : '#a3281f', size: 13, weight: 800 });
+  }
+
   /* -------- belt -------- */
   function drawBelt(svg, g, opt) {
     const { W, H } = Charts.clear(svg), { F } = g.c, n = g.drums.length, gg = s('g', {}, svg);
@@ -510,6 +662,55 @@
       v.label([rm + 0.1, yM, 0], val('M', `${fmt(g.M)} ${g.c.FL}`), FCOL);
       v.autoBounds(); return;
     }
+    if (g.kind === 'bearing') {
+      v._hs = 0.12;
+      if (g.type === 'collar' || g.type === 'disk') {
+        const R2 = 1, R1 = g.R1 / g.R2, rs = R1 > 0 ? R1 * 0.8 : 0.3;
+        v.lathe([[R1, -0.6], [1.5, -0.6], [1.5, 0], [R1, 0]], GROUND, 1, GEDGE, 40);
+        v.lathe([[R1 * 0.999, 0], [R2, 0], [R2, 0.25], [0, 0.25], [0, 0.2], [R1 * 0.999, 0.2]].filter((p, i) => R1 > 0 || i < 4), STEEL, 1, null, 40);
+        v.lathe([[0, 0.25], [rs, 0.25], [rs, 1.8], [0, 1.8]], '#dfe5ea', 1, null, 30);
+        arrow3(v, [0, 2.8, 0], [0, 1.85, 0], LCOL, 2.6); v.label([0.12, 2.85, 0], val('P', `${fmt(g.P)} ${F}`), LCOL);
+        const arc = []; for (let i = 0; i <= 40; i++) { const a = (i / 40) * 1.6 * Math.PI; arc.push([(rs + 0.45) * Math.cos(a), 1.2, (rs + 0.45) * Math.sin(a)]); }
+        v.line(arc, FCOL, 2.4); arrow3(v, arc[37], arc[40], FCOL, 2.4); v.label([rs + 0.55, 1.25, 0], val('M', `${fmt(g.M)} ${g.c.FL}`), FCOL);
+        v.autoBounds(); return;
+      }
+      if (g.type === 'journal') {
+        const ring = (r, n) => { const p = []; for (let k = 0; k < n; k++) { const t = (k / n) * 2 * Math.PI; p.push([r * Math.cos(t), r * Math.sin(t)]); } return p; };
+        v.box(-1.8, -1.9, -0.7, 1.8, -1.45, 0.7, GROUND, 1, GEDGE);
+        v.extrude(ring(1, 36).map(([x, y]) => [x, y + 0.12]), -1.2, 1.2, STEEL, 1, null);
+        arrow3(v, [0, 2.3, 0], [0, 1.2, 0], LCOL, 2.6); v.label([0.12, 2.35, 0], val('R', `${fmt(g.R)} ${F}`), LCOL);
+        const arc = []; for (let i = 0; i <= 40; i++) { const a = (i / 40) * 1.6 * Math.PI; arc.push([1.35 * Math.cos(a), 1.35 * Math.sin(a), 1.25]); }
+        v.line(arc, FCOL, 2.4); arrow3(v, arc[37], arc[40], FCOL, 2.4); v.label([1.4, 0.2, 1.25], val('M', `${fmt(g.M)} ${g.c.FL}`), FCOL);
+        v.autoBounds(); return;
+      }
+      const ring = []; for (let k = 0; k < 36; k++) { const t = (k / 36) * 2 * Math.PI; ring.push([Math.cos(t), 1 + Math.sin(t)]); }
+      v.box(-2.2, -0.15, -0.8, 2.6, 0, 0.8, GROUND, 1, GEDGE, { layer: rest([0, 1, 0], 2) });
+      v.extrude(ring, -0.3, 0.3, '#3b444b', 1, '#1d2733');
+      arrow3(v, [0, 2.6, 0], [0, 2.02, 0], LCOL, 2.6); v.label([0.12, 2.65, 0], val('W', `${fmt(g.W)} ${F}`), LCOL);
+      arrow3(v, [-2, 1, 0.32], [-0.02, 1, 0.32], LCOL, 2.6); v.label([-2.1, 1.1, 0.32], val('P', `${fmt(g.P)} ${F}`), LCOL);
+      v.autoBounds(); return;
+    }
+    if (g.kind === 'vehicle') {
+      const L = g.L, ang = (g.rise === 'B' ? 1 : -1) * g.phi * DEG, ca = Math.cos(ang), sa = Math.sin(ang), R = (u, w) => [u * ca - w * sa, u * sa + w * ca];
+      const cs = carShape(g), zw = L * 0.32, ext = 0.55 * L; v._hs = L * 0.05;
+      v.extrude([R(-ext, 0), R(L + ext, 0), R(L + ext, -0.06 * L), R(-ext, -0.06 * L)], -zw * 1.7, zw * 1.7, GROUND, 1, GEDGE, { layer: rest([-sa, ca, 0]) });
+      v.extrude(cs.pts.map(([u, w]) => R(u, w)), -zw * 0.68, zw * 0.68, '#7fb3d5', 1, '#2e5f80');
+      [0, L].forEach((x, i) => {
+        const ring = []; for (let k = 0; k < 24; k++) { const t = (k / 24) * 2 * Math.PI; ring.push(R(x + cs.rw * Math.cos(t), cs.rw + cs.rw * Math.sin(t))); }
+        [[zw * 0.7, zw * 1.02], [-zw * 1.02, -zw * 0.7]].forEach(([z0, z1]) => v.extrude(ring, z0, z1, '#3b444b', 1, '#1d2733'));
+        if (g[i ? 'axB' : 'axA'] === 'locked') v.label([...R(x, cs.rw * 2.3), zw * 1.05], 'locked', '#a3281f');
+      });
+      const G = R(g.a, g.h), zf = zw * 1.04;
+      arrow3(v, [G[0], G[1], 0], [G[0], G[1] - L * 0.35, 0], LCOL, 2.6); v.label([G[0], G[1] - L * 0.38, 0], val('W', `${fmt(g.W)} ${F}`), LCOL);
+      const n = R(0, 1), t = R(1, 0);
+      [['A', 0, g.NA, g.FA], ['B', L, g.NB, g.FB]].forEach(([k, x, N, Ff]) => {
+        const o = R(x, 0), sN = Math.sign(N || 1);
+        arrow3(v, [o[0] - n[0] * L * 0.3 * sN, o[1] - n[1] * L * 0.3 * sN, zf], [o[0], o[1], zf], RCOL, 2.4); v.label([o[0] - n[0] * L * 0.34, o[1] - n[1] * L * 0.34, zf], val(`N_${k}`, `${fmt(N)} ${F}`), RCOL);
+        if (Math.abs(Ff) > 1e-9 * g.W) { const sg = Math.sign(Ff); arrow3(v, [o[0], o[1], zf], [o[0] + sg * t[0] * L * 0.28, o[1] + sg * t[1] * L * 0.28, zf], FCOL, 2.4); v.label([o[0] + sg * t[0] * L * 0.32, o[1] + sg * t[1] * L * 0.32, zf], val(`F_${k}`, `${fmt(Math.abs(Ff))} ${F}`), FCOL); }
+      });
+      if (g.useP && g.P > 0) { const at = R(g.xP, g.yP), d = R(Math.cos(g.psi * DEG), Math.sin(g.psi * DEG)); arrow3(v, [at[0], at[1], 0], [at[0] + d[0] * L * 0.4, at[1] + d[1] * L * 0.4, 0], LCOL, 2.6); v.label([at[0] + d[0] * L * 0.44, at[1] + d[1] * L * 0.44, 0], val('P', `${fmt(g.P)} ${F}`), LCOL); }
+      v.autoBounds(); return;
+    }
     // belt: each drum with the belt wrapped over its contact angle and the tensions on the two free ends
     const R = 1, rb = 1.04, zb = 0.28;
     v._hs = 0.16;
@@ -567,6 +768,26 @@
     { name: 'Test: Book Example 8.8, cord over two drums holding a hanging mass', units: 'SI', state: { mode: 'belt', fu: 'N', bt: { known: 'high', T: 500, drums: [{ beta: 135, turns: 0, mu: 0.25 }, { beta: 135, turns: 0, mu: 0.25 }] } },
       expect: [{ k: 'Tension after drum 1', v: 277.4 }, { k: 'Tension after drum 2', v: 153.9 }, { k: 'Mass that can be held', v: 15.69 }] },
     { name: 'Rope with two turns around a capstan', units: 'US', state: { mode: 'belt', fu: 'lb', bt: { known: 'low', T: 20, drums: [{ beta: 0, turns: 2, mu: 0.3 }] } } },
+    { name: 'Test: car parked on a 12° incline with the rear wheels locked (Ellis\'s Problem 14)', units: 'SI', state: { mode: 'vehicle', fu: 'N', vh: { wBy: 'mass', m: 1500, a: 1.5, b: 3, h: 1.1, phi: 12, rise: 'A', mu: 0.6, axA: 'locked', axB: 'free', task: 'park', front: 'B', hasP: false } },
+      expect: [{ k: 'Normal force at A, N_A', v: 8847.8 }, { k: 'Normal force at B, N_B', v: 5545.7 }, { k: 'Friction at A, F_A', v: -3059.4 }] },
+    { name: 'Test: Prob. 8-3, mine car with both brakes locked and a 10 kN push (does it move?)', units: 'SI', state: { mode: 'vehicle', fu: 'kN', vh: { wBy: 'mass', m: 6000, a: 0.9, b: 0.6, h: 0.15, phi: 0, rise: 'B', mu: 0.4, axA: 'locked', axB: 'locked', task: 'park', front: 'B', hasP: true, P: 10, xP: 0, yP: 1.05, psi: 0 } },
+      expect: [{ k: 'Normal force at A, N_A', v: 16.544 }, { k: 'Normal force at B, N_B', v: 42.316 }] },
+    { name: 'Test: Prob. 8-5, towing force with the back brakes locked', units: 'SI', state: { mode: 'vehicle', fu: 'N', vh: { wBy: 'mass', m: 2000, a: 1, b: 1.5, h: 0.6, phi: 0, rise: 'B', mu: 0.3, axA: 'free', axB: 'locked', task: 'force', front: 'A', xP: -0.75, yP: 0.3, psi: 150, move: 'A' } },
+      expect: [{ k: 'Force P', v: 2762.7 }, { k: 'Normal force at B, N_B', v: 7975.3 }, { k: 'Normal force at A, N_A', v: 10263.3 }] },
+    { name: 'Test: Prob. 8-6, towing force with all brakes locked', units: 'SI', state: { mode: 'vehicle', fu: 'N', vh: { wBy: 'mass', m: 2000, a: 1, b: 1.5, h: 0.6, phi: 0, rise: 'B', mu: 0.3, axA: 'locked', axB: 'locked', task: 'force', front: 'A', xP: -0.75, yP: 0.3, psi: 150, move: 'A' } },
+      expect: [{ k: 'Force P', v: 5793.2 }] },
+    { name: 'Test: Prob. 8-14, steepest road shoulder before the car slips or tips', units: 'US', state: { mode: 'vehicle', fu: 'lb', vh: { wBy: 'force', W: 3527, a: 2.5, b: 2.5, h: 2.5, rise: 'A', mu: 0.4, axA: 'locked', axB: 'locked', task: 'slope', front: 'B' } },
+      expect: [{ k: 'Steepest slope φ_max', v: 21.801 }, { k: 'Slope at which it tips', v: 45 }] },
+    { name: 'Test: Prob. 8-107, collar bearing carrying 5 kN', units: 'SI', state: { mode: 'bearing', fu: 'N', be: { kind: 'collar', P: 5000, R1: 0.075, R2: 0.1, mu: 0.3, task: 'M' } },
+      expect: [{ k: 'Moment to turn M', v: 132.14 }] },
+    { name: 'Test: Prob. 8-109, floor polisher (disk bearing, R = 1 ft)', units: 'US', state: { mode: 'bearing', fu: 'lb', be: { kind: 'disk', P: 80, R2: 1, mu: 0.3, task: 'M' } },
+      expect: [{ k: 'Moment to turn M', v: 16 }] },
+    { name: 'Test: Prob. 8-119, 50 kg disk on a 30 mm shaft (journal bearing)', units: 'SI', state: { mode: 'bearing', fu: 'N', be: { kind: 'journal', W: 490.5, rs: 0.015, mu: 0.15, task: 'M' } },
+      expect: [{ k: 'Friction circle radius r_f', v: 0.0022251 }] },
+    { name: 'Test: closed form, rolling resistance of a 16 000 lb tractor, a = 2 in., r = 2.5 ft', units: 'US', state: { mode: 'bearing', fu: 'lb', be: { kind: 'rolling', W: 16000, rw: 2.5, a: 0.1666667, aB: 0 } },
+      expect: [{ k: 'Force to roll P', v: 1066.67 }] },
+    { name: 'Test: μs for impending motion of a 200 lb crate on a 30° slope held by 76 lb', units: 'US', state: { mode: 'incline', fu: 'lb', ic: { wBy: 'force', W: 200, phi: 30, task: 'mu', P: 76, psi: 0 } },
+      expect: [{ k: 'μs for impending motion', v: 0.13856 }] },
     { name: 'Edge: a pull that lifts the block off the floor (fails on purpose)', units: 'SI', fails: true, state: B({ wBy: 'force', W: 100, b: 0.5, H: 0.5, phi: 0, mu: 0.3, task: 'check', P: 300, psi: 60, hP: 0.4 }) },
   ];
 

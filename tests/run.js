@@ -315,6 +315,21 @@ group('friction module', () => {
   // Example 8.8 belt
   r = Friction.solve(mk({ mode: 'belt' }), SI);
   close('8.8 T1', out(r, 'Tension after drum 1'), 277.4); close('8.8 W', out(r, 'Tension after drum 2'), 153.9); close('8.8 m', out(r, 'Mass that can be held'), 15.69);
+  // Vehicle on two axles (Probs. 8-3, 8-5, 8-6, 8-14 and a car parked on an incline)
+  const V = (o) => mk({ mode: 'vehicle', vh: o });
+  r = Friction.solve(V({}), SI);
+  close('car on 12° incline N_A', out(r, 'Normal force at A, N_A'), 8847.8); close('car on 12° incline N_B', out(r, 'Normal force at B, N_B'), 5545.7); close('car on 12° incline F_A', out(r, 'Friction at A, F_A'), -3059.4);
+  r = Friction.solve(mk({ mode: 'vehicle', fu: 'kN', vh: { m: 6000, a: 0.9, b: 0.6, h: 0.15, phi: 0, axA: 'locked', axB: 'locked', mu: 0.4, hasP: true, P: 10, xP: 0, yP: 1.05, psi: 0 } }), SI);
+  close('8-3 N_A', out(r, 'Normal force at A, N_A'), 16.544); close('8-3 N_B', out(r, 'Normal force at B, N_B'), 42.316); truthy('8-3 does not move', /no slipping/.test(r.status.text));
+  const tow = { task: 'force', m: 2000, a: 1, b: 1.5, h: 0.6, phi: 0, axA: 'free', axB: 'locked', mu: 0.3, xP: -0.75, yP: 0.3, psi: 150, move: 'A' };
+  r = Friction.solve(V(tow), SI); close('8-5 F', out(r, 'Force P'), 2762.7); close('8-5 N_B', out(r, 'Normal force at B, N_B'), 7975.3);
+  close('8-6 F', out(Friction.solve(V(Object.assign({}, tow, { axA: 'locked' })), SI), 'Force P'), 5793.2);
+  r = Friction.solve(V({ task: 'slope', a: 2.5, b: 2.5, h: 2.5, axA: 'locked', axB: 'locked', mu: 0.4 }), SI);
+  close('8-14 φ', out(r, 'Steepest slope φ_max'), 21.801); close('8-14 tip', out(r, 'Slope at which it tips'), 45);
+  // one braked axle: tan φ = μ b_other / (L + μ h) style check against the parked result at that slope
+  { const q = { task: 'slope', a: 1.5, b: 3, h: 1.1, axA: 'locked', axB: 'free', mu: 0.6 }, ph = out(Friction.solve(V(q), SI), 'Steepest slope φ_max');
+    close('one-axle slope gives μ needed = μs', out(Friction.solve(V(Object.assign({}, q, { task: 'park', phi: ph })), SI), 'μs needed to hold it'), 0.6, 1e-4); }
+  { const st = Friction.convertState(V(tow), 'SI', 'US'); close('vehicle units round trip', out(Friction.solve(Friction.convertState(st, 'US', 'SI'), SI), 'Force P'), 2762.72, 1e-4); }
   close('one full turn e^(2πμ)', out(Friction.solve(mk({ mode: 'belt', bt: { known: 'low', T: 1, drums: [{ beta: 0, turns: 1, mu: 0.3 }] } }), SI), 'Tension after drum 1'), Math.exp(0.6 * Math.PI));
 });
 group('section engine', () => {
