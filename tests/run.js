@@ -8,7 +8,7 @@ const Forces = R('st/forces.js'), Equil = R('st/equil.js'), Truss = R('st/truss.
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
 const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js'), Torsion = R('md/torsion.js'), BeamStress = R('md/beamstress.js'), Deflect = R('md/deflect.js'), Transform = R('md/transform.js'), Combined = R('md/combined.js'), Buckle = R('md/buckle.js');
 const VWork = R('st/vwork.js');
-const Rect = R('dy/rect.js'), Curv = R('dy/curv.js'), Pkin = R('dy/pkin.js'), Impact = R('dy/impact.js'), RbMotion = R('dy/rbmotion.js'), RbForce = R('dy/rbforce.js'), Vib = R('dy/vib.js');
+const Rect = R('dy/rect.js'), Curv = R('dy/curv.js'), Pkin = R('dy/pkin.js'), Impact = R('dy/impact.js'), RbMotion = R('dy/rbmotion.js'), RbForce = R('dy/rbforce.js'), Vib = R('dy/vib.js'), Rb3d = R('dy/rb3d.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
 const filter = (process.argv[2] || '').toLowerCase();
@@ -988,6 +988,42 @@ group('dynamics: vibrations', () => {
   { const r = run({ sys: 'sm', m: 10, k: 1000, n: 1, x0: 50, v0: 0.5, damp: 'c', c: 40 }, 'SI'); [{ k: 'Critical damping c_c', v: 200 }, { k: 'Damping factor ζ = c/c_c', v: 0.2 }, { k: 'Damped natural frequency ω_d', v: 9.798 }].forEach((e) => close('the same with c = 40 N·s/m: ' + e.k, out(r, e.k), e.v)); }
 });
 
+group('dynamics: 3D rigid bodies', () => {
+  const rot = (u, w, wd, o) => Object.assign({ ux: u[0], uy: u[1], uz: u[2], px: 0, py: 0, pz: 0, w, wd, roll: 'no', dx: 0, dy: 1, dz: 0 }, o || {});
+  const run = (o, sys) => Rb3d.solve(Object.assign(Rb3d.defaults(), o), U[sys || 'SI']);
+  let r = Rb3d.solve(Rb3d.defaults(), U.US);
+  close('20-3 v_x', out(r, 'v_P_x'), -5.20); close('20-3 v_z', out(r, 'v_P_z'), 20.8); close('20-3 a_x', out(r, 'a_P_x'), -24.1); close('20-3 a_y', out(r, 'a_P_y'), -13.3); close('20-3 a_z', out(r, 'a_P_z'), -7.20);
+  r = run({ rots: [rot([0, 0, 1], 1, 0), rot([0, 1, 1], 60, 0)] });
+  close('20-10 ω_z', out(r, 'ω_z'), 43.4); close('20-10 α_x', out(r, 'α_x'), -42.4);
+  r = run({ rots: [rot([0, 0, 1], 8, 0), rot([0, -1, -1], 0, 0, { roll: 'yes' })], P: { x: 0, y: 0, z: 0.16 * Math.SQRT1_2 } });
+  close('20-5 ω_y', out(r, 'ω_y'), -8); close('20-5 α_x', out(r, 'α_x'), 64); close('20-5 v_A', out(r, 'v_P_x'), -0.905); close('20-5 a_A,z', out(r, 'a_P_z'), -7.24);
+  r = run({ rots: [rot([0, 0, 1], 8, 2), rot([0, 1, 0], 4, 0, { px: 3, py: -1, pz: 1.5 })], P: { x: 4, y: -1, z: 1.5 } }, 'US');
+  close('20-54 v_x', out(r, 'v_P_x'), 8); close('20-54 v_z', out(r, 'v_P_z'), -4); close('20-54 a_x', out(r, 'a_P_x'), -270); close('20-54 a_y', out(r, 'a_P_y'), 72);
+  // a point sliding along a rotating rod: Coriolis term 2ω × v_rel
+  r = run({ rots: [rot([0, 0, 1], 2, 0)], P: { x: 1, y: 0, z: 0 }, relOn: true, rel: { vx: 3, vy: 0, vz: 0, ax: 0, ay: 0, az: 0 } });
+  close('collar on a rod: Coriolis a_y = 2ωv', out(r, 'a_P_y'), 12); close('collar on a rod: a_x = −ω²r', out(r, 'a_P_x'), -4);
+  r = run({ mode: 'mom', rots: [rot([1, 0, 0], 6, 0), rot([0, 0, 1], 15, 0, { py: 0.6 })], parts: [{ t: 'disk', m: 10, x: 0, y: 0.6, z: 0, ax: 'z', r: 0.15 }] });
+  close('21-26 H_O,x', out(r, 'H_O,x'), 21.9); close('21-26 H_O,z', out(r, 'H_O,z'), 1.69); close('21-26 T', out(r, 'Kinetic energy T'), 78.5);
+  r = run({ mode: 'euler', rots: [rot([0, -1, 0], 8, 0)], parts: [{ t: 'disk', m: 40, x: 0, y: 0, z: -0.02, ax: 'y', r: 0.25 }], grav: true, sup: 'brg', A: { x: 0, y: -0.75, z: 0 }, B: { x: 0, y: 1.25, z: 0 }, thrust: 'A' });
+  close('21-45 A', out(r, 'A_z'), 277); close('21-45 B', out(r, 'B_z'), 166);
+  r = run({ mode: 'euler', rots: [rot([0, 1, 0], 6, 0), rot([0, 0, 1], 20, 0)], parts: [{ t: 'disk', m: 20, x: 0, y: 0, z: 0, ax: 'z', r: 0.15 }], grav: false });
+  close('21-71 gyroscopic moment', out(r, 'Required ΣM_G,x'), 27.0);
+  r = run({ mode: 'inertia', parts: [{ t: 'rod', m: 2, x: 0, y: 0, z: 0, x2: 0, y2: 0.5, z2: 0 }, { t: 'rod', m: 2, x: 0, y: 0.5, z: 0, x2: 0.5, y2: 0.5, z2: 0 }] });
+  close('bent rod I_xx', out(r, 'I_xx about O'), 2 / 3); close('bent rod I_xy', out(r, 'I_xy about O'), 0.25);
+  r = run({ mode: 'inertia', parts: [{ t: 'cyl', m: 3, x: 0, y: 0, z: 0, ax: 'x', r: 0.1, h: 0.6 }] });
+  close('cylinder I_yy = m(3r² + h²)/12', out(r, 'I_yy about G'), 3 * (0.03 + 0.36) / 12); close('cylinder I_xx = mr²/2', out(r, 'I_xx about G'), 0.015);
+  r = run({ mode: 'gyro', gy: { unk: 'spin', m: 0.09, kz: 0.018, kt: 0.035, mom: 'weight', rG: 0.06, M: 0, th: 45, prec: 0.5, spin: 1 } });
+  close('21-69 spin', out(r, 'Spin ψ̇'), 3630); const spin69 = out(r, 'Spin ψ̇');
+  r = run({ mode: 'gyro', gy: { unk: 'M', m: 50, kz: 0.2, kt: 0.3, mom: 'given', rG: 0, M: 0, th: 90, prec: 2, spin: 100 } }, 'US');
+  close('21-62 M_x', out(r, 'Moment M_x'), 12.4);
+  r = run({ mode: 'gyro', gy: { unk: 'theta', m: 0.09, kz: 0.018, kt: 0.035, mom: 'weight', rG: 0.06, M: 0, th: 0, prec: 0.5, spin: spin69 } });
+  close('21-69 reversed: θ from the spin', out(r, 'Angle θ'), 45);
+  r = run({ mode: 'free', fr: { m: 1800, kz: 0.8, kt: 1.2, th: 5, given: 'spin', spin: 6, prec: 1, H: 1 } });
+  close('21-77 H_G', out(r, 'Angular momentum H_G'), 12.5e3);
+  r = run({ mode: 'free', ru: 'rev/h', fr: { m: 1600, kz: 1.2, kt: 1.8, th: 20, given: 'prec', spin: 1, prec: 2, H: 1 } });
+  close('21-74 spin', out(r, 'Spin ψ̇'), 2.35);
+  truthy('rolling along the contact line fails', !run({ rots: [rot([0, 0, 1], 8, 0), rot([0, 1, 0], 0, 0, { roll: 'yes' })] }).ok);
+});
 group('dynamics: unit switching', () => {
   [[RbForce, { scene: 'drum', method: 'energy' }, 'Speed of the block v₂', 3.28084], [RbForce, { scene: 'roll', method: 'force' }, 'Acceleration of G, a_G', 3.28084], [Pkin, {}, null, 1], [RbMotion, {}, null, 1]].forEach(([Mod, o, k, f]) => {
     const st = Object.assign(Mod.defaults(), o), a = Mod.solve(st, U.SI);
