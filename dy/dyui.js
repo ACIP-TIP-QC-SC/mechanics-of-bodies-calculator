@@ -124,7 +124,7 @@
     const l = Math.hypot(d[0], d[1]);
     if (!(l > 1e-12) || !(px > 2)) return null;
     const ux = d[0] / l, uy = d[1] / l, q = [p[0] + (ux * px) / D.sc, p[1] + (uy * px) / D.sc];
-    return o.head ? D.arrow([p[0] - (ux * px) / D.sc, p[1] - (uy * px) / D.sc], p, Object.assign({ w: 2.6, head: 11 }, o)) : D.arrow(p, q, Object.assign({ w: 2.6, head: 11, lp: 'head' }, o));
+    return o.head === true ? D.arrow([p[0] - (ux * px) / D.sc, p[1] - (uy * px) / D.sc], p, Object.assign({ w: 2.6 }, o, { head: o.hs || 11 })) : D.arrow(p, q, Object.assign({ w: 2.6, head: 11, lp: 'head' }, o));
   }
   /** Small x–y axes at a corner of the diagram, in black. */
   function axes(D, p, len, names) {
