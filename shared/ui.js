@@ -157,7 +157,7 @@
     const W = svg.clientWidth || 800, H = svg.clientHeight || 560;
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    const pad = Math.min(opts.pad || 56, W * 0.08), padR = Math.min(opts.padR || 0, W * 0.22), padT = opts.padT || 0, padB = opts.padB || 0;
+    const pad = Math.min(opts.pad || 56, W * 0.08), padR = Math.min(opts.padR || 0, W * (opts.padRmax || 0.22)), padT = opts.padT || 0, padB = opts.padB || 0;
     const bw = Math.max(1e-9, bounds.xmax - bounds.xmin), bh = Math.max(1e-9, bounds.ymax - bounds.ymin);
     const sc = Math.max(1e-9, Math.min((W - 2 * pad - padR) / bw, (H - 2 * pad - padT - padB) / bh));
     const ox = pad + (W - 2 * pad - padR - bw * sc) / 2 - bounds.xmin * sc;
