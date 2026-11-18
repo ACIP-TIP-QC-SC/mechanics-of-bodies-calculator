@@ -1,4 +1,4 @@
-/* Preset sweep in a headless browser. Run: node tests/presets.spec.js [--shots dir]
+/* Preset sweep in a headless browser. Run: node tests/presets.spec.js [--shots dir] [--only st|dy|md] [--mod id]
  * Starts a local static server, opens every discipline that is built and, for every module and
  * preset, in the 2D and the 3D view, checks: no console errors, no NaN / undefined / blank values,
  * the diagram has content, "Test" presets match their expected values (0.5 %), and presets
@@ -7,7 +7,9 @@
 const http = require('http'), fs = require('fs'), path = require('path');
 const { chromium } = require('playwright');
 const ROOT = path.join(__dirname, '..');
-const DISCIPLINES = ['st', 'dy', 'md'].filter((d) => fs.existsSync(path.join(ROOT, d, 'index.html')));
+const arg = (k) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : null; };
+/* --only dy runs one discipline, --mod rect one module (while working on it); the full sweep runs everything. */
+const DISCIPLINES = ['st', 'dy', 'md'].filter((d) => fs.existsSync(path.join(ROOT, d, 'index.html')) && (!arg('--only') || arg('--only') === d));
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' };
 const shotsAt = process.argv.indexOf('--shots'), SHOTS = shotsAt > 0 ? process.argv[shotsAt + 1] : null;
 
@@ -38,6 +40,7 @@ function serve() {
     await page.waitForFunction(() => window.App && window.App.res);
     const mods = await page.evaluate(() => Object.values(App.modules).map((m) => ({ id: m.id, title: m.title, presets: m.presets.map((p) => ({ name: p.name, fails: !!p.fails, expect: p.expect || [] })) })));
     for (const m of mods) {
+      if (arg('--mod') && arg('--mod') !== m.id) continue;
       console.log(`${d} / ${m.title}: ${m.presets.length} presets`);
       if (m.presets.filter((p) => /^Test/.test(p.name)).length < 3) bad(`${m.title}: fewer than three "Test" presets`);
       for (let i = 0; i < m.presets.length; i++) {

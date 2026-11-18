@@ -27,6 +27,7 @@
     N: 1, kN: 1e3, MN: 1e6, lb: 4.4482216152605, kip: 4448.2216152605,
     Pa: 1, kPa: 1e3, MPa: 1e6, GPa: 1e9, psi: 6894.757293168, ksi: 6894757.293168, psf: 47.88025898,
     kg: 1, Mg: 1e3, slug: 14.593902937, s: 1, rad: 1,
+    J: 1, kJ: 1e3, W: 1, kW: 1e3, hp: 745.69987158227, g: 1e-3, min: 60,
   };
   /* The unit each one becomes when the viewer switches system. */
   const TWIN = {

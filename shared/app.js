@@ -115,6 +115,7 @@
     function renderPlot() {
       const m = App.mod(), U = App.U(), res = App.res, pp = $('plotPanel'), svg = $('svgPlot');
       let any = false;
+      pp.classList.toggle('tall', !!(typeof m.plotTall === 'function' ? m.plotTall() : m.plotTall));
       if (m.plot && res && res.ok) {
         pp.hidden = false;
         try { any = !!m.plot(svg, res, U); } catch (e) { console.error(e); any = false; }
