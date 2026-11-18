@@ -7,6 +7,7 @@ const Core = R('shared/core.js'), Beam = R('shared/beam.js'), Internal = R('st/i
 const Forces = R('st/forces.js'), Equil = R('st/equil.js'), Truss = R('st/truss.js'), Friction = R('st/friction.js');
 const Section = R('shared/section.js'), Mohr = R('shared/mohr.js'), SecMod = R('st/section.js');
 const MD = R('md/mdcore.js'), Stress = R('md/stress.js'), Axial = R('md/axial.js'), Torsion = R('md/torsion.js'), BeamStress = R('md/beamstress.js'), Deflect = R('md/deflect.js'), Transform = R('md/transform.js'), Combined = R('md/combined.js'), Buckle = R('md/buckle.js');
+const VWork = R('st/vwork.js');
 const Rect = R('dy/rect.js'), Curv = R('dy/curv.js'), Pkin = R('dy/pkin.js'), Impact = R('dy/impact.js'), RbMotion = R('dy/rbmotion.js'), RbForce = R('dy/rbforce.js'), Vib = R('dy/vib.js');
 const U = Core.UNITS;
 let pass = 0, failN = 0;
@@ -873,6 +874,48 @@ group('dynamics: rectilinear kinematics', () => {
   { const st = Object.assign(Rect.defaults(), { mode: 'dep' }); Rect.convertState(st, 'SI', 'US'); close('dependent motion units', st.dep.bodies[0].v, 2 / 0.3048, 1e-6); }
 });
 
+group('statics: virtual work', () => {
+  const env = { θ: 0.5, P: 2 };
+  const f = (src) => VWork.compile(src, new Set(['θ', 'P']))(env);
+  close('parser: 4 sin θ', f('4 sin θ'), 4 * Math.sin(0.5), 1e-12);
+  close('parser: sin 2θ cos θ', f('sin 2θ cos θ'), Math.sin(1) * Math.cos(0.5), 1e-12);
+  close('parser: 2P cot θ', f('2P cot θ'), 4 / Math.tan(0.5), 1e-12);
+  close('parser: powers and brackets', f('-(P+1)^2 / 3 + 30deg'), -3 + Math.PI / 6, 1e-12);
+  close('parser: x² and ×', f('P² × 2'), 8, 1e-12);
+  let threw = false; try { VWork.compile('2 + Q', new Set(['θ'])); } catch (e) { threw = /unknown name/.test(e.message); }
+  truthy('parser rejects unknown names', threw);
+  threw = false; try { VWork.compile('alert(1)', new Set(['θ'])); } catch (e) { threw = true; }
+  truthy('parser rejects code', threw);
+  const base = { forces: [], weights: [], springs: [], couples: [], V: '', links: [], points: [], params: [] };
+  const run = (o) => VWork.solve(Object.assign(VWork.defaults(), base, o));
+  // 11-15: −100 sin θ (2 cos θ) + 8(4 cos θ) = 0
+  let r = VWork.solve(VWork.defaults());
+  close('11-15 θ', out(r, 'Equilibrium position 1 θ'), 9.21);
+  // 11-21
+  r = run({ F: 'N', lu: 'm', q: { kind: 'angle', min: 0, max: 90 }, params: [{ name: 'P', v: 50 }, { name: 'k', v: 200 }],
+    points: [{ name: 'A', x: '0', y: '0' }, { name: 'B', x: '0.5 sin θ', y: '0.5 cos θ' }, { name: 'C', x: 'sin θ', y: 'cos θ' }, { name: 'D', x: '-0.5 sin θ', y: '0.5 cos θ' }],
+    forces: [{ at: 'C', Fx: 'P', Fy: '0' }], springs: [{ kind: 'pts', a: 'D', b: 'B', k: 'k', L0: '0.3' }] });
+  close('11-21 θ = 33.4°', out(r, 'Equilibrium position 1 θ'), 33.4); close('11-21 θ = 90°', out(r, 'Equilibrium position 2 θ'), 90);
+  // 11-27 and 11-26: given potential functions
+  r = run({ F: 'N', lu: 'm', q: { kind: 'angle', min: 0, max: 180 }, V: '12 sin 2θ + 15 cos θ' });
+  close('11-27 θ1', out(r, 'Equilibrium position 1 θ'), 34.6); close("11-27 V''", out(r, 'd²V/dθ² at position 1'), -57.2);
+  close('11-27 θ2', out(r, 'Equilibrium position 2 θ'), 145.4); truthy('11-27 stability', out(r, 'Stability at position 1') === undefined || r.out.find((o) => o.k === 'Stability at position 2').v === 'stable');
+  r = run({ F: 'N', lu: 'm', q: { kind: 'length', min: -2, max: 2 }, V: '20x^3 - 10x^2 - 25x - 10' });
+  close('11-26 x1', out(r, 'Equilibrium position 1 x'), -0.5); close('11-26 x2', out(r, 'Equilibrium position 2 x'), 0.8333);
+  // 11-38: rod and drum spring, in lb and in.
+  r = run({ F: 'lb', lu: 'in.', q: { kind: 'angle', min: 0, max: 90 }, points: [{ name: 'O', x: '0', y: '0' }, { name: 'G', x: '18 sin θ', y: '18 cos θ' }], weights: [{ at: 'G', W: '20' }], springs: [{ kind: 'expr', k: '2', s: '12θ' }] });
+  close('11-38 θ = 0', out(r, 'Equilibrium position 1 θ'), 0); close('11-38 θ = 64.8°', out(r, 'Equilibrium position 2 θ'), 64.8);
+  close("11-38 V'' = 135", out(r, 'd²V/dθ² at position 2'), 135); close("11-38 V'' at 0 = −72", out(r, 'd²V/dθ² at position 1'), -72);
+  // 11-2 scissors jack: F = 2P cot θ
+  r = run({ task: 'param', unk: 'F', q: { kind: 'angle', min: 10, max: 80, at: 30 }, params: [{ name: 'P', v: 100 }, { name: 'L', v: 1 }, { name: 'F', v: 1 }],
+    points: [{ name: 'B', x: 'L cos θ', y: '0' }, { name: 'E', x: '0', y: '2L sin θ' }], forces: [{ at: 'B', Fx: '-F', Fy: '0' }, { at: 'E', Fx: '0', Fy: '-P' }] });
+  close('11-2 F = 2P cot 30°', out(r, 'Unknown F for equilibrium'), 200 / Math.tan(30 * Math.PI / 180), 1e-6);
+  // couple and crank: 6 − F(0.5 sin 60°) = 0
+  r = run({ task: 'param', unk: 'F', F: 'N', lu: 'm', q: { kind: 'angle', min: 0, max: 90, at: 60 }, params: [{ name: 'F', v: 1 }], points: [{ name: 'B', x: '0.5 cos θ', y: '0.5 sin θ' }], forces: [{ at: 'B', Fx: 'F', Fy: '0' }], couples: [{ M: '6', phi: 'θ' }] });
+  close('crank F = 13.9 N', out(r, 'Unknown F for equilibrium'), 13.86);
+  truthy('unknown name fails', !run({ points: [{ name: 'A', x: 'Q', y: '0' }] }).ok);
+  truthy('nothing applied fails', !run({}).ok);
+});
 group('dynamics: curvilinear motion', () => {
   const run = (o, sys) => Curv.solve(Object.assign(Curv.defaults(), o), U[sys]);
   { const r = run({ v0: 12, th: 0, h0: 6, land: 'level', yT: 0 }, 'SI'); [{ k: 'Time of flight t', v: 1.106 }, { k: 'Range R (horizontal distance)', v: 13.27 }].forEach((e) => close('Book Example 12.11, sack off a ramp at 12 m/s from 6 m up: ' + e.k, out(r, e.k), e.v)); }
