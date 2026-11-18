@@ -356,6 +356,23 @@ group('friction module', () => {
     close('one-axle slope gives μ needed = μs', out(Friction.solve(V(Object.assign({}, q, { task: 'park', phi: ph })), SI), 'μs needed to hold it'), 0.6, 1e-4); }
   { const st = Friction.convertState(V(tow), 'SI', 'US'); close('vehicle units round trip', out(Friction.solve(Friction.convertState(st, 'US', 'SI'), SI), 'Force P'), 2762.72, 1e-4); }
   close('one full turn e^(2πμ)', out(Friction.solve(mk({ mode: 'belt', bt: { known: 'low', T: 1, drums: [{ beta: 0, turns: 1, mu: 0.3 }] } }), SI), 'Tension after drum 1'), Math.exp(0.6 * Math.PI));
+  // two bodies: Problems 8-30, 8-31, 8-33, 8-45 and a stacked pair by hand
+  const TW = (o) => mk({ mode: 'two', fu: o.fu || 'lb', tw: Object.assign({ wBy: 'force' }, o) });
+  r = Friction.solve(TW({ arr: 'inc', WA: 10, WB: 6, muA: 0.15, muB: 0.25, k: 2, lower: 'A', conn: 'spring', task: 'both' }), US);
+  close('8-30 θ', out(r, 'Angle θ'), 10.62, 1e-3); close('8-30 x', out(r, 'Spring stretch needed'), 0.184, 2e-3);
+  r = Friction.solve(TW({ arr: 'inc', WA: 10, WB: 6, muA: 0.15, muB: 0.25, k: 2, lower: 'A', conn: 'spring', task: 'first' }), US);
+  close('8-31 θ', out(r, 'Angle θ'), 8.531, 1e-3); close('8-31 F_A', out(r, 'Friction under A, F_A'), 1.483, 1e-3); close('8-31 F_B', out(r, 'Friction under B, F_B'), 0.890, 1e-3);
+  r = Friction.solve(TW({ arr: 'inc', WA: 10, WB: 6, muA: 0.15, muB: 0.25, lower: 'A', conn: 'cord', task: 'first' }), US);
+  close('cord: lower block with smaller μ drags both', out(r, 'Angle θ'), 10.62, 1e-3);
+  r = Friction.solve(TW({ arr: 'push', WA: 450, WB: 200, muA: 0.3, muB: 0.6, how: 'push', tip: true, b: 2, h: 3 }), US);
+  truthy('8-33 he cannot move it', /No/.test(r.status.text)); close('8-33 needed', out(r, 'Push needed to move the crate'), 135);
+  r = Friction.solve(TW({ arr: 'push', fu: 'N', wBy: 'mass', mA: 100, mB: 60, muA: 0.3, muB: 0.4, how: 'rope', thC: 30, thM: 45 }), SI);
+  close('8-45 T', out(r, 'Rope tension needed to move the crate'), 289.66); truthy('8-45 he cannot move it', /No/.test(r.status.text));
+  r = Friction.solve(TW({ arr: 'stack', fu: 'N', WA: 100, WB: 200, muA: 0.3, muG: 0.2, tie: true, beta: 30, Pon: 'B', al: 0 }), SI);
+  close('stack T', out(r, 'Cord tension T'), 30 / (Math.cos(Math.PI / 6) + 0.15)); close('stack P', out(r, 'Force P to start motion'), 82.618, 1e-4);
+  r = Friction.solve(TW({ arr: 'stack', fu: 'N', WA: 100, WB: 200, muA: 0.3, muG: 0.05, tie: false, Pon: 'A', al: 0 }), SI);
+  close('stack: both slide when the floor is slick', out(r, 'Force P to start motion'), 15);
+  { const st = Friction.convertState(TW({ arr: 'inc', fu: 'lb', WA: 10, WB: 6, muA: 0.15, muB: 0.25, k: 2, task: 'both' }), 'US', 'SI'); close('two-body units round trip', out(Friction.solve(Friction.convertState(st, 'SI', 'US'), US), 'Spring stretch needed'), 0.1843, 1e-3); }
 });
 group('section engine', () => {
   // every kind and rotation against Green's theorem on its outline

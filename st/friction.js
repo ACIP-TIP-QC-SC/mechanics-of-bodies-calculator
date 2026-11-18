@@ -14,6 +14,8 @@
  *           is braked (locked) or driven: axle reactions, friction needed and μs needed when parked,
  *           the force P that starts it moving (towing) or that it can pull, and the steepest slope
  *           before it slips or tips (8.2)
+ *   two     two bodies (8.2): blocks on an incline joined by a spring or cord (the angle at which one or both
+ *           slip), a block on a block pulled apart or together, and a person pushing or pulling a crate
  * Forces are in the chosen force unit `fu`, lengths in m or ft, screw sizes in mm or in.
  * ===================================================================== */
 (function (root) {
@@ -33,6 +35,8 @@
       sc: { W: 2000, r: 5, l: 2, mu: 0.25, n: 2, task: 'raise' },
       vh: { wBy: 'mass', m: 1500, W: 14715, a: 1.5, b: 3, h: 1.1, phi: 12, rise: 'A', mu: 0.6, axA: 'locked', axB: 'free', task: 'park', front: 'B',
         hasP: false, P: 0, xP: -0.75, yP: 0.3, psi: 150, move: 'A' },
+      tw: { arr: 'inc', wBy: 'force', mA: 10, WA: 98.1, mB: 6, WB: 58.86, muA: 0.15, muB: 0.25, phi: 0, lower: 'A', conn: 'spring', k: 30, task: 'both',
+        Pon: 'B', al: 0, tie: true, beta: 30, muG: 0.3, how: 'push', thC: 0, thM: 0, tip: false, b: 1, h: 1.2 },
       bt: { known: 'high', T: 500, drums: [{ beta: 135, turns: 0, mu: 0.25 }, { beta: 135, turns: 0, mu: 0.25 }] },
     };
   }
@@ -56,6 +60,7 @@
     if (st.mode === 'belt') return belt(st.bt, c);
     if (st.mode === 'vehicle') return vehicle(st.vh, c);
     if (st.mode === 'bearing') return bearing(st.be, c);
+    if (st.mode === 'two') return two(st.tw, c);
     return block(st.bk, c);
   }
 
@@ -337,7 +342,7 @@
   /* ------------------------------------------------------------------ */
   /* Units                                                              */
   /* ------------------------------------------------------------------ */
-  const LEN = new Set(['b', 'H', 'hP', 'L', 's', 'a', 'xW', 'd', 'acc', 'h', 'xP', 'yP', 'R1', 'R2', 'rw', 'aB', 'rs']), SML = new Set(['r', 'l']), FOR = new Set(['W', 'P', 'Wp', 'T']), MAS = new Set(['m', 'mp']), MOM = new Set(['M']);
+  const LEN = new Set(['b', 'H', 'hP', 'L', 's', 'a', 'xW', 'd', 'acc', 'h', 'xP', 'yP', 'R1', 'R2', 'rw', 'aB', 'rs']), SML = new Set(['r', 'l']), FOR = new Set(['W', 'P', 'Wp', 'T', 'WA', 'WB']), MAS = new Set(['m', 'mp', 'mA', 'mB']), MOM = new Set(['M']);
 
 
   /* ------------------------------------------------------------------ */
@@ -515,18 +520,126 @@
     return res(text, cls, out, S, Object.assign(geoBase, { phi, NA: r.NA, NB: r.NB, FA, FB, P, move: q.move, verdict }), warn);
   }
 
+
+  /* ------------------------------------------------------------------ */
+  /* Two bodies: joined blocks on an incline, stacked blocks, person and crate */
+  /* ------------------------------------------------------------------ */
+  function two(q, c) {
+    const { F, Lu, U } = c, err = [];
+    const wa = weight(q, U, F, 'mA', 'WA'), wb = weight(q, U, F, 'mB', 'WB'), WA = wa.W, WB = wb.W, muA = +q.muA, muB = +q.muB;
+    const nA = q.arr === 'push' ? 'crate' : 'A', nB = q.arr === 'push' ? 'person' : 'B';
+    if (!(WA > 0) || !(WB > 0)) err.push('Both weights must be greater than zero.');
+    if (!(muA >= 0) || !(muB >= 0)) err.push('The coefficients of static friction must be zero or more.');
+    if (err.length) return fail(err);
+    const S = Steps(), out = [], warn = [], geo = { kind: 'two', arr: q.arr, c, WA, WB, muA, muB };
+    S.add({ t: 'Weights', r: `${q.arr === 'push' ? 'Crate' : 'Block A'}: ${wa.how.replace('W =', 'W_' + nA + ' =')};   ${q.arr === 'push' ? 'Person' : 'Block B'}: ${wb.how.replace('W =', 'W_' + nB + ' =')}` });
+
+    if (q.arr === 'inc') {
+      const low = q.lower === 'B' ? 'B' : 'A', up = low === 'A' ? 'B' : 'A', W = { A: WA, B: WB }, mu = { A: muA, B: muB }, k = +q.k, spring = q.conn === 'spring';
+      if (spring && !(k > 0)) return fail('Enter the spring stiffness k greater than zero.');
+      S.add({ t: 'Free-body diagrams', f: 'ΣF_x′ = 0 (along the slope);  ΣF_y′ = 0 (normal)', n: `Block ${low} sits lower on the slope and block ${up} higher, joined by a ${spring ? 'spring' : 'cord'}. For each block N = W cos θ, and along the slope W sin θ is held by friction and the ${spring ? 'spring' : 'cord'} force F_s (taken as tension, pulling the blocks toward each other).`,
+        s: `Block ${low}: F_s + F_${low} − W_${low} sin θ = 0;   Block ${up}: F_${up} − F_s − W_${up} sin θ = 0` });
+      // first slip with the connector carrying no force
+      const first = mu.A <= mu.B ? 'A' : 'B', th1 = Math.atan(mu[first]) / DEG;
+      const sumW = WA + WB, thB = Math.atan((muA * WA + muB * WB) / sumW) / DEG;
+      const at = (th) => { const sn = Math.sin(th * DEG), cs = Math.cos(th * DEG); return { sn, cs, NA: WA * cs, NB: WB * cs }; };
+      let th, Fs, FA, FB, text, task = q.task;
+      if (task === 'first' && !spring && mu[low] < mu[up]) {
+        S.add({ t: 'Which block slips first', n: `The lower block ${low} has the smaller μs, so it starts to slide first; the cord then tightens and block ${up} holds it back. The two can only move together, so the first motion is the motion of both blocks.` });
+        task = 'both';
+      }
+      if (task === 'first') {
+        const t = at(th1); th = th1; Fs = 0; FA = WA * t.sn; FB = WB * t.sn;
+        S.add({ t: 'First block to slip', f: 'tan θ = μs', n: `${spring ? 'The spring is unstretched, so it carries no force until a block moves.' : `The upper block ${up} has the smaller μs; when it slides the cord goes slack, so it moves on its own.`} Each block then holds itself by friction alone, F = W sin θ ≤ μs W cos θ, which first fails for the block with the smaller μs, block ${first}.`,
+          s: `θ = tan⁻¹(${fmt(mu[first])}) = ${fmt(th1)}°`, r: `θ = ${fmt(th1)}°: block ${first} slips` });
+        S.add({ t: 'Friction under each block', f: 'F = W sin θ;  N = W cos θ', s: `F_A = ${fmt(WA)} sin ${fmt(th)}° = ${fmt(FA)} ${F};   F_B = ${fmt(WB)} sin ${fmt(th)}° = ${fmt(FB)} ${F}`,
+          r: `Check: block ${first === 'A' ? 'B' : 'A'} needs F = ${fmt(first === 'A' ? FB : FA)} ${F} ≤ μs N = ${fmt((first === 'A' ? muB * WB : muA * WA) * Math.cos(th * DEG))} ${F}, so it does not slip` });
+        text = `Block ${first} slips first at θ = ${fmt(th)}°`;
+      } else {
+        const t = at(thB); th = thB; FA = muA * t.NA; FB = muB * t.NB;
+        Fs = W[low] * t.sn - mu[low] * W[low] * t.cs;
+        S.add({ t: 'Both blocks slip together', f: 'ΣW sin θ = Σ μs W cos θ  →  tan θ = (μ_A W_A + μ_B W_B)/(W_A + W_B)', n: 'Adding the equations along the slope removes the connector force; both friction forces are at their limits F = μs N.',
+          s: `tan θ = (${fmt(muA)}(${fmt(WA)}) + ${fmt(muB)}(${fmt(WB)}))/${fmt(sumW)} = ${fmt(Math.tan(thB * DEG))}`, r: `θ = ${fmt(thB)}°` });
+        S.add({ t: `Connector force (block ${low})`, f: `F_s = W_${low}(sin θ − μ_${low} cos θ)`, s: `F_s = ${fmt(W[low])}(sin ${fmt(th)}° − ${fmt(mu[low])} cos ${fmt(th)}°) = ${fmt(Fs)} ${F}`,
+          r: Fs >= 0 ? `F_s = ${fmt(Fs)} ${F} (tension)` : `F_s = ${fmt(-Fs)} ${F} (compression)` });
+        if (spring) {
+          const x = Fs / k;
+          S.add({ t: 'Spring stretch', f: 'F_s = k x', s: `x = ${fmt(Math.abs(Fs))}/${fmt(k)} = ${fmt(Math.abs(x))} ${Lu}`, r: `${Fs >= 0 ? 'Stretch' : 'Compression'} ${fmt(Math.abs(x))} ${Lu}` });
+          out.push({ k: Fs >= 0 ? 'Spring stretch needed' : 'Spring compression needed', v: Math.abs(x), u: Lu, hl: true });
+        } else if (Fs < 0) warn.push(`The cord would have to push (F_s = ${fmt(Fs)} ${F}); a cord goes slack, so the blocks would not slide together. Block ${up} slips first, on its own, at θ = ${fmt(Math.atan(mu[up]) / DEG)}°.`);
+        text = `Both slip at θ = ${fmt(th)}°`;
+      }
+      const t = at(th);
+      out.unshift({ k: 'Angle θ', v: th, u: '°', hl: true });
+      out.push({ k: 'N_A', v: t.NA, u: F }, { k: 'N_B', v: t.NB, u: F }, { k: 'Friction under A, F_A', v: FA, u: F, hl: true }, { k: 'Friction under B, F_B', v: FB, u: F, hl: true }, { k: spring ? 'Spring force F_s (+ tension)' : 'Cord tension', v: Fs, u: F });
+      return res(text, warn.length ? 'warn' : 'ok', out, S, Object.assign(geo, { phi: th, low, Fs, FA, FB, NA: t.NA, NB: t.NB, conn: q.conn, task }), warn);
+    }
+
+    if (q.arr === 'stack') {
+      const muG = +q.muG, al = +q.al, ca = Math.cos(al * DEG), sa = Math.sin(al * DEG), tie = !!q.tie, be = +q.beta, cb = Math.cos(be * DEG), sb = Math.sin(be * DEG);
+      if (!(muG >= 0)) return fail('The coefficient of friction at the floor must be zero or more.');
+      if (tie && q.Pon === 'A') return fail('Block A is tied to the wall, so P must pull block B.');
+      S.add({ t: 'Free-body diagrams', n: `Block A rests on block B, which rests on the floor. μs between A and B is ${fmt(muA)}; between B and the floor ${fmt(muG)}. P pulls block ${q.Pon} at ${fmt(al)}° above the horizontal.${tie ? ` Block A is held by a cord to the wall at ${fmt(be)}° above the horizontal.` : ''}` });
+      let P, N1, N2, F1, F2, T = 0, mech;
+      if (tie) {
+        T = (muA * WA) / (cb + muA * sb); N1 = WA - T * sb; F1 = muA * N1;
+        S.add({ t: 'Block A (held by the cord)', f: '→ ΣF_x: −T cos β + μ_A N₁ = 0;  ↑ ΣF_y: N₁ + T sin β − W_A = 0', n: 'B slides out from under A, so friction on A acts toward the motion of B and is at its limit.',
+          s: `T = μ_A W_A/(cos β + μ_A sin β) = ${fmt(muA)}(${fmt(WA)})/(${fmt(cb)} + ${fmt(muA)}(${fmt(sb)}))`, r: `T = ${fmt(T)} ${F};  N₁ = ${fmt(N1)} ${F};  F₁ = ${fmt(F1)} ${F}` });
+        P = (F1 + muG * (N1 + WB)) / (ca + muG * sa); N2 = N1 + WB - P * sa; F2 = muG * N2; mech = 'B slides out from under A';
+        S.add({ t: 'Block B', f: '→ ΣF_x: P cos α − F₁ − μ_G N₂ = 0;  ↑ ΣF_y: N₂ − N₁ − W_B + P sin α = 0', s: `P = (F₁ + μ_G(N₁ + W_B))/(cos α + μ_G sin α) = (${fmt(F1)} + ${fmt(muG)}(${fmt(N1 + WB)}))/(${fmt(ca)} + ${fmt(muG)}(${fmt(sa)}))`, r: `P = ${fmt(P)} ${F};  N₂ = ${fmt(N2)} ${F}` });
+      } else if (q.Pon === 'A') {
+        const P1 = (muA * WA) / (ca + muA * sa), P2 = (muG * (WA + WB)) / (ca + muG * sa);
+        S.add({ t: 'Case 1: A slides on B, B stays', f: 'P(cos α + μ_A sin α) = μ_A W_A', s: `P = ${fmt(muA)}(${fmt(WA)})/(${fmt(ca)} + ${fmt(muA)}(${fmt(sa)}))`, r: `P = ${fmt(P1)} ${F}` });
+        S.add({ t: 'Case 2: A and B slide together on the floor', f: 'P(cos α + μ_G sin α) = μ_G (W_A + W_B)', s: `P = ${fmt(muG)}(${fmt(WA + WB)})/(${fmt(ca)} + ${fmt(muG)}(${fmt(sa)}))`, r: `P = ${fmt(P2)} ${F}` });
+        if (P1 <= P2) { P = P1; mech = 'A slides on B'; N1 = WA - P * sa; F1 = muA * N1; N2 = WA + WB - P * sa; F2 = F1; }
+        else { P = P2; mech = 'A and B slide together'; N1 = WA - P * sa; F1 = P * ca; N2 = WA + WB - P * sa; F2 = muG * N2; }
+        S.add({ t: 'Smallest P', n: 'Motion starts in whichever way needs the smaller force.', r: `P = ${fmt(P)} ${F}: ${mech}` });
+      } else {
+        P = (muG * (WA + WB)) / (ca + muG * sa); N1 = WA; F1 = 0; N2 = WA + WB - P * sa; F2 = muG * N2; mech = 'A and B slide together';
+        S.add({ t: 'A and B together', f: 'P(cos α + μ_G sin α) = μ_G (W_A + W_B)', n: 'With nothing holding A, it moves with B: no force acts along the surface between them while they start to move together.', s: `P = ${fmt(muG)}(${fmt(WA + WB)})/(${fmt(ca)} + ${fmt(muG)}(${fmt(sa)}))`, r: `P = ${fmt(P)} ${F}` });
+      }
+      if (N1 < 0 || N2 < 0) warn.push('A normal force comes out negative: P lifts a block off its support at this angle.');
+      out.push({ k: 'Force P to start motion', v: P, u: F, hl: true }, { k: 'Normal force between A and B, N₁', v: N1, u: F }, { k: 'Normal force at the floor, N₂', v: N2, u: F }, { k: 'Friction between A and B', v: F1, u: F }, { k: 'Friction at the floor', v: F2, u: F });
+      if (tie) out.push({ k: 'Cord tension T', v: T, u: F, hl: true });
+      return res(`P = ${fmt(P)} ${F}: ${mech}`, warn.length ? 'warn' : 'ok', out, S, Object.assign(geo, { P, N1, N2, F1, F2, T, tie, Pon: q.Pon, al, beta: be, mech, muG }), warn);
+    }
+
+    /* person and crate */
+    const rope = q.how === 'rope', thC = rope ? +q.thC : 0, thM = rope ? +q.thM : 0, cc = Math.cos(thC * DEG), scn = Math.sin(thC * DEG), cm = Math.cos(thM * DEG), sm = Math.sin(thM * DEG);
+    let Tslide = (muA * WA) / (cc + muA * scn), Tneed = Tslide, how = 'slide';
+    S.add({ t: 'Crate: force to start it sliding', f: `→ ΣF_x: T cos θ_c − μ_c N_c = 0;  ↑ ΣF_y: N_c + T sin θ_c − W_c = 0`, n: rope ? `The rope pulls the crate at θ_c = ${fmt(thC)}° above the horizontal.` : 'The person pushes horizontally on the crate.',
+      s: `T = μ_c W_c/(cos θ_c + μ_c sin θ_c) = ${fmt(muA)}(${fmt(WA)})/(${fmt(cc)} + ${fmt(muA)}(${fmt(scn)}))`, r: `${rope ? 'T' : 'P'} = ${fmt(Tslide)} ${F};  N_c = ${fmt(WA - Tslide * scn)} ${F}` });
+    if (!rope && q.tip) {
+      const b = +q.b, h = +q.h;
+      if (!(b > 0) || !(h > 0)) return fail('Enter the crate width and the height of the push.');
+      const Ptip = (WA * b / 2) / h;
+      S.add({ t: 'Crate: force to tip it', f: 'P h = W_c (b/2)', s: `P = ${fmt(WA)}(${fmt(b / 2)})/${fmt(h)}`, r: `P = ${fmt(Ptip)} ${F} ${Ptip < Tslide ? '< the force to slide: the crate tips first' : '≥ the force to slide: it slides first'}` });
+      if (Ptip < Tslide) { Tneed = Ptip; how = 'tip'; }
+      out.push({ k: 'Push to tip the crate', v: Ptip, u: F });
+    }
+    const Tmax = (muB * WB) / (cm + muB * sm), Nm = WB - Tmax * sm;
+    S.add({ t: 'Person: largest force before the shoes slip', f: rope ? '→ ΣF_x: T cos θ_m − μ′ N_m = 0;  ↑ ΣF_y: N_m + T sin θ_m − W_m = 0' : 'F_m = P ≤ μ′ N_m,  N_m = W_m', n: rope ? `The rope pulls on the person at θ_m = ${fmt(thM)}° above the horizontal (through a pulley this can differ from the angle at the crate), which also lifts them and lowers their normal force.` : 'The crate pushes back on the person with the same force P, held by the friction at the shoes.',
+      s: `${rope ? 'T' : 'P'}_max = μ′ W_m/(cos θ_m + μ′ sin θ_m) = ${fmt(muB)}(${fmt(WB)})/(${fmt(cm)} + ${fmt(muB)}(${fmt(sm)}))`, r: `${rope ? 'T' : 'P'}_max = ${fmt(Tmax)} ${F};  N_m = ${fmt(Nm)} ${F}` });
+    const can = Tmax >= Tneed;
+    S.add({ t: 'Can the person move the crate?', r: can ? `Yes: the person can give ${fmt(Tmax)} ${F} and the crate needs ${fmt(Tneed)} ${F} (it ${how === 'tip' ? 'tips' : 'slides'})` : `No: the person's shoes slip at ${fmt(Tmax)} ${F}, less than the ${fmt(Tneed)} ${F} the crate needs` });
+    out.unshift({ k: `${rope ? 'Rope tension' : 'Push'} needed to move the crate`, v: Tneed, u: F, hl: true }, { k: `Largest ${rope ? 'pull' : 'push'} before the person slips`, v: Tmax, u: F, hl: true });
+    out.push({ k: 'Normal force under the crate', v: WA - Tneed * scn, u: F }, { k: 'Normal force under the person', v: Nm, u: F });
+    return res(can ? 'Yes, the person can move the crate' : 'No, the person slips first', can ? 'ok' : 'warn', out, S, Object.assign(geo, { rope, thC, thM, Tneed, Tmax, can, how, tip: !rope && q.tip, b: +q.b, h: +q.h }), []);
+  }
+
   function convertState(st, from, to) {
     if (from === to) return st;
     const { convert, twin, UNITS } = Core;
     const kL = convert(1, UNITS[from].len, UNITS[to].len), kS = convert(1, UNITS[from].lenS, UNITS[to].lenS), f1 = twin(st.fu, to), kF = convert(1, st.fu, f1), kM = convert(1, from === 'SI' ? 'kg' : 'slug', to === 'SI' ? 'kg' : 'slug');
     const kML = kF * kL;
-    ['bk', 'ic', 'ld', 'wd', 'sc', 'bt', 'vh', 'be'].forEach((g) => {
+    ['bk', 'ic', 'ld', 'wd', 'sc', 'bt', 'vh', 'be', 'tw'].forEach((g) => {
       const o = st[g]; if (!o) return;
       Object.keys(o).forEach((k) => {
         const v = o[k]; if (typeof v !== 'number') return;
         if (LEN.has(k)) o[k] = tidy(v * kL, 9); else if (SML.has(k)) o[k] = tidy(v * kS, 9); else if (FOR.has(k)) o[k] = tidy(v * kF, 9); else if (MAS.has(k)) o[k] = tidy(v * kM, 9); else if (g === 'be' && MOM.has(k)) o[k] = tidy(v * kML, 9);
       });
     });
+    if (st.tw) st.tw.k = tidy(+st.tw.k * kF / kL, 9);
     st.fu = f1;
     return st;
   }

@@ -28,7 +28,7 @@
   M.controls = function (c, C) {
     const st = S(), U = Core.UNITS[M.units], Lu = U.len, Ls = U.lenS, F = st.fu;
     let sec = C.section(c, 'Problem');
-    C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [['block', 'Block on a floor or slope: slip or tip'], ['incline', 'Block sliding on an incline'], ['ladder', 'Ladder against a wall'], ['wedge', 'Wedge'], ['screw', 'Square-threaded screw'], ['belt', 'Flat belt or rope over drums'], ['vehicle', 'Vehicle on wheels (car, truck, cart)'], ['bearing', 'Bearings and rolling resistance']] });
+    C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [['block', 'Block on a floor or slope: slip or tip'], ['incline', 'Block sliding on an incline'], ['ladder', 'Ladder against a wall'], ['wedge', 'Wedge'], ['screw', 'Square-threaded screw'], ['belt', 'Flat belt or rope over drums'], ['vehicle', 'Vehicle on wheels (car, truck, cart)'], ['bearing', 'Bearings and rolling resistance'], ['two', 'Two bodies: joined or stacked blocks, person and crate']] });
     C.seg(sec, { label: 'Force unit', get: () => st.fu, set: (v) => (st.fu = v), options: U.forces.map((f) => [f, f]) });
     if (st.mode === 'block') {
       const q = st.bk;
@@ -117,6 +117,42 @@
         if (q.task === 'mu') C.num(sec, { label: 'Moment that turns it M', get: () => q.M, set: (v) => (q.M = v), unit: FL });
         else C.num(sec, { label: q.kind === 'journal' ? 'Kinetic friction μk' : 'Static friction μs', get: () => q.mu, set: (v) => (q.mu = v), unit: '' });
       }
+    } else if (st.mode === 'two') {
+      const q = st.tw, push = q.arr === 'push', nA = push ? 'Crate' : 'Block A', nB = push ? 'Person' : 'Block B';
+      C.select(sec, { label: 'Arrangement', get: () => q.arr, set: (v) => (q.arr = v), options: [['inc', 'Two blocks on an incline, joined by a spring or cord'], ['stack', 'Block A on top of block B'], ['push', 'Person pushing or pulling a crate']] });
+      if (q.arr === 'inc') C.seg(sec, { label: 'Find the angle θ at which', get: () => q.task, set: (v) => (q.task = v), options: [['first', 'One block slips'], ['both', 'Both blocks slip']] });
+      sec = C.section(c, 'Bodies');
+      C.seg(sec, { label: 'Given as', get: () => q.wBy, set: (v) => (q.wBy = v), options: [['mass', 'Masses'], ['force', 'Weights']] });
+      [[nA, 'mA', 'WA', 'muA', push ? 'μs under the crate' : q.arr === 'stack' ? 'μs between A and B' : 'μs under A'], [nB, 'mB', 'WB', 'muB', push ? 'μs under the shoes μ′' : 'μs under B']].forEach(([n, mk, wk, uk, ul], i) => {
+        if (q.wBy === 'mass') C.num(sec, { label: `${n}: mass`, get: () => q[mk], set: (v) => (q[mk] = v), unit: massU() });
+        else C.num(sec, { label: `${n}: weight`, get: () => q[wk], set: (v) => (q[wk] = v), unit: F });
+        if (!(q.arr === 'stack' && i === 1)) C.num(sec, { label: ul, get: () => q[uk], set: (v) => (q[uk] = v), unit: '' });
+      });
+      if (q.arr === 'stack') C.num(sec, { label: 'μs between B and the floor', get: () => q.muG, set: (v) => (q.muG = v), unit: '' });
+      if (q.arr === 'inc') {
+        sec = C.section(c, 'Connection');
+        C.seg(sec, { label: 'Lower block on the slope', get: () => q.lower, set: (v) => (q.lower = v), options: [['A', 'A'], ['B', 'B']] });
+        C.seg(sec, { label: 'Joined by', get: () => q.conn, set: (v) => (q.conn = v), options: [['spring', 'Spring'], ['cord', 'Cord']] });
+        if (q.conn === 'spring') C.num(sec, { label: 'Spring stiffness k', get: () => q.k, set: (v) => (q.k = v), unit: `${F}/${Lu}` });
+        C.note(sec, q.conn === 'spring' ? 'The spring is unstretched while the blocks are at rest, so it carries no force until one of them moves.' : 'A cord can only pull, so it holds the lower block back only when that block has the smaller μs.');
+      } else if (q.arr === 'stack') {
+        sec = C.section(c, 'Force P and the cord');
+        C.toggle(sec, { label: 'Block A is tied to the wall by a cord', get: () => !!q.tie, set: (v) => { q.tie = v; if (v) q.Pon = 'B'; } });
+        if (q.tie) C.num(sec, { label: 'Cord angle above the horizontal β', get: () => q.beta, set: (v) => (q.beta = v), unit: '°' });
+        else C.seg(sec, { label: 'P pulls', get: () => q.Pon, set: (v) => (q.Pon = v), options: [['A', 'Block A (top)'], ['B', 'Block B (bottom)']] });
+        C.num(sec, { label: 'Angle of P above the horizontal α', get: () => q.al, set: (v) => (q.al = v), unit: '°' });
+      } else {
+        sec = C.section(c, 'How the person acts on the crate');
+        C.seg(sec, { label: 'The person', get: () => q.how, set: (v) => (q.how = v), options: [['push', 'Pushes it horizontally'], ['rope', 'Pulls a rope']] });
+        if (q.how === 'rope') {
+          C.num(sec, { label: 'Rope angle at the crate θ_c (above horizontal)', get: () => q.thC, set: (v) => (q.thC = v), unit: '°' });
+          C.num(sec, { label: 'Rope angle at the person θ_m (above horizontal)', get: () => q.thM, set: (v) => (q.thM = v), unit: '°' });
+          C.note(sec, 'Use the same angle for a straight rope; different angles for a rope over a pulley.');
+        } else {
+          C.toggle(sec, { label: 'Check whether the crate tips', get: () => !!q.tip, set: (v) => (q.tip = v) });
+          if (q.tip) { C.num(sec, { label: 'Crate width b', get: () => q.b, set: (v) => (q.b = v), unit: Lu }); C.num(sec, { label: 'Height of the push h', get: () => q.h, set: (v) => (q.h = v), unit: Lu }); }
+        }
+      }
     } else if (st.mode === 'vehicle') {
       const q = st.vh, AX = [['free', 'Roll freely'], ['locked', 'Braked (locked)'], ['driven', 'Driven']];
       C.seg(sec, { label: 'Find', get: () => q.task, set: (v) => (q.task = v), options: [['park', 'Reactions when parked'], ['force', 'Force P to move it'], ['slope', 'Steepest slope']] });
@@ -154,7 +190,7 @@
   M.compute = (U) => Friction.solve(S(), U);
   M.onUnits = (from, to) => Friction.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => ({ block: 'Free-body diagram and friction cone', incline: 'Block on the incline', ladder: 'Free-body diagram of the ladder', wedge: 'Free-body diagram of the wedge and load', screw: 'Screw and the unwrapped thread', belt: 'Belt on the drums', vehicle: 'Free-body diagram of the vehicle', bearing: 'Bearing' }[mode()]);
+  M.cap2D = () => ({ block: 'Free-body diagram and friction cone', incline: 'Block on the incline', ladder: 'Free-body diagram of the ladder', wedge: 'Free-body diagram of the wedge and load', screw: 'Screw and the unwrapped thread', belt: 'Belt on the drums', vehicle: 'Free-body diagram of the vehicle', bearing: 'Bearing', two: 'Free-body diagrams of both bodies' }[mode()]);
   M.cap3D = '3D view';
   M.hint = () => ({
     block: 'Green: the normal force N at its position x and the friction force F. Orange dashed: the friction cone at ±φs = tan⁻¹ μs; while the resultant of N and F stays inside it, the block does not slip, and while N stays within the base, it does not tip.',
@@ -164,6 +200,7 @@
     screw: 'The thread is unwrapped into a slope of rise l over a run of 2πr. The resultant R of the normal and friction forces leans at φs from the normal.',
     belt: 'The tension grows by e^(μβ) over each drum, toward the side the belt is about to slip to.',
     bearing: 'Collar and disk bearings: the axial force is spread uniformly over the ring, and friction on each ring dA acts at its radius. Journal bearings: the resultant R is tangent to the friction circle r_f = r sin φk. Rolling: the ground reaction acts a distance a ahead of the lowest point.',
+    two: 'Green: normal forces. Purple: friction at its limit μs N wherever slipping is about to happen. On a joined pair the spring or cord pulls the two blocks toward each other when it is in tension.',
     vehicle: 'Green: the normal forces at the two axles. Purple: friction, which acts only at braked or driven wheels; freely rolling wheels carry none. A wheel marked with a cross is locked by its brake. For tipping sideways on a road tilted across it, enter half the track width as the distances from G to A and B.',
   }[mode()]);
   M.legend = () => [[LCOL, 'Loads'], [RCOL, 'Normal forces'], [FCOL, 'Friction']].concat(mode() === 'block' ? [[CONE, 'Friction cone', 'ln']] : mode() === 'incline' ? [[CONE, 'Angle of repose', 'ln']] : []);
@@ -226,6 +263,7 @@
     if (g.kind === 'screw') return drawScrew(svg, g, opt);
     if (g.kind === 'vehicle') return drawVehicle(svg, g, opt);
     if (g.kind === 'bearing') return drawBearing(svg, g, opt);
+    if (g.kind === 'two') return drawTwo(svg, g, opt);
     return drawBelt(svg, g, opt);
   };
 
@@ -319,6 +357,95 @@
     }
     const vt = g.task === 'release' ? (g.moving ? 'Slides down the slope' : 'Stays at rest') : g.task === 'hold' ? (g.P > 0 ? `Held by P = ${fmt(g.P)} ${F}` : 'Friction alone holds it') : `Pushed up by P = ${fmt(g.P)} ${F}`;
     lbl(g0, 14, 22, vt, { color: g.task === 'release' && g.moving ? '#a3281f' : '#1e7a45', size: 13, weight: 800 });
+  }
+
+
+  /* -------- two bodies -------- */
+  function zigzag(g, a, b, color) {
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L, n = 8, w = 6, pts = [a];
+    for (let i = 1; i < 2 * n; i++) { const t = 0.15 + 0.7 * (i / (2 * n)), sg = i % 2 ? 1 : -1; pts.push([a[0] + ux * L * t - uy * w * sg, a[1] + uy * L * t + ux * w * sg]); }
+    pts.push(b);
+    s('polyline', { points: pts.map((p) => p.map((v) => v.toFixed(1)).join(',')).join(' '), fill: 'none', stroke: color, 'stroke-width': 1.8 }, g);
+  }
+  function drawTwo(svg, g, opt) {
+    const { F } = g.c, v = (k, x) => (opt.showP ? `${k} = ${fmt(Math.abs(x))} ${F}` : k), WOODC = '#d9b58a', WEDGEC = '#8a6a3f';
+    if (g.arr === 'inc') {
+      const ph = g.phi * DEG, cp = Math.cos(ph), sp = Math.sin(ph), R = (u, w) => [u * cp - w * sp, u * sp + w * cp], bs = 0.2, top = R(1, 0), xr = top[0] + 0.12;
+      const D = UI.Draw2D(svg, { xmin: -0.3, xmax: xr, ymin: -0.16, ymax: top[1] + 0.4 }, { pad: 52 }); hatch(svg);
+      const g0 = D.root, P = (p) => [D.X(p[0]), D.Y(p[1])], gl = P([-0.3, 0]), gr = P([xr, 0]);
+      poly(g0, [gl, gr, [gr[0], gr[1] + 12], [gl[0], gl[1] + 12]], { fill: 'url(#hatchF)' });
+      s('line', { x1: gl[0], y1: gl[1], x2: gr[0], y2: gr[1], stroke: '#4a5661', 'stroke-width': 2 }, g0);
+      poly(g0, [P([0, 0]), P([top[0], 0]), P(top)], { fill: '#e3e9ed', stroke: '#4a5661', 'stroke-width': 1.8 });
+      const o = P([0, 0]); arcPx(g0, o[0], o[1], 54, 0, g.phi, '#1d2733'); lbl(g0, o[0] - 8, o[1] + 16, `θ = ${fmt(g.phi)}°`, { color: '#1d2733', size: 11.5, anchor: 'end' });
+      const up = [cp, -sp], nrm = [-sp, -cp], blocks = g.low === 'A' ? [['A', 0.3], ['B', 0.7]] : [['B', 0.3], ['A', 0.7]];
+      blocks.forEach(([n, sc]) => {
+        poly(g0, [R(sc - bs / 2, 0), R(sc + bs / 2, 0), R(sc + bs / 2, bs), R(sc - bs / 2, bs)].map(P), { fill: WOODC, 'fill-opacity': 0.75, stroke: WEDGEC, 'stroke-width': 1.6 });
+        const G = P(R(sc, bs / 2)); lbl(g0, G[0], G[1] + 4, n, { anchor: 'middle', color: '#1d2733', size: 13, weight: 800 });
+        const W = n === 'A' ? g.WA : g.WB, N = n === 'A' ? g.NA : g.NB, Ff = n === 'A' ? g.FA : g.FB;
+        lbl(g0, G[0], G[1] - D.sc * bs * 0.5 - 8, v('W_' + n, W), { color: LCOL, anchor: 'middle', size: 11 });
+        force(g0, G[0] - 14, G[1] + 8, 0, 1, 34, LCOL, null, true, 2);
+        const b0 = P(R(sc + bs * 0.15, 0)); force(g0, b0[0], b0[1], nrm[0], nrm[1], 40, RCOL, v('N_' + n, N), false, 2);
+        if (Ff > 1e-12) { const fb = P(R(sc - bs * 0.5, -0.012)); force(g0, fb[0], fb[1], up[0], up[1], 40, FCOL, v('F_' + n, Ff), false, 2); }
+      });
+      const a = P(R(0.3 + bs / 2, bs / 2)), b = P(R(0.7 - bs / 2, bs / 2));
+      if (g.conn === 'spring') zigzag(g0, a, b, '#1d2733'); else s('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: '#1d2733', 'stroke-width': 1.8 }, g0);
+      const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      lbl(g0, m[0] - 10, m[1] - 14, g.conn === 'spring' ? `k${opt.showP && Math.abs(g.Fs) > 1e-12 ? `, F_s = ${fmt(Math.abs(g.Fs))} ${F} (${g.Fs > 0 ? 'T' : 'C'})` : ''}` : (opt.showP ? `T = ${fmt(g.Fs)} ${F}` : 'cord'), { anchor: 'middle', color: '#1d2733', size: 11 });
+      lbl(g0, 14, 22, g.task === 'first' ? `One block slips at θ = ${fmt(g.phi)}°` : `Both blocks slip at θ = ${fmt(g.phi)}°`, { color: '#a3281f', size: 13, weight: 800 });
+      return;
+    }
+    if (g.arr === 'stack') {
+      const D = UI.Draw2D(svg, { xmin: -1.6, xmax: 2.2, ymin: -0.5, ymax: 1.7 }, { pad: 40 }); hatch(svg);
+      const g0 = D.root, P = (x, y) => [D.X(x), D.Y(y)], f0 = P(-1.6, 0), f1 = P(2.2, 0);
+      poly(g0, [f0, f1, [f1[0], f1[1] + 12], [f0[0], f0[1] + 12]], { fill: 'url(#hatchF)' }); s('line', { x1: f0[0], y1: f0[1], x2: f1[0], y2: f1[1], stroke: '#4a5661', 'stroke-width': 2 }, g0);
+      const rect = (x0, y0, x1, y1, n) => { poly(g0, [P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)], { fill: WOODC, 'fill-opacity': n === 'A' ? 0.95 : 0.6, stroke: WEDGEC, 'stroke-width': 1.6 }); const c = P((x0 + x1) / 2, (y0 + y1) / 2); lbl(g0, c[0], c[1] + 5, n, { anchor: 'middle', color: '#1d2733', size: 14, weight: 800 }); };
+      rect(-0.9, 0, 0.9, 0.5, 'B'); rect(-0.45, 0.5, 0.45, 0.95, 'A');
+      if (g.tie) { const w = P(-1.5, 0.725 + 1.05 * Math.tan(g.beta * DEG)), a = P(-0.45, 0.725); poly(g0, [[w[0] - 10, w[1] - 30], [w[0], w[1] - 30], [w[0], w[1] + 30], [w[0] - 10, w[1] + 30]], { fill: 'url(#hatchF)' }); s('line', { x1: a[0], y1: a[1], x2: w[0], y2: w[1], stroke: '#1d2733', 'stroke-width': 1.8 }, g0); lbl(g0, (a[0] + w[0]) / 2, (a[1] + w[1]) / 2 - 8, opt.showP ? `T = ${fmt(g.T)} ${F}` : 'T', { anchor: 'middle', color: '#1d2733' }); }
+      const pa = g.Pon === 'A' ? P(0.45, 0.725) : P(0.9, 0.25), ad = g.al * DEG;
+      force(g0, pa[0], pa[1], Math.cos(ad), -Math.sin(ad), 56, LCOL, v('P', g.P), true, 2);
+      const wA = P(0, 0.725), wB = P(0.55, 0.25);
+      force(g0, wA[0], wA[1] + 8, 0, 1, 26, LCOL, null, true, 2); force(g0, wB[0], wB[1] + 8, 0, 1, 26, LCOL, null, true, 2);
+      lbl(g0, wA[0] + 6, wA[1] + 34, v('W_A', g.WA), { color: LCOL, size: 11 }); lbl(g0, wB[0] + 6, wB[1] + 34, v('W_B', g.WB), { color: LCOL, size: 11 });
+      const c1 = P(-0.2, 0.5), c2 = P(-0.5, 0);
+      if (g.F1 > 1e-12) force(g0, c1[0], c1[1] - 4, -1, 0, 40, FCOL, v('F₁ (on B)', g.F1), true, 2);
+      force(g0, c2[0], c2[1], 0, -1, 36, RCOL, v('N₂', g.N2), false, 4);
+      if (g.F2 > 1e-12) force(g0, c2[0] - 6, c2[1] + 6, -1, 0, 40, FCOL, v('F₂', g.F2), true, 2);
+      lbl(g0, 14, 22, `P = ${fmt(g.P)} ${F}: ${g.mech}`, { color: '#a3281f', size: 13, weight: 800 });
+      return;
+    }
+    // person and crate: the rope runs from the crate to the hands, over a pulley when the two angles differ
+    const cw = 1.1, ch = 1.1, xc = 0.4, cA = g.rope ? [xc, ch * 0.6] : [xc, 0.8];
+    let hand, Q = null;
+    if (!g.rope) hand = cA;
+    else {
+      const tc = g.thC * DEG, tm = g.thM * DEG, dc = [-Math.cos(tc), Math.sin(tc)], dm = [Math.cos(tm), Math.sin(tm)];
+      if (Math.abs(g.thC - g.thM) < 0.5) hand = [cA[0] + dc[0] * 1.4, cA[1] + dc[1] * 1.4];
+      else { Q = [cA[0] + dc[0] * 2.2, cA[1] + dc[1] * 2.2]; const t2 = dm[1] > 0.05 && Q[1] > 1.35 ? (Q[1] - 1.2) / dm[1] : 0.8; hand = [Q[0] - dm[0] * t2, Q[1] - dm[1] * t2]; }
+    }
+    const lean = g.rope ? -0.25 : 0.3, sh = [hand[0] - (g.rope ? 0.35 : 0.55), Math.max(1.45, hand[1] + 0.2)], hip = [sh[0] - lean * 0.5, 0.9], xf = sh[0] - lean;
+    const xs = [xf - 0.6, xc + cw + 0.5].concat(Q ? [Q[0] - 0.3] : []), ys = [2.1].concat(Q ? [Q[1] + 0.3] : []);
+    const D = UI.Draw2D(svg, { xmin: Math.min(...xs), xmax: Math.max(...xs), ymin: -0.6, ymax: Math.max(...ys) }, { pad: 40 }); hatch(svg);
+    const g0 = D.root, P = (x, y) => [D.X(x), D.Y(y)], f0 = P(Math.min(...xs), 0), f1 = P(Math.max(...xs), 0);
+    poly(g0, [f0, f1, [f1[0], f1[1] + 12], [f0[0], f0[1] + 12]], { fill: 'url(#hatchF)' }); s('line', { x1: f0[0], y1: f0[1], x2: f1[0], y2: f1[1], stroke: '#4a5661', 'stroke-width': 2 }, g0);
+    poly(g0, [P(xc, 0), P(xc + cw, 0), P(xc + cw, ch), P(xc, ch)], { fill: WOODC, 'fill-opacity': 0.75, stroke: WEDGEC, 'stroke-width': 1.6 });
+    const cc = P(xc + cw / 2, ch / 2); lbl(g0, cc[0], cc[1] + 5, 'crate', { anchor: 'middle', color: '#1d2733', size: 12, weight: 800 });
+    const stroke = { stroke: '#1d2733', 'stroke-width': 3, 'stroke-linecap': 'round', fill: 'none' };
+    const L = (a, b) => { const p = P(...a), q = P(...b); s('line', Object.assign({ x1: p[0], y1: p[1], x2: q[0], y2: q[1] }, stroke), g0); };
+    L([xf - 0.15, 0], hip); L([xf + 0.18, 0], hip); L(hip, sh); L(sh, hand);
+    const head = P(sh[0] + lean * 0.15, sh[1] + 0.25); s('circle', { cx: head[0], cy: head[1], r: D.sc * 0.13, fill: '#fff', stroke: '#1d2733', 'stroke-width': 2.4 }, g0);
+    const a = P(...cA);
+    if (!g.rope) force(g0, a[0], a[1] - 14, 1, 0, 50, LCOL, v('P', g.Tneed), false, 0);
+    else {
+      const h = P(...hand);
+      if (Q) { const q = P(...Q); s('polyline', { points: `${a[0]},${a[1]} ${q[0]},${q[1]} ${h[0]},${h[1]}`, fill: 'none', stroke: '#6b4f2a', 'stroke-width': 2 }, g0); s('line', { x1: q[0], y1: q[1], x2: q[0], y2: q[1] - 40, stroke: '#4a5661', 'stroke-width': 2 }, g0); s('circle', { cx: q[0], cy: q[1], r: 8, fill: '#e8eef1', stroke: '#4a5661', 'stroke-width': 1.6 }, g0); }
+      else s('line', { x1: a[0], y1: a[1], x2: h[0], y2: h[1], stroke: '#6b4f2a', 'stroke-width': 2 }, g0);
+      const tc = g.thC * DEG; force(g0, a[0], a[1], -Math.cos(tc), -Math.sin(tc), 48, LCOL, v('T', g.Tneed), true, 4);
+    }
+    const nc = P(xc + cw / 2, 0), nm = P(xf, 0);
+    force(g0, nc[0], nc[1], 0, -1, 36, RCOL, 'N_c', false, 4); force(g0, nc[0] + 30, nc[1] + 6, -1, 0, 40, FCOL, 'F_c', true, 2);
+    force(g0, nm[0], nm[1], 0, -1, 36, RCOL, 'N_m', false, 4); force(g0, nm[0] + (g.rope ? -4 : 4), nm[1] + 6, g.rope ? -1 : 1, 0, 40, FCOL, 'F_m', true, 2);
+    lbl(g0, 14, 22, g.can ? 'The person can move the crate' : 'The person slips first: the crate does not move', { color: g.can ? '#1e7a45' : '#a3281f', size: 13, weight: 800 });
+    lbl(g0, 14, 40, `needs ${fmt(g.Tneed)} ${F} · can give ${fmt(g.Tmax)} ${F}`, { color: '#1d2733', size: 11.5 });
   }
 
   /* -------- ladder -------- */
@@ -690,6 +817,32 @@
       arrow3(v, [-2, 1, 0.32], [-0.02, 1, 0.32], LCOL, 2.6); v.label([-2.1, 1.1, 0.32], val('P', `${fmt(g.P)} ${F}`), LCOL);
       v.autoBounds(); return;
     }
+    if (g.kind === 'two') {
+      v._hs = 0.06;
+      if (g.arr === 'inc') {
+        const ph = g.phi * DEG, cp = Math.cos(ph), sp = Math.sin(ph), R = (u, w) => [u * cp - w * sp, u * sp + w * cp], bs = 0.15, z = 0.3, top = R(1, 0);
+        v.box(-0.3, -0.04, -z * 1.3, top[0] + 0.12, 0, z * 1.3, GROUND, 1, GEDGE, { layer: rest([0, 1, 0], 2) });
+        v.extrude([[0, 0], [top[0], 0], top], -z, z, '#e3e9ed', 1, GEDGE, { layer: rest([-sp, cp, 0]) });
+        const bl = g.low === 'A' ? [['A', 0.3], ['B', 0.7]] : [['B', 0.3], ['A', 0.7]];
+        bl.forEach(([n, sc]) => { v.extrude([R(sc - bs / 2, 0), R(sc + bs / 2, 0), R(sc + bs / 2, bs), R(sc - bs / 2, bs)], -0.1, 0.1, WOOD, 1, WEDGE); const G = R(sc, bs / 2); v.label([G[0], G[1] + bs * 0.8, 0], n, '#1d2733'); arrow3(v, [G[0], G[1], 0.11], [G[0], G[1] - 0.2, 0.11], LCOL); });
+        const a = R(0.3 + bs / 2, bs / 2), b = R(0.7 - bs / 2, bs / 2); v.line([[a[0], a[1], 0], [b[0], b[1], 0]], '#1d2733', 2.4);
+      } else if (g.arr === 'stack') {
+        v.box(-1.6, -0.05, -0.8, 2.2, 0, 0.8, GROUND, 1, GEDGE, { layer: rest([0, 1, 0], 2) });
+        v.box(-0.9, 0, -0.45, 0.9, 0.5, 0.45, WOOD, 1, WEDGE); v.box(-0.45, 0.5, -0.3, 0.45, 0.95, 0.3, '#c9a06d', 1, WEDGE);
+        v.label([0, 1.02, 0], 'A', '#1d2733'); v.label([0.7, 0.55, 0.45], 'B', '#1d2733');
+        if (g.tie) { const yw = 0.725 + 1.05 * Math.tan(g.beta * DEG); v.box(-1.6, 0, -0.5, -1.5, yw + 0.4, 0.5, GROUND, 1, GEDGE); v.line([[-0.45, 0.725, 0], [-1.5, yw, 0]], '#1d2733', 2.4); }
+        const pa = g.Pon === 'A' ? [0.45, 0.725, 0] : [0.9, 0.25, 0], ad = g.al * DEG; arrow3(v, pa, [pa[0] + 0.6 * Math.cos(ad), pa[1] + 0.6 * Math.sin(ad), 0], LCOL, 2.6); v.label([pa[0] + 0.66 * Math.cos(ad), pa[1] + 0.66 * Math.sin(ad), 0], val('P', `${fmt(g.P)} ${F}`), LCOL);
+      } else {
+        v.box(-2.4, -0.05, -0.9, 2.2, 0, 0.9, GROUND, 1, GEDGE, { layer: rest([0, 1, 0], 2) });
+        v.box(0.4, 0, -0.55, 1.5, 1.1, 0.55, WOOD, 1, WEDGE);
+        const xf = g.rope ? -1.6 : -0.6; v.box(xf - 0.15, 0, -0.15, xf + 0.15, 1.6, 0.15, '#7fb3d5', 1, '#2e5f80'); v.label([xf, 1.8, 0], 'person', '#1d2733');
+        const a = g.rope ? [0.4, 0.66, 0] : [0.4, 1.25, 0], d = g.rope ? [-Math.cos(g.thC * DEG), Math.sin(g.thC * DEG)] : [1, 0];
+        if (g.rope) { v.line([a, [xf + 0.2, 1.3, 0]], '#6b4f2a', 2.4); arrow3(v, a, [a[0] + d[0] * 0.6, a[1] + d[1] * 0.6, 0.2], LCOL, 2.6); }
+        else arrow3(v, [a[0] - 0.7, a[1], 0], a, LCOL, 2.6);
+        v.label([a[0] - 0.4, a[1] + 0.15, 0], val(g.rope ? 'T' : 'P', `${fmt(g.Tneed)} ${F}`), LCOL);
+      }
+      v.autoBounds(); return;
+    }
     if (g.kind === 'vehicle') {
       const L = g.L, ang = (g.rise === 'B' ? 1 : -1) * g.phi * DEG, ca = Math.cos(ang), sa = Math.sin(ang), R = (u, w) => [u * ca - w * sa, u * sa + w * ca];
       const cs = carShape(g), zw = L * 0.32, ext = 0.55 * L; v._hs = L * 0.05;
@@ -739,6 +892,7 @@
   /* Presets                                                            */
   /* ------------------------------------------------------------------ */
   const B = (o) => ({ mode: 'block', fu: 'N', bk: o });
+  const TW = (o, fu, units) => ({ mode: 'two', fu, tw: Object.assign({ arr: 'inc', wBy: 'force', muA: 0.3, muB: 0.3, lower: 'A', conn: 'spring', k: 2, task: 'both', Pon: 'B', al: 0, tie: true, beta: 30, muG: 0.3, how: 'push', thC: 0, thM: 0, tip: false, b: 1, h: 1 }, o) });
   M.presets = [
     { name: 'Test: Book Example 8.1, crate pushed at 30° (does it move?)', units: 'SI', state: B({ wBy: 'mass', m: 20, b: 0.8, H: 0.6, phi: 0, mu: 0.3, task: 'check', P: 80, psi: -30, hP: 0.2 }),
       expect: [{ k: 'Friction needed F', v: 69.28 }, { k: 'Normal force N', v: 236.2 }, { k: 'Position of N, x', v: -0.00908 }, { k: 'Largest friction μs N', v: 70.86 }] },
@@ -788,6 +942,17 @@
       expect: [{ k: 'Force to roll P', v: 1066.67 }] },
     { name: 'Test: μs for impending motion of a 200 lb crate on a 30° slope held by 76 lb', units: 'US', state: { mode: 'incline', fu: 'lb', ic: { wBy: 'force', W: 200, phi: 30, task: 'mu', P: 76, psi: 0 } },
       expect: [{ k: 'μs for impending motion', v: 0.13856 }] },
+    { name: 'Test: Prob. 8-30, two blocks joined by a spring: angle when both slide, and the stretch', units: 'US', state: TW({ WA: 10, WB: 6, muA: 0.15, muB: 0.25, k: 2, task: 'both' }, 'lb'),
+      expect: [{ k: 'Angle θ', v: 10.62 }, { k: 'Spring stretch needed', v: 0.1843 }] },
+    { name: 'Test: Prob. 8-31, two blocks joined by a spring: angle when one slides', units: 'US', state: TW({ WA: 10, WB: 6, muA: 0.15, muB: 0.25, k: 2, task: 'first' }, 'lb'),
+      expect: [{ k: 'Angle θ', v: 8.531 }, { k: 'Friction under A, F_A', v: 1.4834 }, { k: 'Friction under B, F_B', v: 0.89 }] },
+    { name: 'Test: Prob. 8-33, can a 200 lb man push a 450 lb crate? (no)', units: 'US', state: TW({ arr: 'push', WA: 450, WB: 200, muA: 0.3, muB: 0.6, how: 'push', tip: true, b: 2, h: 3 }, 'lb'),
+      expect: [{ k: 'Push needed to move the crate', v: 135 }, { k: 'Largest push before the person slips', v: 120 }] },
+    { name: 'Test: Prob. 8-45, man pulling a 100 kg crate with a rope over a pulley (no)', units: 'SI', state: TW({ arr: 'push', wBy: 'mass', mA: 100, mB: 60, muA: 0.3, muB: 0.4, how: 'rope', thC: 30, thM: 45 }, 'N'),
+      expect: [{ k: 'Rope tension needed to move the crate', v: 289.66 }, { k: 'Largest pull before the person slips', v: 237.83 }] },
+    { name: 'Test: closed form, block B pulled out from under block A tied to the wall', units: 'SI', state: TW({ arr: 'stack', WA: 100, WB: 200, muA: 0.3, muG: 0.2, tie: true, beta: 30, Pon: 'B', al: 0 }, 'N'),
+      expect: [{ k: 'Cord tension T', v: 29.527 }, { k: 'Force P to start motion', v: 82.618 }] },
+    { name: 'Top block pulled: does it slide on the lower block or do both move?', units: 'SI', state: TW({ arr: 'stack', wBy: 'mass', mA: 20, mB: 30, muA: 0.4, muG: 0.15, tie: false, Pon: 'A', al: 20 }, 'N') },
     { name: 'Edge: a pull that lifts the block off the floor (fails on purpose)', units: 'SI', fails: true, state: B({ wBy: 'force', W: 100, b: 0.5, H: 0.5, phi: 0, mu: 0.3, task: 'check', P: 300, psi: 60, hP: 0.4 }) },
   ];
 
