@@ -18,7 +18,8 @@
  *   round   round body (spool, hoop, disk) on a floor and against a wall, each rough or smooth: the force P that
  *           turns it in place, whether a given P turns it, or the μs at which it just turns (8.2)
  *   brake   block brake or pawl: a shoe on a lever pressed against a wheel that carries a torque M; the lever
- *           force for M, the torque a force resists, and self-locking (8.2)
+ *           force for M, the torque a force resists, and self-locking (8.2); a double-block brake with two
+ *           levers, a link, a bell-crank and a handle (Probs. 8-37, 8-38)
  *   two     two bodies (8.2): blocks on an incline joined by a spring or cord (the angle at which one or both
  *           slip), a block on a block pulled apart or together, and a person pushing or pulling a crate
  * Forces are in the chosen force unit `fu`, lengths in m or ft, screw sizes in mm or in.
@@ -26,7 +27,7 @@
 (function (root) {
   'use strict';
   const Core = root.Core || require('../shared/core.js');
-  const { fmt, fail, Steps, tidy, bisect } = Core;
+  const { fmt, fail, Steps, tidy, bisect, linSolve } = Core;
   const DEG = Math.PI / 180;
 
   function defaults() {
@@ -43,7 +44,9 @@
       tw: { arr: 'inc', wBy: 'force', mA: 10, WA: 98.1, mB: 6, WB: 58.86, muA: 0.15, muB: 0.25, phi: 0, lower: 'A', conn: 'spring', k: 30, task: 'both',
         Pon: 'B', al: 0, tie: true, beta: 30, muG: 0.3, how: 'push', thC: 0, thM: 0, tip: false, b: 1, h: 1.2 },
       rd: { wBy: 'force', m: 30, W: 300, R: 3, wall: 'right', muF: 0.25, muW: 0.25, task: 'P', rP: 1, thP: -90, psi: 0, P: 300 },
-      br: { rW: 0.25, mu: 0.4, task: 'P', M: 800, P: 100, a: 0.2, b: 0.4, e: 0.05, rev: false },
+      br: { rW: 0.25, mu: 0.4, task: 'P', M: 800, P: 100, a: 0.2, b: 0.4, e: 0.05, rev: false,
+        // double-block brake (kind 'double'): wheel, levers AD and BK, link KC, bell-crank EDC, link EJ and handle
+        kind: 'single', task2: 'P', r2: 0.2, M2: 5, P2: 1, rev2: false, mu2: 0.8, hH: 0.4, hD: 0.7, hI: 0.4, hK: 0.8, dDC: 0.1, dDE: 0.2, aP: 0.65, aJ: 0.15, t2: 0 },
       bt: { known: 'high', T: 500, drums: [{ beta: 135, turns: 0, mu: 0.25, alpha: 0 }, { beta: 135, turns: 0, mu: 0.25, alpha: 0 }], wheel: false, task: 'T', rW: 0.15, M: 50, P: 30, lever: false, aL: 0.4, dT: 0, dS: 0.2 },
     };
   }
@@ -502,6 +505,7 @@
    * other way reverses F, so e changes sign. P ≤ 0 means the lever locks by itself (self-locking, a pawl).
    */
   function brake(q, c) {
+    if (q.kind === 'double') return brake2(q, c);
     const { F, FL, Lu } = c, err = [], r = +q.rW, mu = +q.mu, a = +q.a, b = +q.b, e = (+q.e || 0) * (q.rev ? -1 : 1), task = q.task || 'P';
     if (!(r > 0)) err.push('Enter the radius of the wheel.');
     if (!(mu > 0)) err.push('μs must be greater than zero.');
@@ -545,10 +549,70 @@
     return res(`M = ${fmt(M)} ${FL}`, 'ok', out, S, geo(N, M, P));
   }
 
+  /**
+   * Double-block brake (Probs. 8-37, 8-38). Shoe H on lever AD (pinned at A) and shoe I on lever BK (pinned at B) press
+   * on opposite sides of a wheel of radius r carrying a torque M. The link KC (horizontal, in tension) joins the top K
+   * of BK to arm DC of the bell-crank EDC pinned at the top D of AD; the vertical link EJ joins arm DE to the handle,
+   * which turns about a pivot with P at a_P and J at a_J from it. At slipping F = μs N at each shoe. The friction on
+   * each shoe acts at its face, a distance t from the lever's line; s = +1 when M is counterclockwise, −1 clockwise.
+   *   Wheel      ΣM_O = 0:  μs (N_H + N_I) r = M
+   *   Lever BK   ΣM_B = 0:  F_KC h_K = N_I (h_I + s μs t)
+   *   Lever AD   ΣM_A = 0:  D_x h_D = N_H (h_H − s μs t)
+   *   Crank EDC  ΣF_x = 0:  F_KC = D_x;    ΣM_D = 0:  F_EJ d_DE = F_KC d_DC
+   *   Handle     ΣM = 0 about its pivot:  P a_P = F_EJ a_J
+   * With t = 0 (the book) friction passes through A and B, so the sense of M does not matter. A lever whose arm
+   * h ∓ μs t is not positive presses its shoe on by itself: the brake is self-locking for that sense of turning.
+   */
+  function brake2(q, c) {
+    const { F, FL, Lu } = c, err = [], task = q.task2 === 'M' ? 'M' : 'P';
+    const r = +q.r2, mu = +q.mu2, hH = +q.hH, hD = +q.hD, hI = +q.hI, hK = +q.hK, dDC = +q.dDC, dDE = +q.dDE, aP = +q.aP, aJ = +q.aJ, t = +q.t2 || 0, sg = q.rev2 ? -1 : 1;
+    if (!(r > 0)) err.push('Enter the radius of the wheel r (above zero).');
+    if (!(mu > 0)) err.push('μs must be greater than zero.');
+    [['hH', hH, 'height h_H of shoe H above A'], ['hD', hD, 'height h_D of the pin D above A'], ['hI', hI, 'height h_I of shoe I above B'], ['hK', hK, 'height h_K of K above B'],
+      ['dDC', dDC, 'arm D–C of the bell-crank'], ['dDE', dDE, 'arm D–E of the bell-crank'], ['aP', aP, 'arm of P from the handle pivot'], ['aJ', aJ, 'arm of J from the handle pivot']]
+      .forEach(([, v, what]) => { if (!(v > 0)) err.push(`Enter the ${what} (every length must be above zero).`); });
+    if (!(t >= 0)) err.push('The shoe offset t cannot be negative (0 puts the shoe face on the lever line).');
+    if (task === 'P' && !(+q.M2 > 0)) err.push('Enter the torque M on the wheel.');
+    if (task === 'M' && !(+q.P2 > 0)) err.push('Enter the force P on the handle.');
+    if (err.length) return fail(err);
+    const yK = hK - hI, yC = hD + dDC - hH; // heights above the wheel centre O
+    if (Math.abs(yK - yC) > 1e-6 * Math.max(hK, hD + dDC)) return fail(`The link KC must be horizontal: K is ${fmt(yK)} ${Lu} above the centre of the wheel but C is ${fmt(yC)} ${Lu} (h_D + d_DC − h_H). Make h_K − h_I equal h_D + d_DC − h_H.`);
+    const S = Steps(), out = [], kH = hH - sg * mu * t, kI = hI + sg * mu * t, sense = sg > 0 ? 'counterclockwise' : 'clockwise';
+    const lock = !(kH > 1e-12 * hH && kI > 1e-12 * hI);
+    S.add({ t: 'Free-body diagrams', n: `Wheel: the torque M (${sense}), the normal forces N_H and N_I of the shoes and, as it is about to slip, friction F = μs N at each shoe against the turning. Lever AD: N_H at h_H, the pin force D_x at h_D. Lever BK: N_I at h_I, the link force F_KC at h_K. Bell-crank EDC: F_KC at C, F_EJ at E and the pin D. Handle: P and F_EJ.${t > 0 ? ` Each shoe face is ${fmt(t)} ${Lu} from its lever's line, so friction has a moment about A and B.` : ' The shoe faces are on the lever lines, so friction passes through A and B.'}` });
+    const geo = (x) => Object.assign({ kind: 'brake2', c, task, r, mu, hH, hD, hI, hK, dDC, dDE, aP, aJ, t, rev: !!q.rev2, lock }, x);
+    if (lock) {
+      const which = kH <= 1e-12 * hH ? 'AD (shoe H)' : 'BK (shoe I)';
+      S.add({ t: 'Self-locking', n: `On lever ${which} the moment of friction about the pin outweighs that of the normal force, so the shoe stays pressed on the wheel with no force from the link.`, f: 'h_H − s μs t ≤ 0  or  h_I + s μs t ≤ 0', s: `h_H − s μs t = ${fmt(kH)},  h_I + s μs t = ${fmt(kI)}`, r: 'Self-locking for this sense of turning.' });
+      if (task === 'P') { out.push({ k: 'Force on the handle P', v: 0, u: F, hl: true }); return res('Self-locking: no force is needed', 'ok', out, S, geo({ M: +q.M2, P: 0 }), ['With these arms the brake is self-locking for this sense of turning; turning the wheel the other way would need a force.']); }
+      out.push({ k: 'Torque it resists M', v: 'any', u: '', hl: true });
+      return res('Self-locking: it holds any torque', 'ok', out, S, geo({ M: NaN, P: +q.P2 }));
+    }
+    // unknowns [N_H, N_I, F_KC, D_x, F_EJ, P or M]
+    const A = [[mu * r, mu * r, 0, 0, 0, task === 'P' ? 0 : -1], [0, -kI, hK, 0, 0, 0], [-kH, 0, 0, hD, 0, 0], [0, 0, 1, -1, 0, 0], [0, 0, -dDC, 0, dDE, 0], [0, 0, 0, 0, -aJ, task === 'P' ? aP : 0]];
+    const b = task === 'P' ? [+q.M2, 0, 0, 0, 0, 0] : [0, 0, 0, 0, 0, -aP * +q.P2];
+    const x = linSolve(A, b).x;
+    if (!x) return fail('The equations of the brake have no unique solution for these lengths.');
+    const [NH, NI, FKC, , FEJ] = x, P = task === 'P' ? x[5] : +q.P2, M = task === 'P' ? +q.M2 : x[5];
+    if (!(P > 0)) { out.push({ k: 'Force on the handle P', v: 0, u: F, hl: true }); return res('Self-locking: no force is needed', 'ok', out, S, geo({ M, P: 0 }), ['With these arms the brake is self-locking for this sense of turning; turning the wheel the other way would need a force.']); }
+    const tt = (k) => (t > 0 ? ` ${sg * (k === 'H' ? -1 : 1) > 0 ? '+' : '−'} μs t` : '');
+    S.add({ t: 'Wheel', f: 'ΣM_O = 0:  M − μs (N_H + N_I) r = 0', s: `${fmt(M)} − ${fmt(mu)}(N_H + N_I)(${fmt(r)}) = 0`, r: `N_H + N_I = ${fmt(NH + NI)} ${F}` });
+    S.add({ t: 'Lever BK', f: `ΣM_B = 0:  F_KC h_K − N_I (h_I${tt('I')}) = 0`, s: `F_KC(${fmt(hK)}) − N_I(${fmt(kI)}) = 0`, r: `F_KC = ${fmt(kI / hK)} N_I` });
+    S.add({ t: 'Lever AD', f: `ΣM_A = 0:  N_H (h_H${tt('H')}) − D_x h_D = 0`, s: `N_H(${fmt(kH)}) − D_x(${fmt(hD)}) = 0`, r: `D_x = ${fmt(kH / hD)} N_H` });
+    S.add({ t: 'Bell-crank EDC', f: 'ΣF_x = 0:  F_KC − D_x = 0;   ΣM_D = 0:  F_EJ d_DE − F_KC d_DC = 0', s: `${fmt(kI / hK)} N_I = ${fmt(kH / hD)} N_H;   F_EJ(${fmt(dDE)}) = F_KC(${fmt(dDC)})`,
+      r: `N_H = ${fmt(NH)} ${F}, N_I = ${fmt(NI)} ${F}, F_KC = D_x = ${fmt(FKC)} ${F}, F_EJ = ${fmt(FEJ)} ${F}` });
+    S.add({ t: 'Handle', f: 'ΣM = 0 about its pivot:  P a_P − F_EJ a_J = 0', s: task === 'P' ? `P(${fmt(aP)}) − ${fmt(FEJ)}(${fmt(aJ)}) = 0` : `${fmt(P)}(${fmt(aP)}) − F_EJ(${fmt(aJ)}) = 0`, r: task === 'P' ? `P = ${fmt(P)} ${F}` : `F_EJ = ${fmt(FEJ)} ${F}, so M = μs (N_H + N_I) r = ${fmt(M)} ${FL}` });
+    if (task === 'P') out.push({ k: 'Force on the handle P', v: P, u: F, hl: true }); else out.push({ k: 'Torque it resists M', v: M, u: FL, hl: true });
+    out.push({ k: 'Normal force at shoe H, N_H', v: NH, u: F }, { k: 'Normal force at shoe I, N_I', v: NI, u: F }, { k: 'Friction at shoe H, μs N_H', v: mu * NH, u: F }, { k: 'Friction at shoe I, μs N_I', v: mu * NI, u: F },
+      { k: 'Force in link KC, F_KC', v: FKC, u: F }, { k: 'Force in link EJ, F_EJ', v: FEJ, u: F });
+    return res(task === 'P' ? `P = ${fmt(P)} ${F}` : `M = ${fmt(M)} ${FL}`, 'ok', out, S, geo({ M, P, NH, NI, FKC, FEJ }));
+  }
+
   /* ------------------------------------------------------------------ */
   /* Units                                                              */
   /* ------------------------------------------------------------------ */
-  const LEN = new Set(['rW', 'aL', 'dT', 'dS', 'R', 'rP', 'e', 'b', 'H', 'hP', 'L', 's', 'a', 'xW', 'd', 'acc', 'h', 'xP', 'yP', 'R1', 'R2', 'rw', 'aB', 'rs']), SML = new Set(['r', 'l']), FOR = new Set(['W', 'P', 'Wp', 'T', 'WA', 'WB']), MAS = new Set(['m', 'mp', 'mA', 'mB']), MOM = new Set(['M']);
+  const LEN = new Set(['rW', 'aL', 'dT', 'dS', 'R', 'rP', 'e', 'b', 'H', 'hP', 'L', 's', 'a', 'xW', 'd', 'acc', 'h', 'xP', 'yP', 'R1', 'R2', 'rw', 'aB', 'rs',
+    'r2', 'hH', 'hD', 'hI', 'hK', 'dDC', 'dDE', 'aP', 'aJ', 't2']), SML = new Set(['r', 'l']), FOR = new Set(['W', 'P', 'Wp', 'T', 'WA', 'WB', 'P2']), MAS = new Set(['m', 'mp', 'mA', 'mB']), MOM = new Set(['M', 'M2']);
 
 
   /* ------------------------------------------------------------------ */

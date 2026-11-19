@@ -503,6 +503,39 @@ group('friction module', () => {
   close('stack: both slide when the floor is slick', out(r, 'Force P to start motion'), 15);
   { const st = Friction.convertState(TW({ arr: 'inc', fu: 'lb', WA: 10, WB: 6, muA: 0.15, muB: 0.25, k: 2, task: 'both' }), 'US', 'SI'); close('two-body units round trip', out(Friction.solve(Friction.convertState(st, 'SI', 'US'), US), 'Spring stretch needed'), 0.1843, 1e-3); }
 });
+group('statics: double-block brake', () => {
+  const run = (o, sys) => { const st = Friction.defaults(); st.mode = 'brake'; st.fu = sys === 'US' ? 'lb' : 'N'; Object.assign(st.br, { kind: 'double' }, o); return Friction.solve(st, U[sys || 'SI']); };
+  let r = run({});
+  close('8-37 P', out(r, 'Force on the handle P'), 0.962); close('8-37 N_I', out(r, 'Normal force at shoe I, N_I'), 16.667);
+  close('8-37 N_H', out(r, 'Normal force at shoe H, N_H'), 14.5833); close('8-37 F_EJ', out(r, 'Force in link EJ, F_EJ'), 4.1667);
+  close('8-37 N_H + N_I = M/(μs r)', out(r, 'Normal force at shoe H, N_H') + out(r, 'Normal force at shoe I, N_I'), 31.25, 1e-9);
+  truthy('8-37 one highlighted result', r.out.filter((o) => o.hl).length === 1);
+  r = run({ rev2: true }); close('8-38 (clockwise) P', out(r, 'Force on the handle P'), 0.962);
+  r = run({ task2: 'M', P2: 0.0625 / 0.065 }); close('torque held by P = 0.9615 N is 5 N·m', out(r, 'Torque it resists M'), 5, 1e-9);
+  // Hand check (not from the book): shoe faces t = 0.05 m from the lever lines, M = 5 N·m counterclockwise, other values as 8-37.
+  //   Lever AD: D_x(0.7) = N_H(0.4 − 0.8·0.05) = 0.36 N_H → D_x = 0.514286 N_H
+  //   Lever BK: F_KC(0.8) = N_I(0.4 + 0.8·0.05) = 0.44 N_I → F_KC = 0.55 N_I;  F_KC = D_x → N_I = 0.935065 N_H
+  //   N_H + N_I = 31.25 → N_H = 16.1494 N, N_I = 15.1006 N, F_KC = 8.30533 N, F_EJ = F_KC/2 = 4.15266 N, P = 4.15266(0.15/0.65) = 0.958306 N
+  // Turned clockwise the arms swap (0.44 on AD, 0.36 on BK): N_H = 13.0381 N, N_I = 18.2119 N, P = 0.945618 N.
+  r = run({ t2: 0.05 });
+  close('offset shoes N_H', out(r, 'Normal force at shoe H, N_H'), 16.1494, 1e-5); close('offset shoes N_I', out(r, 'Normal force at shoe I, N_I'), 15.1006, 1e-5); close('offset shoes P', out(r, 'Force on the handle P'), 0.958306, 1e-5);
+  r = run({ t2: 0.05, rev2: true });
+  close('offset shoes, clockwise N_H', out(r, 'Normal force at shoe H, N_H'), 13.0381, 1e-5); close('offset shoes, clockwise P', out(r, 'Force on the handle P'), 0.945618, 1e-5);
+  r = run({ t2: 0.6 }); truthy('a large shoe offset is self-locking', r.ok && out(r, 'Force on the handle P') === 0 && /self-locking/.test(r.warn[0]));
+  // units round trip (N and m → lb and ft → N and m)
+  const st = Friction.defaults(); st.mode = 'brake'; Object.assign(st.br, { kind: 'double', t2: 0.05 }); const a = Friction.solve(st, U.SI);
+  Friction.convertState(st, 'SI', 'US'); const b = Friction.solve(st, U.US); Friction.convertState(st, 'US', 'SI'); const c = Friction.solve(st, U.SI);
+  close('units: P in lb', out(b, 'Force on the handle P'), out(a, 'Force on the handle P') / 4.4482216, 1e-4); close('units: round trip P', out(c, 'Force on the handle P'), out(a, 'Force on the handle P'), 1e-6);
+  // validation
+  r = run({ hK: 0.9 }); truthy('link KC not level fails', !r.ok && /link KC must be horizontal/.test(r.err[0]));
+  r = run({ r2: 0 }); truthy('zero radius fails', !r.ok && /radius of the wheel/.test(r.err[0]));
+  r = run({ mu2: 0 }); truthy('μs = 0 fails', !r.ok && /μs must be greater than zero/.test(r.err[0]));
+  r = run({ dDE: 0 }); truthy('a zero length fails', !r.ok && /every length must be above zero/.test(r.err.join(' ')));
+  r = run({ task2: 'M', P2: 0 }); truthy('no handle force fails', !r.ok && /force P on the handle/.test(r.err[0]));
+  // the single brake is unchanged by the new default keys
+  const s1 = Friction.defaults(); s1.mode = 'brake'; r = Friction.solve(s1, U.SI); truthy('single brake still the default', r.ok && out(r, 'Force on the lever P') > 0);
+});
+
 group('section engine', () => {
   // every kind and rotation against Green's theorem on its outline
   let worst = 0;
