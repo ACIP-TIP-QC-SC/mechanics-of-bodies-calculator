@@ -146,17 +146,17 @@
     if (res.geo.mode === 'dep') return draw2DDep(svg, res.geo, opt);
     const g = res.geo, u = g.u, vert = dopt('track', 'h') === 'v', [lo, hi] = range(g), span = hi - lo;
     const P = (s, off) => (vert ? [off || 0, s] : [s, off || 0]);
-    // the arrows need room past both ends of the path: find the scale first, then widen the bounds by 110 px
+    // the arrows and their labels need room past both ends of the path: find the scale first, then widen the bounds
     const box = (e) => (vert ? { xmin: -span * 0.5, xmax: span * 0.5, ymin: lo - e, ymax: hi + e } : { xmin: lo - e, xmax: hi + e, ymin: -span * 0.2, ymax: span * 0.2 });
     const sc0 = UI.Draw2D(svg, box(span * 0.06), { pad: 40 }).sc;
-    const D = UI.Draw2D(svg, box(span * 0.06 + 110 / sc0), { pad: 40 });
+    const D = UI.Draw2D(svg, box(span * 0.06 + (vert ? 110 : 170) / sc0), { pad: 40 });
     const px = (w) => w / D.sc, pad = span * 0.06 + 70 / D.sc;
     // track and its scale
     D.line(P(lo - pad), P(hi + pad), { stroke: K.ink, sw: 2 });
     const tk = Charts.niceTicks(lo, hi, 6).ticks;
     tk.forEach((x) => { D.line(P(x, -px(5)), P(x, px(5)), { stroke: K.ink, sw: 1.2 }); D.text(P(x, vert ? px(-9) : -px(17)), fmt(x), { anchor: vert ? 'end' : 'middle', dy: vert ? 4 : 0, color: '#5a6b75', size: 10.5, weight: 400 }); });
     D.arrow(P(hi + pad - px(30)), P(hi + pad), { color: K.ink, w: 2, head: 10 });
-    D.text(P(hi + pad, vert ? px(10) : px(12)), `+s (${u.L})`, { anchor: vert ? 'start' : 'end', color: K.ink, size: 12 });
+    D.text(P(hi + pad, vert ? px(10) : -px(17)), `+s (${u.L})`, { anchor: vert ? 'start' : 'end', color: K.ink, size: 12 }); // beside the tick values, clear of the vectors
     D.text(P(0, vert ? px(-9) : -px(30)), 'O', { anchor: vert ? 'end' : 'middle', dx: vert ? -22 : 0, dy: vert ? 4 : 0, color: K.ink, size: 12, weight: 700 });
     const t = tNow(g), parts = g.mode === 'two' ? [['A', g.MA, CA, -1], ['B', g.MB, CB, 1]] : [[null, g.M, K.pos, 0]];
     parts.forEach(([name, m, col, side]) => {

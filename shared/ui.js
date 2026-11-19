@@ -162,6 +162,42 @@
    * Create a drawing context mapping world `bounds` into the SVG.
    * bounds = {xmin, xmax, ymin, ymax}; opts.pad (px); opts.padR (extra right px)
    */
+  /** Estimated box of a label (the width from the number of characters, about 0.56 em each for the bold labels used here). */
+  function textBox(x, y, str, size, anchor, base) {
+    const w = String(str).length * size * 0.56, l = anchor === 'middle' ? x - w / 2 : anchor === 'end' ? x - w : x;
+    const t = base === 'middle' || base === 'central' ? y - size * 0.5 : base === 'hanging' ? y : y - size * 0.85;
+    return { l, t, r: l + w, b: t + size * 1.05, s: String(str) };
+  }
+  /** Keep a label inside a W × H drawing: shift it sideways or down/up by the part that would be cut off. */
+  function fitText(x, y, str, size, anchor, W, H, base) {
+    const b = textBox(x, y, str, size, anchor, base), w = b.r - b.l;
+    if (b.l < 2) x += 2 - b.l; else if (b.r > W - 2) x -= Math.min(b.r - (W - 2), Math.max(0, b.l - 2));
+    if (b.t < 2) y += 2 - b.t; else if (b.b > H - 2) y -= b.b - (H - 2);
+    return [x, y];
+  }
+  /** Place a label so it does not sit on a label already drawn in the same SVG. Each label carries its box as `_box`.
+   *  A movable label steps up or down by a line until it is clear (staying inside the drawing); a fixed one (axis ticks)
+   *  stays put, and is hidden when it would only repeat the same text on top of itself. `lim` = [top, bottom] keeps a
+   *  moved label inside one panel of a chart. Returns [x, y, box, hide]. */
+  function placeText(svg, x, y, str, size, anchor, base, W, H, fixed, lim) {
+    const others = [];
+    if (svg) svg.querySelectorAll('text').forEach((t) => { if (t._box) others.push(t._box); });
+    const area = (a) => Math.max(1, (a.r - a.l) * (a.b - a.t));
+    const hit = (a) => others.find((o) => {
+      const w = Math.min(a.r, o.r) - Math.max(a.l, o.l), h = Math.min(a.b, o.b) - Math.max(a.t, o.t);
+      return w > 2 && h > 2;
+    });
+    let b = textBox(x, y, str, size, anchor, base);
+    const first = hit(b);
+    if (!first) return [x, y, b, false];
+    if (fixed) return [x, y, b, first.s === b.s];
+    const step = size * 1.15, t0 = lim ? Math.max(1, lim[0]) : 1, b0 = lim ? Math.min(H - 1, lim[1]) : H - 1;
+    for (const k of [-1, 1, -2, 2, -3, 3]) {
+      const yy = y + k * step, bb = textBox(x, yy, str, size, anchor, base);
+      if (bb.t >= t0 && bb.b <= b0 && !hit(bb)) return [x, yy, bb, false];
+    }
+    return [x, y, b, false];
+  }
   function Draw2D(svg, bounds, opts) {
     opts = opts || {};
     const W = svg.clientWidth || 800, H = svg.clientHeight || 560;
@@ -204,12 +240,20 @@
       circle(c, r, o, parent) { return s('circle', Object.assign(st(o), { cx: X(c[0]), cy: Y(c[1]), r: r * sc }), parent || root); },
       text(p, str, o, parent) {
         o = o || {};
+        let tx = (o.px ? p[0] : X(p[0])) + (o.dx || 0), ty = (o.px ? p[1] : Y(p[1])) + (o.dy || 0);
+        let box = null;
+        if (!o.rot && o.clamp !== false) {
+          [tx, ty] = fitText(tx, ty, str, o.size || 12, o.anchor, W, H, o.base);
+          if (o.avoid !== false) [tx, ty, box] = placeText(svg, tx, ty, str, o.size || 12, o.anchor, o.base, W, H, false);
+          else box = textBox(tx, ty, str, o.size || 12, o.anchor, o.base);
+        }
         const t = s('text', {
-          x: (o.px ? p[0] : X(p[0])) + (o.dx || 0), y: (o.px ? p[1] : Y(p[1])) + (o.dy || 0), 'text-anchor': o.anchor || 'start',
+          x: tx, y: ty, 'text-anchor': o.anchor || 'start',
           class: 'lbl ' + (o.cls || ''), fill: o.color || '#1d2733', 'font-size': o.size || 12, 'font-weight': o.weight || 600,
           'dominant-baseline': o.base || 'auto', style: /^(#fff|#ffffff|white)$/i.test(o.color || '') || o.halo === false ? 'stroke: none' : undefined, transform: o.rot ? `rotate(${o.rot} ${(o.px ? p[0] : X(p[0])) + (o.dx || 0)} ${(o.px ? p[1] : Y(p[1])) + (o.dy || 0)})` : undefined,
         }, parent || root);
         t.textContent = str;
+        t._box = box;
         return t;
       },
       /** arrowhead at screen point (hx,hy) pointing along (ux,uy) (screen unit) */
@@ -298,5 +342,5 @@
     return D;
   }
 
-  root.UI = { h, Controls, Draw2D, svgEl: s, COL, fmt, round };
+  root.UI = { h, Controls, Draw2D, fitText, placeText, svgEl: s, COL, fmt, round };
 })(window);

@@ -27,8 +27,17 @@
   }
   function text(parent, x, y, str, o) {
     o = o || {};
+    const svg = parent && (parent.ownerSVGElement || (parent.tagName === 'svg' ? parent : null)), vb = svg && svg.viewBox && svg.viewBox.baseVal;
+    let box = null, hide = false;
+    if (!o.rot && vb && vb.width && root.UI && root.UI.fitText) {
+      // value labels move clear of labels already drawn; axis ticks (weight 400) stay put
+      [x, y] = root.UI.fitText(x, y, str, o.size || 11.5, o.anchor, vb.width, vb.height);
+      if (o.avoid !== false) [x, y, box, hide] = root.UI.placeText(svg, x, y, str, o.size || 11.5, o.anchor, null, vb.width, vb.height, o.weight === 400, o.lim);
+    }
     const t = s('text', { x, y, 'text-anchor': o.anchor || 'start', class: 'lbl', fill: o.color || '#1d2733', 'font-size': o.size || 11.5, 'font-weight': o.weight || 600, transform: o.rot ? `rotate(${o.rot} ${x} ${y})` : undefined }, parent);
     t.textContent = str;
+    t._box = box;
+    if (hide) t.setAttribute('opacity', '0');
     return t;
   }
 
@@ -63,7 +72,7 @@
     if (o.xlabel) text(g, o.x + o.w, o.y + o.h + 30, o.xlabel, { anchor: 'end', color: '#5a6b75', size: 11 });
     if (o.ylabel && o.yside) text(g, o.x - o.yside, o.y + o.h / 2, o.ylabel, { color: o.ycolor || '#1d2733', size: 12, weight: 700, anchor: 'middle', rot: -90 });
     else if (o.ylabel) text(g, o.x + 6, o.y + 14, o.ylabel, { color: o.ycolor || '#1d2733', size: 12, weight: 700 });
-    return { X, Y, g, y0, y1 };
+    return { X, Y, g, y0, y1, lim: [o.y, o.y + o.h] };
   }
 
   /** Curve through points, optionally filled down to y = 0. */
@@ -80,7 +89,7 @@
   function mark(F, x, y, label, o) {
     o = o || {};
     s('circle', { cx: F.X(x), cy: F.Y(y), r: o.r || 4, fill: o.color || '#d4612a', stroke: '#fff', 'stroke-width': 1.5 }, F.g);
-    if (label) text(F.g, F.X(x) + (o.dx === undefined ? 7 : o.dx), F.Y(y) + (o.dy === undefined ? -6 : o.dy), label, { color: o.color || '#d4612a', anchor: o.anchor, size: o.size || 11.5, weight: 700 });
+    if (label) text(F.g, F.X(x) + (o.dx === undefined ? 7 : o.dx), F.Y(y) + (o.dy === undefined ? -6 : o.dy), label, { color: o.color || '#d4612a', anchor: o.anchor, size: o.size || 11.5, weight: 700, lim: F.lim });
   }
 
   /**
@@ -128,7 +137,6 @@
     // axes
     s('line', { x1: xa, y1: Y(0), x2: xb + 14, y2: Y(0), stroke: '#111111', 'stroke-width': 1.3 }, g);
     s('polygon', { points: `${xb + 22},${Y(0)} ${xb + 12},${Y(0) - 4} ${xb + 12},${Y(0) + 4}`, fill: '#111111' }, g);
-    text(g, xb + 24, Y(0) + 16, o.xl || '', { anchor: 'end', color: '#1d2733', size: 12.5, weight: 700 });
     const xv = x0 <= 0 && x1 >= 0 ? X(0) : xa;
     s('line', { x1: xv, y1: Math.min(yv0, yv1) - 6, x2: xv, y2: Math.max(yv0, yv1), stroke: '#111111', 'stroke-width': 1.3 }, g);
     const tipY = o.yDown ? Math.max(yv0, yv1) + 4 : Math.min(yv0, yv1) - 10;
@@ -138,6 +146,8 @@
       s('line', { x1: X(v), y1: Y(0) - 3, x2: X(v), y2: Y(0) + 3, stroke: '#5a6b75', 'stroke-width': 1 }, g);
       text(g, X(v), Y(0) + 15, fmt(v), { anchor: 'middle', color: '#5a6b75', size: 10, weight: 400 });
     });
+    // axis name above the arrow tip, clear of the tick values below the axis
+    text(g, xb + 24, Y(0) - 8, o.xl || '', { anchor: 'end', color: '#1d2733', size: 12.5, weight: 700 });
     // circle and centre
     s('circle', { cx: X(o.avg), cy: Y(0), r: Math.max(1.5, R * sc * (o.R > 0 ? 1 : 0)), fill: '#2f7fc1', 'fill-opacity': 0.08, stroke: '#2f7fc1', 'stroke-width': 2 }, g);
     (o.pts || []).forEach((p) => { if (p.spoke) s('line', { x1: X(o.avg), y1: Y(0), x2: X(p.x), y2: Y(p.y), stroke: p.color || '#333', 'stroke-width': 1.6, 'stroke-dasharray': p.dash }, g); });

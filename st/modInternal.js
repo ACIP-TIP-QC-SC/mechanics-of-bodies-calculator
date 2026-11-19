@@ -300,7 +300,7 @@
         const ccw = R.M > 0, cx = rightEnd ? x + 6 : x - 6;
         if (rightEnd) arcArrow(root0, cx, yb, 40, ccw ? -62 : 62, ccw ? 62 : -62, COL.react);
         else arcArrow(root0, cx, yb, 40, ccw ? 118 : 242, ccw ? 242 : 118, COL.react);
-        if (opt.showP) T(root0, rightEnd ? W - 4 : 4, Math.min(sy + 80, 8 + topH - 22), `M_${R.label} = ${fmt(Math.abs(R.M))} ${FL}`, { anchor: rightEnd ? 'end' : 'start', color: COL.react });
+        if (opt.showP) T(root0, rightEnd ? W - 4 : 4, yb - 50, `M_${R.label} = ${fmt(Math.abs(R.M))} ${FL}`, { anchor: rightEnd ? 'end' : 'start', color: COL.react });
       }
     });
     /* --- positions along the beam --- */
@@ -312,7 +312,7 @@
       s('line', { x1: x, y1: dimY - 16, x2: x, y2: dimY - 8, stroke: COL.dim, 'stroke-width': 1 }, root0);
       if (x - lastX > 30 || i === b.events.length - 1) { T(root0, x, dimY + 2, fmt(e) + (i === b.events.length - 1 ? ' ' + Lu : ''), { anchor: i === b.events.length - 1 ? 'end' : 'middle', color: COL.dim, size: 10.5, weight: 400 }); lastX = x; }
     });
-    T(root0, ml - 8, dimY + 2, 'x =', { anchor: 'end', color: COL.dim, size: 10.5, weight: 400 });
+    T(root0, ml - 8, dimY - 8, 'x =', { anchor: 'end', color: COL.dim, size: 10.5, weight: 400 });
 
     /* --- diagrams --- */
     const panels = [];

@@ -37,7 +37,7 @@
       if (isFinite(o.cursor)) {
         const x = F.X(Math.min(xmax, Math.max(xmin, o.cursor)));
         s('line', { x1: x, y1: top + i * (ph + gap), x2: x, y2: top + i * (ph + gap) + ph, stroke: K.ink, 'stroke-width': 1.2, 'stroke-dasharray': '4 3' }, F.g);
-        [[p.at, p.color]].concat((p.more || []).map((q) => [q.at, q.color])).forEach(([at, col]) => { if (!at) return; const yv = at(o.cursor); if (isFinite(yv)) { s('circle', { cx: x, cy: F.Y(yv), r: 4.5, fill: col, stroke: '#fff', 'stroke-width': 1.5 }, F.g); Charts.text(F.g, x + (x > W * 0.75 ? -8 : 8), F.Y(yv) - 7, fmt(yv), { anchor: x > W * 0.75 ? 'end' : 'start', color: col, size: 11.5, weight: 700 }); } });
+        [[p.at, p.color]].concat((p.more || []).map((q) => [q.at, q.color])).forEach(([at, col]) => { if (!at) return; const yv = at(o.cursor); if (isFinite(yv)) { s('circle', { cx: x, cy: F.Y(yv), r: 4.5, fill: col, stroke: '#fff', 'stroke-width': 1.5 }, F.g); Charts.text(F.g, x + (x > W * 0.75 ? -8 : 8), F.Y(yv) - 7, fmt(yv), { anchor: x > W * 0.75 ? 'end' : 'start', color: col, size: 11.5, weight: 700, lim: F.lim }); } });
       }
     });
     return true;
@@ -49,7 +49,7 @@
     if (!list.length) return false;
     let ymin = 0, ymax = 0; list.forEach((b) => { ymin = Math.min(ymin, b.v); ymax = Math.max(ymax, b.v); });
     if (!(ymax > ymin)) ymax = 1;
-    const F = Charts.frame(svg, { x: 66, y: 22, w: W - 66 - 18, h: H - 22 - 46, xmin: 0, xmax: list.length, ymin, ymax, xticks: false, ylabel: o.title ? `${o.title} (${o.unit})` : o.unit });
+    const F = Charts.frame(svg, { x: 66, y: 22, w: W - 66 - 18, h: H - 22 - 46, xmin: 0, xmax: list.length, ymin, ymax, padY: 0.26, xticks: false, ylabel: o.title ? `${o.title} (${o.unit})` : o.unit });
     const bw = Math.min(70, ((W - 84) / list.length) * 0.6);
     list.forEach((b, i) => {
       const x = F.X(i + 0.5), y0 = F.Y(0), y1 = F.Y(b.v);

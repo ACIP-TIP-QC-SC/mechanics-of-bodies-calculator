@@ -204,10 +204,25 @@
     const lab = (name, v) => (opt.showP ? `${name} = ${fmt(v)}` : name);
     const pts = [];
     if (!g.round) {
-      pts.push({ x: m.max, y: 0, label: lab('I_max', m.max), color: PCOL, anchor: 'start', dy: -8 }, { x: m.min, y: 0, label: lab('I_min', m.min), color: PCOL, anchor: 'end', dy: -8 });
-      pts.push({ x: Ix, y: Ixy, label: opt.showP ? `A (${fmt(Ix)}, ${fmt(Ixy)})` : 'A (I_x, I_xy)', color: CCOL, spoke: true });
-      pts.push({ x: g.at.Iu, y: g.at.Iuv, label: opt.showP ? `u (${fmt(g.at.Iu)}, ${fmt(g.at.Iuv)})` : 'u (I_u, I_uv)', color: UCOL, spoke: true });
-      pts.push({ x: g.at.Iv, y: -g.at.Iuv, label: 'v', color: UCOL, spoke: true, dash: '4 3', r: 3.5 });
+      const pMax = { x: m.max, y: 0, label: lab('I_max', m.max), color: PCOL, anchor: 'start', dy: -8 }, pMin = { x: m.min, y: 0, label: lab('I_min', m.min), color: PCOL, anchor: 'end', dy: -8 };
+      const pA = { x: Ix, y: Ixy, label: opt.showP ? `A (${fmt(Ix)}, ${fmt(Ixy)})` : 'A (I_x, I_xy)', color: CCOL, spoke: true };
+      const pU = { x: g.at.Iu, y: g.at.Iuv, label: opt.showP ? `u (${fmt(g.at.Iu)}, ${fmt(g.at.Iuv)})` : 'u (I_u, I_uv)', color: UCOL, spoke: true };
+      const pV = { x: g.at.Iv, y: -g.at.Iuv, label: 'v', color: UCOL, spoke: true, dash: '4 3', r: 3.5 };
+      // Points that land on the same spot share one label, e.g. "I_max = 27.82 (A, u)" when the x axis is already principal.
+      const same = (p, q) => Math.hypot(p.x - q.x, p.y - q.y) <= 1e-6 * (m.R || 1);
+      const extra = new Map();
+      [pA, pU, pV].forEach((p) => {
+        const host = [pMax, pMin, pA].find((q) => q !== p && extra.get(q) !== null && same(p, q));
+        if (!host) return;
+        extra.set(host, (extra.get(host) || []).concat(p.label.split(' ')[0]));
+        extra.set(p, null);
+        p.label = '';
+      });
+      extra.forEach((names, q) => {
+        if (!names) return;
+        q.label = q === pA ? q.label.replace(/^A/, ['A'].concat(names).join(', ')) : `${q.label} (${names.join(', ')})`;
+      });
+      pts.push(pMax, pMin, pA, pU, pV);
     } else pts.push({ x: m.avg, y: 0, label: lab('I', m.avg), color: PCOL });
     Charts.mohr(svg, { avg: m.avg, R: g.round ? 0 : m.R, xl: `I (${u4})`, yl: `I_xy (${u4})`, pts, arc: g.round ? null : { from: [Ix, Ixy], to: [g.at.Iu, g.at.Iuv], ccw: g.theta >= 0, label: `2θ = ${fmt(2 * g.theta)}°`, color: UCOL } });
     return true;

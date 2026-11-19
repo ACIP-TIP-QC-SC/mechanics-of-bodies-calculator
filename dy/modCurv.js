@@ -250,7 +250,9 @@
     const ps = [g.A.pos, g.B.pos, relPos(g.A, g.span[1]).p, relPos(g.B, g.span[1]).p];
     let xmin = Math.min(...ps.map((q) => q[0])), xmax = Math.max(...ps.map((q) => q[0])), ymin = Math.min(...ps.map((q) => q[1])), ymax = Math.max(...ps.map((q) => q[1]));
     const span = Math.max(xmax - xmin, ymax - ymin, 1e-6);
-    const D = UI.Draw2D(svg, { xmin: xmin - span * 0.45, xmax: xmax + span * (dopt('tri', true) ? 1.3 : 0.45), ymin: ymin - span * 0.45, ymax: ymax + span * 0.45 }, { pad: 30 });
+    // the vector-triangle boxes take a strip on the right, so the scene is fitted into the rest
+    const tri = dopt('tri', true), bwT = Math.min(250, (svg.clientWidth || 800) * 0.36);
+    const D = UI.Draw2D(svg, { xmin: xmin - span * 0.45, xmax: xmax + span * 0.45, ymin: ymin - span * 0.45, ymax: ymax + span * 0.45 }, { pad: 30, padR: tri ? bwT + 30 : 0, padRmax: 0.42 });
     const px = (w) => w / D.sc;
     // paths
     [[g.A, CA], [g.B, CB]].forEach(([P, col]) => {
@@ -267,12 +269,12 @@
       D.circle(Q.p, px(10), { fill: col, stroke: '#fff', sw: 2 }); D.text(Q.p, n, { anchor: 'middle', base: 'middle', color: '#fff', size: 11 });
     });
     D.line(A.p, B.p, { stroke: K.ink, sw: 1, dash: '2 4' });
-    if (dopt('tri', true)) {
+    if (tri) {
       // vector triangles v_B = v_A + v_B/A and a_B = a_A + a_B/A, drawn in two boxes on the right
       const vA = vAt(g.A, A), vB = vAt(g.B, B), list = [];
       if (dopt('showV', true)) list.push(['Velocities: v_B = v_A + v_B/A', vA, vB, 'v', u.V]);
       if (dopt('showA', true) && uNow() === undefined) list.push(['Accelerations: a_B = a_A + a_B/A', g.A.a, g.B.a, 'a', u.A]);
-      const bw = Math.min(250, D.W * 0.36), bh = Math.min(200, (D.H - 40) / 2 - 10);
+      const bw = bwT, bh = Math.min(200, (D.H - 40) / 2 - 10);
       list.forEach(([ttl, a1, b1, sym, un], i) => {
         const x0 = D.W - bw - 10, y0 = 34 + i * (bh + 12), rel = [b1[0] - a1[0], b1[1] - a1[1]];
         D.el('rect', { x: x0, y: y0, width: bw, height: bh, fill: '#ffffff', stroke: '#d3dce0', rx: 6 });
@@ -280,8 +282,17 @@
         const pts = [[0, 0], a1, b1], mnx = Math.min(...pts.map((q) => q[0])), mxx = Math.max(...pts.map((q) => q[0])), mny = Math.min(...pts.map((q) => q[1])), mxy = Math.max(...pts.map((q) => q[1]));
         const sc = Math.min((bw - 70) / Math.max(mxx - mnx, 1e-9), (bh - 64) / Math.max(mxy - mny, 1e-9));
         const ox = x0 + 35 + (bw - 70 - (mxx - mnx) * sc) / 2 - mnx * sc, oy = y0 + 30 + (bh - 64 + (mxy - mny) * sc) / 2 + mny * sc;
-        const Q = (q) => [ox + q[0] * sc, oy - q[1] * sc], arr = (p, q, col, lab, dash) => { const P1 = Q(p), P2 = Q(q); if (Math.hypot(P2[0] - P1[0], P2[1] - P1[1]) < 3) return; D.arrow(D.inv(P1[0], P1[1]), D.inv(P2[0], P2[1]), { color: col, w: 2.2, head: 9, dash, label: lab, size: 11, lp: 'head' }); };
-        arr([0, 0], a1, CA, `${sym}_A`, '5 3'); arr(a1, b1, REL, `${sym}_B/A`); arr([0, 0], b1, CB, `${sym}_B`);
+        const Q = (q) => [ox + q[0] * sc, oy - q[1] * sc], arr = (p, q, col, lab, dash, side) => {
+          const P1 = Q(p), P2 = Q(q), L = Math.hypot(P2[0] - P1[0], P2[1] - P1[1]);
+          if (L < 3) return;
+          D.arrow(D.inv(P1[0], P1[1]), D.inv(P2[0], P2[1]), { color: col, w: 2.2, head: 9, dash });
+          // name at the middle of the side, pushed off the line on the side away from the third corner
+          const nx = -(P2[1] - P1[1]) / L * side, ny = (P2[0] - P1[0]) / L * side, mx = (P1[0] + P2[0]) / 2 + nx * 10, my = (P1[1] + P2[1]) / 2 + ny * 10;
+          D.text([mx, my + 4], lab, { px: true, color: col, size: 11, weight: 700, anchor: Math.abs(nx) < 0.3 ? 'middle' : nx > 0 ? 'start' : 'end' });
+        };
+        // which way is "outside" for each side of the triangle 0 → a1 → b1
+        const out = (p, q, r) => { const P1 = Q(p), P2 = Q(q), R3 = Q(r), cr = (P2[0] - P1[0]) * (R3[1] - P1[1]) - (P2[1] - P1[1]) * (R3[0] - P1[0]); return cr > 0 ? -1 : 1; };
+        arr([0, 0], a1, CA, `${sym}_A`, '5 3', out([0, 0], a1, b1)); arr(a1, b1, REL, `${sym}_B/A`, null, out(a1, b1, [0, 0])); arr([0, 0], b1, CB, `${sym}_B`, null, out([0, 0], b1, a1));
         D.text([x0 + 8, y0 + bh - 8], lbl(opt, `${sym}_B/A = ${fmt(Math.hypot(...rel))} ${un} at ${fmt(DY.vang(rel))}°`, ''), { px: true, color: REL, size: 11, weight: 700 });
       });
     }
