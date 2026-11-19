@@ -1107,6 +1107,31 @@ group('dynamics: central-force motion', () => {
   { const st = Object.assign(Pkin.defaults(), { scene: 'orbit' }); const a = out(Pkin.solve(st, U.SI), 'Speed at the periapsis v_p'); Pkin.convertState(st, 'SI', 'US'); Pkin.convertState(st, 'US', 'SI'); close('orbit units round trip', out(Pkin.solve(st, U.SI), 'Speed at the periapsis v_p'), a, 1e-4); }
 });
 
+group('dynamics: impulse and momentum', () => {
+  const Impact = R('dy/impact.js');
+  const run = (o, sys) => Impact.solve(Object.assign(Impact.defaults(), o), U[sys]);
+  let r = run({ mode: 'ft' }, 'SI'); close('15-17 v', out(r, 'Velocity at t₂, v₂'), 8.8125, 1e-5); close('15-17 s', out(r, 'Distance travelled'), 24.8125, 1e-4);
+  r = run({ mode: 'ft', fm: 70, fth: 90, fv1: 3, fn: 2, ft: 18, fpts: [{ t: 0, F: 360 }, { t: 12, F: 360 }, { t: 24, F: 600 }] }, 'SI'); close('15-27 v', out(r, 'Velocity at t₂, v₂'), 21.85, 1e-3);
+  r = run({ mode: 'ft', fm: 2, fv1: -90, ft: 0.0004, fpts: [{ t: 0, F: 0 }, { t: 0.0001, F: 1.5e6 }, { t: 0.0004, F: 0 }] }, 'SI'); close('15-11 rebound', out(r, 'Velocity at t₂, v₂'), 60, 1e-4);
+  r = run({ mode: 'ft', fm: 50, fmus: 0.4, fmuk: 0.3, ft: 6, fpts: [{ t: 0, F: 0 }, { t: 6, F: 600 }] }, 'SI');
+  close('friction: starts when F = μ_s N', out(r, 'Starts to move at'), (0.4 * 50 * 9.81) / 100, 1e-3);
+  { const ts = (0.4 * 50 * 9.81) / 100, I = 50 * (36 - ts * ts) - 0.3 * 50 * 9.81 * (6 - ts); close('friction: impulse after it starts', out(r, 'Velocity at t₂, v₂'), I / 50, 1e-3); }
+  r = run({ mode: 'cons', ctask: 'release' }, 'US'); close('15-57 v_A', out(r, 'Velocity of A after release'), -7.613, 1e-3); close('15-57 v_B', out(r, 'Velocity of B after release'), 5.075, 1e-3);
+  r = run({ mode: 'cons', ctask: 'throw', cmA: 70, cmB: 8, cvr: 2, cphi: 30, cdt: 1.5 }, 'SI'); close('15-40 v', out(r, 'Velocity of A (horizontal)'), -0.1776, 1e-3); close('15-40 N', out(r, 'Average vertical reaction under A'), 770.5, 1e-3);
+  r = run({ mode: 'cons', ctask: 'slide', cmA: 20, cmB: 10, cmuk: 0.6, cramp: true, ch: 0.2, cL: 2.5 }, 'SI'); close('15-55 v', out(r, 'Common final velocity'), 1.3206, 1e-3); close('15-55 t', out(r, 'Time to stop sliding'), 0.1122, 1e-3);
+  r = run({ mode: 'angmom' }, 'US'); close('15-105 v', out(r, 'Speed of each particle at t, v₂'), 19.32, 1e-3);
+  r = run({ mode: 'angmom', atask: 'pull', am: 200, ar1: 8, av1: 3, ardot: 0.5, at: 4 }, 'SI'); close('15-110 v', out(r, 'Speed at t, v₂'), 4.031, 1e-3); close('15-110 U', out(r, 'Work done on the cable'), 725, 1e-3);
+  const A = (d) => Math.PI * d * d / 4;
+  r = run({ mode: 'stream', rho: 1000, ports: [{ io: 'in', x: 0, y: 0, v: 18, ang: 90, A: A(0.05), p: 150500 }, { io: 'out', x: 0, y: 0.5, v: 25, ang: 180, A: A(0.03), p: 0 }, { io: 'out', x: 0, y: 0.5, v: 25, ang: 216.8699, A: A(0.03), p: 0 }] }, 'SI');
+  close('15-120 F_x', out(r, 'Support force F_x'), -795.22, 1e-3); close('15-120 F_y', out(r, 'Support force F_y'), -1196.75, 1e-3);
+  r = run({ mode: 'stream', sup: 'pinroller', px: 0, py: 0, qx: 2, qy: 0, qang: 90 }, 'SI');
+  { const Nr = out(r, 'Roller reaction N'); close('pin and roller: ΣF_y', out(r, 'Pin reaction D_y') + Nr, out(r, 'Support force F_y'), 1e-6); close('pin and roller: ΣM_pin', 2 * Nr, out(r, 'Support moment about O, M_O'), 1e-6); }
+  r = run({ mode: 'vary', vm0: 7000, vv0: 200, vmi: 200, vvi: 0, vme: 200.8, vu: 12000, vc: 55, vt: 1 }, 'SI'); close('15-140 a', out(r, 'Acceleration at the start'), 24.23, 1e-3);
+  r = run({ mode: 'vary', vt: 10 }, 'SI'); close('15-130 v', out(r, 'Velocity at t = 10 s'), 8000 / 2500, 1e-6);
+  r = run({ mode: 'vary', vm0: 1000, vv0: 0, vmi: 0, vme: 10, vu: 2000, vth: 90, vt: 20 }, 'SI'); close('rocket: v = u ln(m₀/m) − gt', out(r, 'Velocity at t = 20 s'), 2000 * Math.log(1000 / 800) - 9.81 * 20, 1e-6);
+  ['ft', 'cons', 'angmom', 'stream', 'vary'].forEach((mode) => { const st = Object.assign(Impact.defaults(), { mode }); const a = Impact.solve(st, U.SI).out[0].v; Impact.convertState(st, 'SI', 'US'); Impact.convertState(st, 'US', 'SI'); close(`${mode}: units round trip`, Impact.solve(st, U.SI).out[0].v, a, 1e-4); });
+});
+
 group('dynamics: planar kinematics of rigid bodies', () => {
   const run = (o, sys) => RbMotion.solve(Object.assign(RbMotion.defaults(), o), U[sys]);
   { const r = run({ mode: 'slider', r: 0.25, l: 0.75, th: 45, beta: 90, e: 0, wAB: -10, aAB: -20 }, 'US'); [{ k: 'Velocity of the slider v_C', v: 2.197 }, { k: 'Angular velocity of BC, ω_BC', v: 2.425 }, { k: 'Angular acceleration of BC, α_BC', v: 27.68 }, { k: 'Acceleration of the slider a_C', v: -13.54 }].forEach((e) => close('Book Examples 16.12 and 16.17, crank 0.25 ft at 10 rad/s cw : ' + e.k, out(r, e.k), e.v)); }

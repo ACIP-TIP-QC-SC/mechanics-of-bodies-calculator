@@ -9,11 +9,14 @@
  *   tangential component is kept; dropped ball: h_n = e²ⁿh₀.
  * Modes: central impact of two bodies, oblique impact of two smooth disks, a ball striking
  * a fixed wall or floor, and a ball bouncing on a floor. Each can back-solve e.
+ * Impulse from a force–time graph, conservation of momentum, angular momentum, steady streams and
+ * variable mass are in dy/momentum.js.
  * ===================================================================== */
 (function (root) {
   'use strict';
   const Core = root.Core || require('../shared/core.js');
   const DY = root.DY || require('./dycore.js');
+  const Momentum = root.Momentum || require('./momentum.js');
   const { fmt, fail, Steps } = Core;
   const { toBase: B } = DY;
   const D2R = Math.PI / 180;
@@ -25,10 +28,12 @@
       sA: 3, thA: 30, sB: 1, thB: 225,
       v1: 20, th1: 30, th2: 23.41, surf: 'wall',
       h0: 2, h1: 1.28, nb: 5,
+      // impulse and momentum without a collision (dy/momentum.js)
+      ...Momentum.defaults(),
     };
   }
   const KINDS = { mA: 'M', mB: 'M', vA1: 'V', vB1: 'V', vB2m: 'V', hA: 'L', sA: 'V', sB: 'V', v1: 'V', h0: 'L', h1: 'L' };
-  function convertState(st, from, to) { return DY.convertObj(st, KINDS, from, to); }
+  function convertState(st, from, to) { DY.convertObj(st, KINDS, from, to); Momentum.convert(st, from, to); return st; }
   const dirTxt = (v) => (Math.abs(v) < 1e-12 ? 'at rest' : v > 0 ? '→' : '←');
 
   function solve(st, U) {
@@ -36,6 +41,7 @@
     if (st.mode === 'oblique') return oblique(st, u);
     if (st.mode === 'wall') return wall(st, u);
     if (st.mode === 'bounce') return bounce(st, u, g);
+    if (['ft', 'cons', 'angmom', 'stream', 'vary'].includes(st.mode)) return Momentum.solve(st, u);
     return central(st, u, g);
   }
 

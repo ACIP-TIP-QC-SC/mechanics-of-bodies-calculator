@@ -3,11 +3,11 @@
  * ===================================================================== */
 (function (root) {
   'use strict';
-  const { Core, UI, Impact, DY, DYUI } = root;
+  const { Core, UI, Impact, DY, DYUI, DMomentumUI: MU } = root;
   const { fmt } = Core;
   const K = DYUI.K, CA = '#2f7fc1', CB = '#d4612a', BEF = '#111111', AFT = '#1e8449', D2R = Math.PI / 180;
 
-  const M = { id: 'impact', title: 'Impact', defaults: Impact.defaults, units: 'SI' };
+  const M = { id: 'impact', title: 'Impulse, Momentum and Impact', defaults: Impact.defaults, units: 'SI' };
   const S = () => M.state;
   const dopt = (k, d) => (S()[k] === undefined ? d : S()[k]);
 
@@ -18,9 +18,11 @@
     const st = S(), u = DY.units(Core.UNITS[M.units]);
     const num = (sec, k, label, unit) => C.num(sec, { label, get: () => st[k], set: (v) => (st[k] = v), unit });
     const ml = u.us ? 'weight W' : 'mass m';
-    let sec = C.section(c, 'Kind of impact');
+    let sec = C.section(c, 'Kind of problem');
     C.select(sec, { label: 'Situation', get: () => st.mode, set: (v) => { st.mode = v; if (v === 'oblique' && st.find !== 'v') st.find = 'v'; if ((v === 'wall' || v === 'bounce') && st.find === 'plastic') st.find = 'v'; }, options: [
-      ['central', 'Central impact of two bodies'], ['oblique', 'Oblique impact of two smooth disks'], ['wall', 'Ball striking a fixed wall or floor'], ['bounce', 'Ball dropped and bouncing on a floor']] });
+      ['central', 'Central impact of two bodies'], ['oblique', 'Oblique impact of two smooth disks'], ['wall', 'Ball striking a fixed wall or floor'], ['bounce', 'Ball dropped and bouncing on a floor'],
+      ['ft', 'Impulse from a force–time graph'], ['cons', 'Conservation of momentum (recoil, throws, block onto a cart)'], ['angmom', 'Angular impulse and momentum'], ['stream', 'Steady fluid stream on a vane or pipe'], ['vary', 'Variable mass (sand on a car, rockets, jets)']] });
+    if (MU.MODES.includes(st.mode)) return MU.controls(c, C, st, u);
     if (st.mode === 'central') C.seg(sec, { label: 'Find', get: () => st.find, set: (v) => (st.find = v), options: [['v', 'Velocities after'], ['plastic', 'They couple (e = 0)'], ['e', 'e from a measurement']] });
     if (st.mode === 'wall' || st.mode === 'bounce') C.seg(sec, { label: 'Find', get: () => (st.find === 'e' ? 'e' : 'v'), set: (v) => (st.find = v), options: [['v', st.mode === 'wall' ? 'Rebound' : 'Bounces'], ['e', st.mode === 'wall' ? 'e from the rebound angle' : 'e from the rebound height']] });
 
@@ -57,6 +59,7 @@
   };
   M.diagram = function (c, C) {
     const st = S();
+    if (MU.MODES.includes(st.mode)) return;
     C.toggle(c, { label: 'Velocity before impact', get: () => dopt('showB', true), set: (v) => (st.showB = v), rebuild: false });
     C.toggle(c, { label: 'Velocity after impact', get: () => dopt('showA2', true), set: (v) => (st.showA2 = v), rebuild: false });
     if (st.mode === 'oblique' || st.mode === 'wall') C.toggle(c, { label: 'Paths of the centres', get: () => dopt('paths', true), set: (v) => (st.paths = v), rebuild: false });
@@ -67,11 +70,11 @@
   M.compute = (U) => Impact.solve(S(), U);
   M.onUnits = (from, to) => Impact.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => ({ central: 'Collision along a line', oblique: 'Oblique collision seen from above', wall: 'Ball and surface', bounce: 'Bouncing ball' }[S().mode]);
+  M.cap2D = () => (MU.MODES.includes(S().mode) ? MU.cap2D(S()) : { central: 'Collision along a line', oblique: 'Oblique collision seen from above', wall: 'Ball and surface', bounce: 'Bouncing ball' }[S().mode]);
   M.cap3D = () => '3D view';
-  M.plotCaption = () => (S().mode === 'bounce' ? 'Height of the ball against time' : S().mode === 'wall' ? 'Velocity components before and after' : 'Kinetic energy before and after');
-  M.hint = () => (S().mode === 'bounce' ? 'Press Play to watch the ball bounce (the clock shows the real time).' : 'Press Play to watch the collision: the bodies close at their speeds before impact and separate at their speeds after it. The impact itself is treated as instantaneous.');
-  M.legend = () => (S().mode === 'bounce' ? [[K.pos, 'Ball and its path'], [AFT, 'Velocity']] : S().mode === 'wall' ? [[BEF, 'Velocity before impact'], [AFT, 'Velocity after impact'], [CA, 'Ball and its path']] : [[BEF, 'Velocity before impact'], [AFT, 'Velocity after impact'], [CA, 'A'], [CB, 'B']]);
+  M.plotCaption = () => (MU.MODES.includes(S().mode) ? MU.plotCaption(S()) : S().mode === 'bounce' ? 'Height of the ball against time' : S().mode === 'wall' ? 'Velocity components before and after' : 'Kinetic energy before and after');
+  M.hint = () => (MU.MODES.includes(S().mode) ? 'Press Play to run the motion over its time span.' : S().mode === 'bounce' ? 'Press Play to watch the ball bounce (the clock shows the real time).' : 'Press Play to watch the collision: the bodies close at their speeds before impact and separate at their speeds after it. The impact itself is treated as instantaneous.');
+  M.legend = () => (MU.MODES.includes(S().mode) ? [[K.force, 'Force'], [AFT, 'Velocity'], [CA, 'Inflow or body A'], [CB, 'Body B']] : S().mode === 'bounce' ? [[K.pos, 'Ball and its path'], [AFT, 'Velocity']] : S().mode === 'wall' ? [[BEF, 'Velocity before impact'], [AFT, 'Velocity after impact'], [CA, 'Ball and its path']] : [[BEF, 'Velocity before impact'], [AFT, 'Velocity after impact'], [CA, 'A'], [CB, 'B']]);
 
   /* Animation: u from 0 to 1. For collisions the impact is at u = ½ (τ = 2u − 1 from −1 to 1). */
   const anim = {
@@ -79,8 +82,8 @@
     frame(uu) { const st = S(); if (uu <= 0) delete st._u; else st._u = uu; },
     label() {
       const st = S(), g = root.App && root.App.res && root.App.res.geo;
-      if (st._u === undefined) return st.mode === 'bounce' ? 'released from rest' : 'just before and just after';
-      if (g && g.mode === 'bounce') return `t = ${fmt(g.span[1] * st._u)} s of ${fmt(g.span[1])} s`;
+      if (st._u === undefined) return MU.MODES.includes(st.mode) ? 'the instant asked for' : st.mode === 'bounce' ? 'released from rest' : 'just before and just after';
+      if (g && (g.mode === 'bounce' || MU.MODES.includes(g.mode))) return `t = ${fmt(g.span[0] + (g.span[1] - g.span[0]) * st._u)} s of ${fmt(g.span[1])} s`;
       const tau = 2 * st._u - 1; return Math.abs(tau) < 0.02 ? 'impact' : tau < 0 ? 'before impact' : 'after impact';
     },
   };
@@ -94,6 +97,7 @@
   /* ------------------------------------------------------------------ */
   M.draw2D = function (svg, res, U, opt) {
     const g = res.geo;
+    if (MU.MODES.includes(g.mode)) return MU.draw2D(svg, g, opt, uNow());
     if (g.mode === 'central') return central2D(svg, g, opt);
     if (g.mode === 'oblique') return oblique2D(svg, g, opt);
     if (g.mode === 'wall') return wall2D(svg, g, opt);
@@ -228,6 +232,7 @@
   /* ------------------------------------------------------------------ */
   M.plot = function (svg, res) {
     const g = res.geo, u = g.u;
+    if (MU.MODES.includes(g.mode)) return MU.plot(svg, g, uNow());
     if (g.mode === 'bounce') {
       const T = g.span[1], pts = []; for (let i = 0; i <= 600; i++) { const t = (T * i) / 600; pts.push([t, g.y(t)]); }
       const cur = uNow() === undefined ? NaN : T * uNow();
@@ -244,6 +249,7 @@
   /* ------------------------------------------------------------------ */
   M.draw3D = function (v, res, U, opt) {
     const g = res.geo, u = g.u;
+    if (MU.MODES.includes(g.mode)) return MU.draw3D(v, g, uNow());
     const arr = (p, d, L, col, lab) => { const l = Math.hypot(d[0], d[1], d[2]); if (!(l > 1e-12)) return; const q = DYUI.add(p, DYUI.mul(d, L / l)); DYUI.arrow3(v, p, q, col, 2.6); if (lab) v.label(q, lab, col); };
     if (g.mode === 'central' || g.mode === 'oblique') {
       const [rA, rB] = radii(g), vmax = Math.max(sp(g.A1), sp(g.B1), sp(g.A2), sp(g.B2), 1e-9), k = (g.mode === 'central' ? 3.6 : 3) / vmax;
@@ -310,7 +316,7 @@
     { name: 'e from a rebound height: dropped 6 ft, comes back to 3.4 ft', units: 'US', state: P0({ mode: 'bounce', find: 'e', h0: 6, h1: 3.4, nb: 6 }) },
     { name: 'Puck glancing off a heavier puck at rest', units: 'SI', state: P0({ mode: 'oblique', mA: 0.16, mB: 0.4, sA: 6, thA: -20, sB: 0, thB: 0, e: 0.8 }) },
     { name: 'Edge: B runs away faster than A, so they never meet (fails on purpose)', units: 'SI', fails: true, state: P0({ mode: 'central', find: 'v', mA: 2, mB: 3, vA1: 2, vB1: 5, e: 0.6 }) },
-  ];
+  ].concat(MU.presets(P0));
 
   root.DImpact = M;
 })(window);

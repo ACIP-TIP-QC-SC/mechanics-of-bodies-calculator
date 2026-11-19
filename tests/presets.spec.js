@@ -38,6 +38,9 @@ function serve() {
   for (const d of DISCIPLINES) {
     await page.goto(`${base}/${d}/index.html`);
     await page.waitForFunction(() => window.App && window.App.res);
+    // a script that fails to load drops its module silently, so loading must be clean
+    if (errors.length) bad(`${d}: error while loading the page: ${errors[0]}`);
+    errors.length = 0;
     const mods = await page.evaluate(() => Object.values(App.modules).map((m) => ({ id: m.id, title: m.title, presets: m.presets.map((p) => ({ name: p.name, fails: !!p.fails, expect: p.expect || [] })) })));
     for (const m of mods) {
       if (arg('--mod') && arg('--mod') !== m.id) continue;
