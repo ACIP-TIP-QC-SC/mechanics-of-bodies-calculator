@@ -1271,6 +1271,47 @@ group('dynamics: point on a car spinning at the end of a rotating arm', () => {
   r = run({ jwr: 'x' }, 'SI'); truthy('a word for a rate fails', !r.ok && /Every entry must be a number/.test(r.err[0]));
 });
 
+group('dynamics: double collar on a rotating rod and a fixed circle', () => {
+  const run = (o, sys) => RbMotion.solve(Object.assign(RbMotion.defaults(), { mode: 'collar' }, o), U[sys]);
+  const book = { jrw: 3, jral: 0, jox: 0.4, joy: 0, jR: 0.4 };
+  let r = run(Object.assign({ jrth: 30 }, book), 'SI');
+  close('16-135 r = 2R cos θ', out(r, 'Distance AC along the rod, r'), 0.6928); close('16-135 v_C/A', out(r, 'Speed along the rod, (v_C/A)xyz = ṙ'), -1.20);
+  close('16-135 v_C', out(r, 'Speed of C, v_C'), 2.40);
+  r = run(Object.assign({ jrth: 45 }, book), 'SI');
+  close('16-136 v_C', out(r, 'Speed of C, v_C'), 2.40); close('16-136 v_C = −2.40i', out(r, 'Velocity v_C, x'), -2.40); close('16-136 v_C/A', out(r, 'Speed along the rod, (v_C/A)xyz = ṙ'), -1.697);
+  close('16-136 a_C', out(r, 'Magnitude |a_C|'), 14.4); close('16-136 a_C = −14.4j', out(r, 'Acceleration a_C, y'), -14.4); close('16-136 a_C/A', out(r, 'Its rate, (a_C/A)xyz = r̈'), -5.09);
+  close('16-136 (a_C)_t = 0', out(r, 'Tangential acceleration on the circle (a_C)_t'), 0, 1e-9);
+  truthy('one highlighted result', r.out.filter((o) => o.hl).length === 1);
+  // v_C is tangent to the circle and (a_C)_n = v_C²/R, over a sweep of angles and pivot positions
+  const X = R('dy/rbextra.js');
+  [[0.4, 0, 0.4, 10], [0.4, 0, 0.4, -60], [0.3, 0, 0.5, 90], [0.8, -0.4, 2, 120], [1, 1, 0.6, 50]].forEach(([ox, oy, Rr, deg]) => {
+    const m = X.collarMotion(deg * Math.PI / 180, 2, 1.5, [ox, oy], Rr, false);
+    close(`tangent at ${deg}°, O = (${ox}, ${oy}), R = ${Rr}`, (m.k.v[0] * (m.rC[0] - ox) + m.k.v[1] * (m.rC[1] - oy)) / (Math.hypot(...m.k.v) * Rr), 0, 1e-9);
+    close(`on the circle at ${deg}°`, Math.hypot(m.rC[0] - ox, m.rC[1] - oy), Rr, 1e-12);
+    close(`(a_C)_n = ṡ²/R at ${deg}°`, m.an, m.sd * m.sd / Rr, 1e-9);
+  });
+  // Hand check (not from the book): A inside the circle, O = (0.3, 0) from A, R = 0.5 m, rod at θ = 90° with ω = 2 rad/s, α = 1 rad/s².
+  // r² − 2r(e·d) − (R² − |d|²) = r² − 0.16 = 0 → r = 0.4 m. With p = 0.3 cos θ, r = p + √(p² + 0.16): at 90°, r′ = −0.3, r″ = 0.09/0.4 = 0.225.
+  // ṙ = −0.6 m/s, r̈ = 0.225(4) − 0.3(1) = 0.6 m/s². v_C = ṙ e_r + rω e_θ = −0.6 j − 0.8 i → |v_C| = 1 m/s.
+  // a_r = 0.6 − 0.4(4) = −1, a_θ = 0.4(1) + 2(−0.6)(2) = −2 → a_C = 2i − 1j m/s² (|a_C| = 2.236), (a_C)_n = 1²/0.5 = 2 m/s².
+  r = run({ jrth: 90, jrw: 2, jral: 1, jox: 0.3, joy: 0, jR: 0.5 }, 'SI');
+  close('hand r', out(r, 'Distance AC along the rod, r'), 0.4, 1e-12); close('hand ṙ', out(r, 'Speed along the rod, (v_C/A)xyz = ṙ'), -0.6, 1e-9);
+  close('hand r̈', out(r, 'Its rate, (a_C/A)xyz = r̈'), 0.6, 1e-9); close('hand v_C,x', out(r, 'Velocity v_C, x'), -0.8, 1e-9); close('hand v_C', out(r, 'Speed of C, v_C'), 1, 1e-9);
+  close('hand a_C,x', out(r, 'Acceleration a_C, x'), 2, 1e-9); close('hand a_C,y', out(r, 'Acceleration a_C, y'), -1, 1e-9); close('hand (a_C)_n', out(r, 'Normal acceleration on the circle (a_C)_n'), 2, 1e-9);
+  // A outside the circle: the nearer and the farther crossing. O = (2, 0), R = 1, θ = 0: r = 1 or 3.
+  close('outside, nearer crossing', out(run({ jrth: 0, jrw: 1, jral: 0, jox: 2, joy: 0, jR: 1 }, 'SI'), 'Distance AC along the rod, r'), 1, 1e-12);
+  close('outside, farther crossing', out(run({ jrth: 0, jrw: 1, jral: 0, jox: 2, joy: 0, jR: 1, jfar: true }, 'SI'), 'Distance AC along the rod, r'), 3, 1e-12);
+  // units round trip
+  const st = Object.assign(RbMotion.defaults(), { mode: 'collar', jrth: 45 }), a = RbMotion.solve(st, U.SI);
+  RbMotion.convertState(st, 'SI', 'US'); const b = RbMotion.solve(st, U.US); RbMotion.convertState(st, 'US', 'SI'); const c = RbMotion.solve(st, U.SI);
+  close('units: v_C in ft/s', out(b, 'Speed of C, v_C'), 2.4 / 0.3048, 1e-5); close('units: round trip |a_C|', out(c, 'Magnitude |a_C|'), out(a, 'Magnitude |a_C|'), 1e-4);
+  // validation
+  r = run(Object.assign({ jrth: 150 }, book), 'SI'); truthy('rod pointing away from the circle fails', !r.ok && /behind the pin A/.test(r.err[0]));
+  r = run({ jrth: 90, jox: 2, joy: 0, jR: 1 }, 'SI'); truthy('rod line missing the circle fails', !r.ok && /misses the circle/.test(r.err[0]));
+  r = run(Object.assign({ jrth: 30 }, book, { jR: 0 }), 'SI'); truthy('zero radius fails', !r.ok && /radius of the circle/.test(r.err[0]));
+  r = run(Object.assign({ jrth: 30 }, book, { jrw: '' }), 'SI'); truthy('missing ω fails', !r.ok && /angular velocity ω/.test(r.err[0]));
+});
+
 group('dynamics: planar kinematics of rigid bodies', () => {
   const run = (o, sys) => RbMotion.solve(Object.assign(RbMotion.defaults(), o), U[sys]);
   { const r = run({ mode: 'slider', r: 0.25, l: 0.75, th: 45, beta: 90, e: 0, wAB: -10, aAB: -20 }, 'US'); [{ k: 'Velocity of the slider v_C', v: 2.197 }, { k: 'Angular velocity of BC, ω_BC', v: 2.425 }, { k: 'Angular acceleration of BC, α_BC', v: 27.68 }, { k: 'Acceleration of the slider a_C', v: -13.54 }].forEach((e) => close('Book Examples 16.12 and 16.17, crank 0.25 ft at 10 rad/s cw : ' + e.k, out(r, e.k), e.v)); }

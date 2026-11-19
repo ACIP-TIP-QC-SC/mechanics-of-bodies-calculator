@@ -20,7 +20,7 @@
     let sec = C.section(c, 'Mechanism');
     C.select(sec, { label: 'Mechanism', get: () => st.mode, set: (v) => (st.mode = v), options: [
       ['fixed', 'Rotation about a fixed axis (gears, belts)'], ['slider', 'Slider-crank'], ['fourbar', 'Four-bar linkage'], ['roll', 'Wheel or spool rolling without slipping'], ['bar', 'Bar sliding on a wall and a floor'],
-      ['abs', 'Absolute motion: cam or linkage, s = f(θ)'], ['slot', 'Slotted link driven by a peg'], ['rotframe', 'Rotating frame and Coriolis acceleration'], ['planet', 'Planetary gears']] });
+      ['abs', 'Absolute motion: cam or linkage, s = f(θ)'], ['slot', 'Slotted link driven by a peg'], ['rotframe', 'Rotating frame and Coriolis acceleration'], ['planet', 'Planetary gears'], ['collar', 'Double collar on a rotating rod and a fixed circle']] });
     C.note(sec, 'Angular velocities and accelerations are + counterclockwise.');
     if (XU.MODES.includes(st.mode)) return XU.controls(c, C, st, u);
     if (st.mode === 'fixed') {

@@ -62,6 +62,13 @@
       C.seg(sec, { label: 'Peg B is', get: () => st.jsrc, set: (v) => (st.jsrc = v), options: [['crank', 'On a disk or crank'], ['given', 'Given directly']] });
       if (st.jsrc === 'crank') { pair(sec, 'jcx', 'jcy', 'Fixed centre C of the disk', u.L); num(sec, 'jcw', 'Its angular velocity ω', 'rad/s'); num(sec, 'jca', 'Its angular acceleration α', 'rad/s²'); }
       else { pair(sec, 'jvbx', 'jvby', 'Velocity of B', u.V); pair(sec, 'jabx', 'jaby', 'Acceleration of B', u.A); }
+    } else if (st.mode === 'collar') {
+      sec = C.section(c, 'Rod and circle');
+      C.note(sec, 'The rod turns about the fixed pin A at the origin. The collar C slides on the rod and on a fixed circle (a double collar: two pinned slider blocks).');
+      pair(sec, 'jox', 'joy', 'Centre O of the circle from A', u.L); num(sec, 'jR', 'Radius of the circle R', u.L);
+      if (Math.hypot(+st.jox, +st.joy) > +st.jR * (1 + 1e-9)) C.seg(sec, { label: 'The rod crosses the circle twice; the collar is at', get: () => (st.jfar ? 'far' : 'near'), set: (v) => (st.jfar = v === 'far'), options: [['near', 'The nearer crossing'], ['far', 'The farther crossing']] });
+      sec = C.section(c, 'Motion of the rod');
+      num(sec, 'jrth', 'Angle of the rod θ from +x', '°'); num(sec, 'jrw', 'Angular velocity ω (+ counterclockwise)', 'rad/s'); num(sec, 'jral', 'Angular acceleration α', 'rad/s²');
     } else {
       sec = C.section(c, 'Gears');
       C.seg(sec, { label: 'Gear B runs', get: () => st.jring, set: (v) => (st.jring = v), options: [['sun', 'Outside a sun gear A'], ['ring', 'Inside a ring gear A']] });
@@ -73,10 +80,11 @@
   }
   function diagram(c, C, st) {
     if (st.mode === 'rotframe') C.toggle(c, { label: 'Each acceleration term', get: () => !!st.jterms, set: (v) => (st.jterms = v), rebuild: false });
+    if (st.mode === 'collar') C.toggle(c, { label: 'Radius from O to C', get: () => st.jshowR !== false, set: (v) => (st.jshowR = v), rebuild: false });
     if (st.mode === 'slot' || st.mode === 'planet' || st.mode === 'rotframe') C.toggle(c, { label: 'Path of the point', get: () => st.jtrace !== false, set: (v) => (st.jtrace = v), rebuild: false });
   }
-  const cap2D = (st) => ({ abs: 'Driving angle θ and the coordinate it sets', rotframe: st.jframe === 'arm' ? 'Arm, car and point C' : 'Rotating frame xyz and point B', slot: 'Slotted link and peg', planet: 'Planetary gear train' }[st.mode]);
-  const plotCaption = (st) => ({ abs: 'Position and velocity of the part against θ (at the given ω)', rotframe: 'Acceleration terms (x and y components)', slot: 'Angular velocity of the link as the peg goes round', planet: 'Angular velocities against time' }[st.mode]);
+  const cap2D = (st) => ({ abs: 'Driving angle θ and the coordinate it sets', rotframe: st.jframe === 'arm' ? 'Arm, car and point C' : 'Rotating frame xyz and point B', slot: 'Slotted link and peg', planet: 'Planetary gear train', collar: 'Rod, circle and double collar' }[st.mode]);
+  const plotCaption = (st) => ({ abs: 'Position and velocity of the part against θ (at the given ω)', rotframe: 'Acceleration terms (x and y components)', slot: 'Angular velocity of the link as the peg goes round', planet: 'Angular velocities against time', collar: 'Speed of C and its speed along the rod against θ (at the given ω)' }[st.mode]);
   const legend = (st) => (st.mode === 'rotframe' ? [[K.vel, 'Velocity'], [K.acc, 'Acceleration'], [CA, 'Moving frame'], [CB, st.jframe === 'arm' ? 'Point C' : 'Point B']] : [[K.vel, 'Velocity'], [K.acc, 'Acceleration'], [LINK, 'Links', 'ln'], [CB, 'Moving point']]);
 
   /* ------------------------------------------------------------------ */
@@ -105,7 +113,7 @@
 
   function draw2D(svg, g, opt, uNow, st) {
     showArrows = !st || st.showV !== false;
-    return ({ abs: abs2D, rotframe: g.arm ? arm2D : frame2D, slot: slot2D, planet: planet2D })[g.mode](svg, g, opt, uNow, st || {});
+    return ({ abs: abs2D, rotframe: g.arm ? arm2D : frame2D, slot: slot2D, planet: planet2D, collar: collar2D })[g.mode](svg, g, opt, uNow, st || {});
   }
 
   /* absolute motion: a driving link at angle θ and the part whose coordinate s = f(θ) */
@@ -212,7 +220,43 @@
       terms.forEach(([a, nm], i) => DYUI.vec(D, f.C, a, 20 + 60 * L2(a) / amax, { color: K.acc, w: 1.8, label: lbl(opt, `${nm} = ${fmt(L2(a))}`, nm), size: 11, anchor: a[0] < 0 ? 'end' : 'start', ldx: a[0] < 0 ? -6 : 6, ldy: 4 + (i % 2) * 10 }));
       arrowsAt(D, f.C, k.v, null, vmax, 1, opt, 'C', u);
     } else arrowsAt(D, f.C, k.v, uN === undefined ? k.a : null, vmax, Math.max(L2(k.a), 1e-9), opt, 'C', u);
-    DYUI.title(D, 12, 20, uN === undefined ? `At the instant: v_C = ${fmt(L2(k.v))} ${u.V}, a_C = ${fmt(L2(k.a))} ${u.A}, Ω = ${fmt(f.q.W)} rad/s` : `t = ${fmt(t)} s: the arm is at ${fmt(f.phi / D2R)}°, v_C = ${fmt(L2(k.v))} ${u.V}`);
+    DYUI.title(D, 12, 20, uN === undefined ? `At the instant: v_C = ${fmt(L2(k.v))} ${u.V}, a_C = ${fmt(L2(k.a))} ${u.A}` : `t = ${fmt(t)} s: arm at ${fmt(f.phi / D2R)}°, v_C = ${fmt(L2(k.v))} ${u.V}`);
+    return true;
+  }
+
+  /* double collar: the rod turns over the range of θ where it meets the circle, and the collar follows */
+  function collarTheta(g, uN) {
+    if (uN === undefined) return g.th;
+    const sg = Math.sign(g.w) || 1;
+    if (g.full) return g.th + sg * TAU * uN;
+    const mid = (g.lo + g.hi) / 2, amp = ((g.hi - g.lo) / 2) * 0.96, ph = Math.asin(Math.max(-1, Math.min(1, (g.th - mid) / (amp || 1))));
+    return mid + amp * Math.sin(ph + sg * TAU * uN);
+  }
+  /** Two small blocks pinned at C: one slides on the rod (along e), one on the ring (along t). */
+  function collarBlocks(D, C, e, t, s) {
+    const box = (dir, a, b, fill) => { const n = [-dir[1], dir[0]]; D.poly([[-a, -b], [a, -b], [a, b], [-a, b]].map(([x, y]) => add(C, add(mul(dir, x), mul(n, y)))), { fill, stroke: K.edge, sw: 1.4 }); };
+    box(t, s * 0.9, s * 0.62, '#c9b28a'); box(e, s * 1.05, s * 0.45, '#e6d3ad');
+    D.circle(C, 2.6 / D.sc, { fill: K.ink });
+  }
+  function collar2D(svg, g, opt, uN, st) {
+    const u = g.u, th = collarTheta(g, uN), m = g.at(th);
+    const q = m.err ? g.m : m, R = g.R, O = g.d;
+    const ext = [[0, 0], [O[0] - R, O[1] - R], [O[0] + R, O[1] + R]];
+    const D = UI.Draw2D(svg, bbox(ext, 0.22), { pad: 30 });
+    D.circle(O, R, { stroke: '#8fb3a4', sw: Math.max(6, 0.06 * R * D.sc) }); D.circle(O, R, { stroke: '#5f8a78', sw: 1 });
+    D.circle(O, 3.5 / D.sc, { fill: K.ink }); name(D, O, 'O', 8, 16);
+    if (st.jshowR !== false) { D.line(O, q.rC, { stroke: K.ink, sw: 1, dash: '5 4' }); D.text(mul(add(O, q.rC), 0.5), `R = ${fmt(R)} ${u.L}`, { dx: 6, dy: -4, color: K.ink, size: 11 }); }
+    const Lr = Math.max(q.r * 1.15, q.r + 0.25 * R), e = [Math.cos(th), Math.sin(th)];
+    link(D, [0, 0], mul(e, Lr), 8); DYUI.pin(D, [0, 0], 0.12 * R); joint(D, [0, 0]); name(D, [0, 0], 'A', -18, 16);
+    D.line([0, 0], [0.45 * R, 0], { stroke: K.ink, sw: 1, dash: '5 4' });
+    const sp = Math.min(44, 0.09 * D.W); // arcs shrink on a narrow screen
+    D.arc([0, 0], 0.68 * sp, 0, th / D2R, `θ = ${fmt(th / D2R)}°`, { color: K.ink });
+    spin(D, [0, 0], sp, g.w, null, K.ink); // its label goes on the side of A away from the rod
+    D.text([0, 0], `ω = ${fmt(g.w)} rad/s`, { dx: -e[0] * (sp + 12), dy: e[1] * (sp + 12) + 4, anchor: e[0] > 0.2 ? 'end' : e[0] < -0.2 ? 'start' : 'middle', color: K.ink, size: 11.5, weight: 700 });
+    collarBlocks(D, q.rC, q.e, q.t, Math.max(0.07 * R, 7 / D.sc)); name(D, q.rC, 'C', 12, -12, CB);
+    const vmax = Math.max(L2(q.k.v), 1e-9), amax = Math.max(L2(q.k.a), 1e-9);
+    arrowsAt(D, q.rC, q.k.v, uN === undefined ? q.k.a : null, vmax, amax, opt, 'C', u);
+    DYUI.title(D, 12, 20, `θ = ${fmt(th / D2R)}°:  r = ${fmt(q.r)} ${u.L},  v_C = ${fmt(L2(q.k.v))} ${u.V}${uN === undefined ? `,  a_C = ${fmt(L2(q.k.a))} ${u.A}` : ''}`);
     return true;
   }
 
@@ -292,6 +336,12 @@
       const k = g.k, terms = [['a_O', g.aO], ['Ω̇×r', k.Wdr], ['Ω×(Ω×r)', k.WWr], ['2Ω×v_rel', k.cor], ['a_rel', g.ar], ['a_B', k.a]];
       return DYUI.bars(svg, terms.flatMap(([n, a]) => [{ name: `${n} x`, v: a[0], color: n === 'a_B' ? K.acc : CA }, { name: 'y', v: a[1], color: n === 'a_B' ? K.acc : CB }]), { title: 'Acceleration', unit: u.A });
     }
+    if (g.mode === 'collar') {
+      const lo = g.full ? g.th - Math.PI : g.lo, hi = g.full ? g.th + Math.PI : g.hi, p1 = [], p2 = [];
+      const vAt = (x) => { const m = g.at(x * D2R); return m.err ? NaN : L2(m.k.v); }, rAt = (x) => { const m = g.at(x * D2R); return m.err ? NaN : m.rd; };
+      for (let i = 0; i <= 160; i++) { const x = (lo + ((hi - lo) * i) / 160) / D2R, a = vAt(x), b = rAt(x); if (isFinite(a) && isFinite(b)) { p1.push([x, a]); p2.push([x, b]); } }
+      return DYUI.stack(svg, [{ label: `v_C (${u.V})`, color: K.vel, pts: p1, at: vAt }, { label: `ṙ along the rod (${u.V})`, color: CB, pts: p2, at: rAt }], { xlabel: 'θ (°)', cursor: collarTheta(g, uN) / D2R, xmin: lo / D2R, xmax: hi / D2R });
+    }
     if (g.mode === 'slot') {
       if (!g.crank) return DYUI.bars(svg, [{ name: 'ω_AC (rad/s)', v: g.k.w, color: K.vel }, { name: 'α_AC (rad/s²)', v: g.k.al, color: K.acc }, { name: `v_rel (${u.V})`, v: g.k.vrel, color: CA }, { name: `a_rel (${u.A})`, v: g.k.arel, color: CB }], { unit: '' });
       const sg = Math.sign(g.crank.w) || 1, p1 = [], p2 = [];
@@ -316,6 +366,13 @@
     v.line([[c[0], c[1], z1 + 1e-3], [c[0] + R * Math.cos(th || 0), c[1] + R * Math.sin(th || 0), z1 + 1e-3]], K.ink, 2);
   }
   function draw3D(v, g, uN) {
+    if (g.mode === 'collar') {
+      const th = collarTheta(g, uN), m = g.at(th), q = m.err ? g.m : m, R = g.R, O = g.d, w = 0.06 * R;
+      for (let i = 0; i < 48; i++) { const a0 = (i / 48) * TAU, a1 = ((i + 1) / 48) * TAU; slab(v, add(O, [R * Math.cos(a0), R * Math.sin(a0)]), add(O, [R * Math.cos(a1), R * Math.sin(a1)]), w, -w, w, '#a9c7ba'); }
+      const e = [Math.cos(th), Math.sin(th)]; slab(v, [0, 0], mul(e, Math.max(q.r * 1.15, q.r + 0.25 * R)), w * 0.8, w * 1.2, w * 2.2, '#aab7c4');
+      v.extrude([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => add(q.rC, add(mul(e, a * w * 1.5), mul([-e[1], e[0]], b * w)))), w * 1, w * 2.6, '#e6d3ad', 1, K.edge);
+      v.setBounds([Math.min(0, O[0] - R) - w, Math.min(0, O[1] - R) - w, -R * 0.3], [Math.max(0, O[0] + R) + w, Math.max(0, O[1] + R) + w, R * 0.3]); return;
+    }
     if (g.mode === 'planet') {
       const t = uN === undefined ? 0 : g.span[1] * uN, p = planetAt(g, t), h = g.rB * 0.4, R = g.ring ? g.rA * 1.15 : g.L + g.rB;
       if (g.ring) for (let i = 0; i < 36; i++) { const a0 = (i / 36) * TAU, a1 = ((i + 1) / 36) * TAU, rr = g.rA * 1.06; slab(v, [rr * Math.cos(a0), rr * Math.sin(a0)], [rr * Math.cos(a1), rr * Math.sin(a1)], g.rA * 0.12, -h / 2, h / 2, '#c3cbd3'); }
@@ -384,6 +441,16 @@
       expect: [{ k: 'Speed of C, |v_C|', v: 18.68 }, { k: 'Acceleration a_C, x', v: -34.64 }, { k: 'Acceleration a_C, y', v: -15.5 }] },
     { name: 'Ride car on a 4 m arm, a passenger walking across the car at 1 m/s', units: 'SI',
       state: P0({ mode: 'rotframe', jframe: 'arm', jLa: 4, jang: 20, jwab: 0.8, jaab: 0.2, jwr: 1.5, jar: 0, jkx: 0.8, jky: 0, jkvx: 0, jkvy: 1, jkax: 0, jkay: 0 }) },
+    { name: 'Test: Problem 16–135, rod at 3 rad/s through a point A on a 0.4 m circle, double collar at θ = 30° (v_C = 2.40 m/s)', units: 'SI',
+      state: P0({ mode: 'collar', jrth: 30, jrw: 3, jral: 0, jox: 0.4, joy: 0, jR: 0.4 }),
+      expect: [{ k: 'Speed of C, v_C', v: 2.40 }, { k: 'Distance AC along the rod, r', v: 0.6928 }, { k: 'Speed along the rod, (v_C/A)xyz = ṙ', v: -1.20 }] },
+    { name: 'Test: Problem 16–136, the same double collar at θ = 45° (v_C = 2.40 m/s, a_C = 14.4 m/s² toward O)', units: 'SI',
+      state: P0({ mode: 'collar', jrth: 45, jrw: 3, jral: 0, jox: 0.4, joy: 0, jR: 0.4 }),
+      expect: [{ k: 'Speed of C, v_C', v: 2.40 }, { k: 'Magnitude |a_C|', v: 14.4 }, { k: 'Its rate, (a_C/A)xyz = r̈', v: -5.091 }] },
+    { name: 'Double collar with the pivot inside a 2 ft ring, rod speeding up', units: 'US',
+      state: P0({ mode: 'collar', jrth: 120, jrw: 2, jral: 1.5, jox: 0.8, joy: -0.4, jR: 2 }) },
+    { name: 'Edge: rod pointing away from the circle (fails on purpose)', units: 'SI', fails: true,
+      state: P0({ mode: 'collar', jrth: 150, jrw: 3, jral: 0, jox: 0.4, joy: 0, jR: 0.4 }) },
   ];
 
   root.DRbExtraUI = { MODES, controls, diagram, cap2D, plotCaption, legend, draw2D, plot, draw3D, presets };

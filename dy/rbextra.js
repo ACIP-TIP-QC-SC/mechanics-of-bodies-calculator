@@ -7,6 +7,8 @@
  *                         a_B = a_A + Ω̇ × r_B/A + Ω × (Ω × r_B/A) + 2Ω × (v_B/A)xyz + (a_B/A)xyz  (16–27)
  *   Slotted link: a peg moves along a straight slot that passes through the link's pivot A.
  *   Planetary gears: an arm carries gear B round a sun gear (or inside a ring gear) A.
+ *   Double collar: a collar C slides on a rod turning about the fixed pin A and on a fixed circle; r = f(θ) along
+ *   the rod, then v_C = ṙ e_r + rθ̇ e_θ and a_C = (r̈ − rθ̇²) e_r + (rθ̈ + 2ṙθ̇) e_θ (12–25, 12–29), or by 16–24, 16–27.
  *   Frame carried on an arm: a car spins on the end B of an arm AB that turns about A; the car is the moving
  *   frame (origin B, Ω = ω_AB + ω′), and B moves on a circle about A (16–24 and 16–27 twice).
  * Signs: angular quantities are + counterclockwise (k points out of the page).
@@ -19,7 +21,7 @@
   const Formula = root.Formula || require('../shared/formula.js');
   const { fmt, fail, Steps } = Core;
   const D2R = Math.PI / 180;
-  const MODES = ['abs', 'rotframe', 'slot', 'planet'];
+  const MODES = ['abs', 'rotframe', 'slot', 'planet', 'collar'];
 
   const defaults = () => ({
     // absolute motion s = f(θ)
@@ -32,10 +34,12 @@
     jbx: 0.75, jby: 0, jsrc: 'crank', jcx: 0.75, jcy: -0.3, jcw: 6, jca: 10, jvbx: 0, jvby: 0, jabx: 0, jaby: 0,
     // planetary gears
     jring: 'sun', jrA: 0.3, jrB: 0.2, jwA: 0, jaA: 0, jwarm: -6, jaarm: -3, jpth: 30,
+    // double collar on a rod turning about A (origin) and a fixed circle of centre O and radius R
+    jrth: 30, jrw: 3, jral: 0, jox: 0.4, joy: 0, jR: 0.4, jfar: false,
   });
   const KINDS = { jvox: 'V', jvoy: 'V', jaox: 'A', jaoy: 'A', jrx: 'L', jry: 'L', jvrx: 'V', jvry: 'V', jarx: 'A', jary: 'A',
     jbx: 'L', jby: 'L', jcx: 'L', jcy: 'L', jvbx: 'V', jvby: 'V', jabx: 'A', jaby: 'A', jrA: 'L', jrB: 'L',
-    jLa: 'L', jkx: 'L', jky: 'L', jkvx: 'V', jkvy: 'V', jkax: 'A', jkay: 'A' };
+    jLa: 'L', jkx: 'L', jky: 'L', jkvx: 'V', jkvy: 'V', jkax: 'A', jkay: 'A', jox: 'L', joy: 'L', jR: 'L' };
   /** s = f(θ) carries a length or an angle; its formula's numbers are in the units typed and are not rescaled. */
   function convert(st, from, to) {
     if (from === to) return st;
@@ -57,6 +61,7 @@
       case 'abs': return absolute(st, u);
       case 'rotframe': return st.jframe === 'arm' ? armFrame(st, u) : rotframe(st, u);
       case 'slot': return slot(st, u);
+      case 'collar': return collar(st, u);
       default: return planet(st, u);
     }
   }
@@ -219,7 +224,76 @@
     return DY.result(`ω_B = ${fmt(wB)} rad/s, α_B = ${fmt(aB)} rad/s²`, 'ok', out, S, { mode: 'planet', u, ring, rA, rB, L, wA, aA, warm, aarm, wB, aB, th, vE, aE, span: [0, T] }, []);
   }
 
-  const RbExtra = { MODES, defaults, convert, solve, frameTerms, armEnd, armFrameTerms, slotSolve, planetRate };
+  /* ---------------- double collar on a rotating rod and a fixed circle ---------------- */
+  /**
+   * Where the rod meets the circle. The rod turns about A (the origin) at angle θ; the circle has centre d = O − A and
+   * radius R. With e = (cos θ, sin θ), the collar is at r e where r² − 2r (e·d) − (R² − |d|²) = 0, so
+   *   r = p ± q,  p = e·d,  q = √(p² − |d|² + R²);
+   * with p′ = e⊥·d and p″ = −p, the derivatives along the rod are
+   *   r′ = p′ ± p p′/q,   r″ = −p ± [(p′² − p²)/q − p² p′²/q³].
+   * far picks the crossing farther from A when both are ahead of A. Returns { r, r1, r2 } or { err: 'miss' | 'behind' }.
+   */
+  function collarR(th, d, R, far) {
+    const e = [Math.cos(th), Math.sin(th)], p = dot(e, d), p1 = dot(kx(e), d), c = dot(d, d) - R * R, disc = p * p - c;
+    if (disc < 0) return { err: 'miss' };
+    const q = Math.sqrt(disc), tol = 1e-9 * Math.max(R, Math.sqrt(dot(d, d)));
+    const roots = [p - q, p + q].filter((r) => r > tol);
+    if (!roots.length) return { err: 'behind' };
+    const sg = roots.length === 2 && !far ? -1 : 1, r = p + sg * q;
+    if (q < tol) return { err: 'miss' }; // the rod only grazes the circle: the collar's speed along it is unbounded
+    return { r, r1: p1 + (sg * p * p1) / q, r2: -p + sg * ((p1 * p1 - p * p) / q - (p * p * p1 * p1) / (q * q * q)), two: roots.length === 2 };
+  }
+  /**
+   * Motion of the collar at rod angle θ with ω and α: ṙ = r′ω, r̈ = r″ω² + r′α, and by rotating axes with Ω = ω
+   * (16–24, 16–27): v_C = Ω × r_C/A + (v_C/A)xyz, a_C = Ω̇ × r_C/A + Ω × (Ω × r_C/A) + 2Ω × (v_C/A)xyz + (a_C/A)xyz,
+   * where (v_C/A)xyz = ṙ and (a_C/A)xyz = r̈ along the rod.
+   */
+  function collarMotion(th, w, al, d, R, far) {
+    const g = collarR(th, d, R, far);
+    if (g.err) return g;
+    const e = [Math.cos(th), Math.sin(th)], rd = g.r1 * w, rdd = g.r2 * w * w + g.r1 * al, rC = mul(e, g.r);
+    const k = frameTerms([0, 0], [0, 0], w, al, rC, mul(e, rd), mul(e, rdd));
+    const n = mul(add(rC, mul(d, -1)), 1 / R), t = kx(n), sd = dot(k.v, t);
+    return Object.assign(g, { e, rd, rdd, rC, k, n, t, sd, at: dot(k.a, t), an: -dot(k.a, n) });
+  }
+  function collar(st, u) {
+    const S = Steps(), out = [], warn = [];
+    const d = [num(st.jox, NaN), num(st.joy, NaN)], R = +st.jR, thD = +st.jrth, w = num(st.jrw, NaN), al = num(st.jral, 0);
+    if (!(R > 0)) return fail('Enter the radius of the circle R (above zero).');
+    if (!d.every(isFinite)) return fail('Enter where the centre O of the circle is from the pin A (x and y).');
+    if (!isFinite(thD)) return fail('Enter the angle θ of the rod.');
+    if (!(isFinite(w) && isFinite(al))) return fail('Enter the angular velocity ω and the angular acceleration α of the rod.');
+    const th = thD * D2R, far = !!st.jfar, m = collarMotion(th, w, al, d, R, far);
+    if (m.err === 'miss') return fail(`At θ = ${fmt(thD)}° the line of the rod misses the circle (or only grazes it), so the collar has no position there. Choose another angle.`);
+    if (m.err === 'behind') return fail(`At θ = ${fmt(thD)}° the circle is behind the pin A: the rod, pointing from A at θ, does not reach it. Choose another angle.`);
+    const p = dot(m.e, d), dd = dot(d, d), onCircle = Math.abs(Math.sqrt(dd) - R) < 1e-9 * R;
+    S.add({ t: 'Position of the collar along the rod', n: `The collar C is on the rod at a distance r from A and on the circle of radius ${fmt(R)} ${u.L} with centre O at d = {${vtxt(d)}} ${u.L} from A.${onCircle ? ' A lies on the circle, so r = 2(e·d).' : ''}`,
+      f: '|r e − d|² = R²  ⇒  r² − 2r(e·d) − (R² − |d|²) = 0', s: `e·d = ${fmt(p)},  R² − |d|² = ${fmt(R * R - dd)}`, r: `r = ${fmt(m.r)} ${u.L}${m.two ? ` (the ${far ? 'farther' : 'nearer'} of the two crossings)` : ''}` });
+    S.add({ t: 'Speed and acceleration along the rod', n: 'Differentiate r(θ) with respect to time by the chain rule.', f: 'ṙ = (dr/dθ) θ̇,   r̈ = (d²r/dθ²) θ̇² + (dr/dθ) θ̈',
+      s: `dr/dθ = ${fmt(m.r1)},  d²r/dθ² = ${fmt(m.r2)};  ṙ = ${fmt(m.r1)}(${fmt(w)}),  r̈ = ${fmt(m.r2)}(${fmt(w)})² + ${fmt(m.r1)}(${fmt(al)})`, r: `ṙ = (v_C/A)xyz = ${fmt(m.rd)} ${u.V},  r̈ = (a_C/A)xyz = ${fmt(m.rdd)} ${u.A}` });
+    const vr = m.rd, vth = m.r * w, ar = m.rdd - m.r * w * w, ath = m.r * al + 2 * m.rd * w;
+    S.add({ t: 'Polar components about A', f: 'v_r = ṙ,  v_θ = rθ̇;   a_r = r̈ − rθ̇²,  a_θ = rθ̈ + 2ṙθ̇', s: `a_r = ${fmt(m.rdd)} − ${fmt(m.r)}(${fmt(w)})²;  a_θ = ${fmt(m.r)}(${fmt(al)}) + 2(${fmt(m.rd)})(${fmt(w)})`,
+      r: `v_r = ${fmt(vr)}, v_θ = ${fmt(vth)} ${u.V};  a_r = ${fmt(ar)}, a_θ = ${fmt(ath)} ${u.A}` });
+    S.add({ t: 'The same by rotating axes on the rod', n: 'The xyz frame turns with the rod (Ω = ω, origin A fixed); the collar slides along x.', f: 'v_C = Ω × r_C/A + (v_C/A)xyz;   a_C = Ω̇ × r_C/A + Ω × (Ω × r_C/A) + 2Ω × (v_C/A)xyz + (a_C/A)xyz',
+      s: `v_C = (${vtxt(m.k.Wr)}) + (${vtxt(mul(m.e, m.rd))});  a_C = (${vtxt(m.k.Wdr)}) + (${vtxt(m.k.WWr)}) + (${vtxt(m.k.cor)}) + (${vtxt(mul(m.e, m.rdd))})`,
+      r: `v_C = {${vtxt(m.k.v)}} ${u.V},  |v_C| = ${fmt(len(m.k.v))} ${u.V};  a_C = {${vtxt(m.k.a)}} ${u.A},  |a_C| = ${fmt(len(m.k.a))} ${u.A}` });
+    S.add({ t: 'Check on the circle', n: 'C also moves on the circle, so v_C is tangent to it and the normal part of a_C is v_C²/R toward O.', f: 'ṡ = v_C · t̂,  (a_C)_n = ṡ²/R,  (a_C)_t = a_C · t̂',
+      s: `v_C · n̂ = ${fmt(dot(m.k.v, m.n))};  ṡ²/R = (${fmt(m.sd)})²/${fmt(R)} = ${fmt((m.sd * m.sd) / R)}`, r: `ṡ = ${fmt(m.sd)} ${u.V}${sense(m.sd)},  (a_C)_n = ${fmt(m.an)} ${u.A},  (a_C)_t = ${fmt(m.at)} ${u.A}` });
+    out.push({ k: 'Distance AC along the rod, r', v: m.r, u: u.L }, { k: 'Speed along the rod, (v_C/A)xyz = ṙ', v: m.rd, u: u.V }, { k: 'Its rate, (a_C/A)xyz = r̈', v: m.rdd, u: u.A },
+      { k: 'Velocity v_C, x', v: m.k.v[0], u: u.V }, { k: 'Velocity v_C, y', v: m.k.v[1], u: u.V }, { k: 'Speed of C, v_C', v: len(m.k.v), u: u.V, hl: true }, { k: 'Direction of v_C from +x', v: dirn(m.k.v), u: '°' },
+      { k: 'Acceleration a_C, x', v: m.k.a[0], u: u.A }, { k: 'Acceleration a_C, y', v: m.k.a[1], u: u.A }, { k: 'Magnitude |a_C|', v: len(m.k.a), u: u.A },
+      { k: 'Speed along the circle ṡ (+ counterclockwise about O)', v: m.sd, u: u.V }, { k: 'Tangential acceleration on the circle (a_C)_t', v: m.at, u: u.A }, { k: 'Normal acceleration on the circle (a_C)_n', v: m.an, u: u.A });
+    // the rod angles over which the collar exists, for Play
+    const ok = (x) => !collarR(x, d, R, far).err;
+    let lo = th, hi = th; const stp = Math.PI / 360;
+    for (let i = 0; i < 720 && ok(lo - stp); i++) lo -= stp;
+    for (let i = 0; i < 720 && ok(hi + stp); i++) hi += stp;
+    const full = hi - lo >= 2 * Math.PI - 2 * stp, wAbs = Math.max(Math.abs(w), 1e-9);
+    return DY.result(`v_C = ${fmt(len(m.k.v))} ${u.V}, a_C = ${fmt(len(m.k.a))} ${u.A}`, warn.length ? 'warn' : 'ok', out, S,
+      { mode: 'collar', u, th, w, al, d, R, far, m, lo, hi, full, at: (x) => collarMotion(x, w, al, d, R, far), span: [0, (full ? 2 * Math.PI : hi - lo) / wAbs] }, warn);
+  }
+
+  const RbExtra = { MODES, defaults, convert, solve, frameTerms, armEnd, armFrameTerms, slotSolve, planetRate, collarR, collarMotion };
   root.RbExtra = RbExtra;
   if (typeof module !== 'undefined' && module.exports) module.exports = RbExtra;
 })(typeof window !== 'undefined' ? window : globalThis);
