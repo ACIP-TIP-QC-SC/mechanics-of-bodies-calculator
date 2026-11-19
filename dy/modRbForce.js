@@ -3,7 +3,7 @@
  * ===================================================================== */
 (function (root) {
   'use strict';
-  const { Core, UI, RbForce, DY, DYUI } = root;
+  const { Core, UI, RbForce, DY, DYUI, DRbSysUI: XS } = root;
   const { fmt } = Core;
   const K = DYUI.K, CA = '#2f7fc1', CB = '#d4612a', LINK = '#5d6d7e', D2R = Math.PI / 180, TAU = 2 * Math.PI;
 
@@ -22,7 +22,9 @@
     let sec = C.section(c, 'Scene');
     C.select(sec, { label: 'Scene', get: () => st.scene, set: (v) => (st.scene = v), options: [
       ['inertia', 'Moment of inertia of a composite body'], ['car', 'Vehicle accelerating or braking (translation)'], ['pend', 'Pendulum on a fixed pin (rotation)'],
-      ['drum', 'Drum lowering a block (rotation)'], ['roll', 'Wheel or spool rolling (general plane motion)']] });
+      ['drum', 'Drum lowering a block (rotation)'], ['roll', 'Wheel or spool rolling (general plane motion)'],
+      ['linked', 'Two wheels joined by a link on a slope'], ['geararm', 'Arm driving gears round a fixed gear (work and energy)'], ['twobar', 'Two bars released from rest (energy)'], ['eimpact', 'Eccentric impact']] });
+    if (XS.SCENES.includes(st.scene)) return XS.controls(c, C, st, u);
     const methods = { pend: [['force', 'ΣF = ma_G'], ['energy', 'Work and energy']], drum: [['force', 'ΣF = ma_G'], ['energy', 'Work and energy'], ['impulse', 'Impulse and momentum']], roll: [['force', 'ΣF = ma_G'], ['energy', 'Work and energy'], ['impulse', 'Impulse and momentum']] }[st.scene];
     if (methods) { if (!methods.some(([v]) => v === st.method)) st.method = 'force'; C.seg(sec, { label: 'Method', get: () => st.method, set: (v) => (st.method = v), options: methods }); }
 
@@ -83,6 +85,7 @@
   };
   M.diagram = function (c, C) {
     const st = S();
+    if (XS.SCENES.includes(st.scene)) return XS.diagram(c, C, st);
     if (st.scene !== 'inertia') {
       C.toggle(c, { label: 'Free-body diagram (forces on the body)', get: () => dopt('fbd', true), set: (v) => (st.fbd = v), rebuild: false });
       C.toggle(c, { label: 'Kinetic diagram (ma_G and I_Gα)', get: () => dopt('kd', true), set: (v) => (st.kd = v), rebuild: false });
@@ -95,12 +98,12 @@
   M.compute = (U) => RbForce.solve(S(), U);
   M.onUnits = (from, to) => RbForce.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => ({ inertia: 'Body and its parts', car: 'Vehicle, free-body and kinetic diagrams', pend: 'Pendulum, free-body and kinetic diagrams', drum: 'Drum and block, free-body and kinetic diagrams', roll: 'Rolling body, free-body and kinetic diagrams' }[S().scene]);
+  M.cap2D = () => (XS.SCENES.includes(S().scene) ? XS.cap2D(S()) : { inertia: 'Body and its parts', car: 'Vehicle, free-body and kinetic diagrams', pend: 'Pendulum, free-body and kinetic diagrams', drum: 'Drum and block, free-body and kinetic diagrams', roll: 'Rolling body, free-body and kinetic diagrams' }[S().scene]);
   M.cap3D = () => '3D view';
-  M.plotCaption = () => ({ inertia: 'Share of I_O from each part', car: 'Normal forces against acceleration', pend: 'ω and pin forces over the swing', drum: 'Speed of the block and ω of the drum', roll: 'Speed of G and ω against time' }[S().scene]);
+  M.plotCaption = () => (XS.SCENES.includes(S().scene) ? XS.plotCaption(S()) : { inertia: 'Share of I_O from each part', car: 'Normal forces against acceleration', pend: 'ω and pin forces over the swing', drum: 'Speed of the block and ω of the drum', roll: 'Speed of G and ω against time' }[S().scene]);
   M.plotTall = true;
-  M.hint = () => (S().scene === 'inertia' ? 'Press Play to swing the body about O. Holes are drawn dashed; the dot G is the mass centre of the whole body.' : 'Press Play to run the motion. Forces on the body are red; the kinetic diagram on the right shows ma_G and I_Gα.');
-  M.legend = () => (S().scene === 'inertia' ? [[K.body, 'Solid part'], [K.ic, 'Mass centre G'], [K.ink, 'Axis O', 'ln']] : [[K.force, 'Force'], [K.acc, 'ma_G and I_Gα'], [K.vel, 'Velocity'], [K.ink, 'Cord or support', 'ln']]);
+  M.hint = () => (XS.SCENES.includes(S().scene) ? XS.hint(S()) : S().scene === 'inertia' ? 'Press Play to swing the body about O. Holes are drawn dashed; the dot G is the mass centre of the whole body.' : 'Press Play to run the motion. Forces on the body are red; the kinetic diagram on the right shows ma_G and I_Gα.');
+  M.legend = () => (XS.SCENES.includes(S().scene) ? XS.legend(S()) : S().scene === 'inertia' ? [[K.body, 'Solid part'], [K.ic, 'Mass centre G'], [K.ink, 'Axis O', 'ln']] : [[K.force, 'Force'], [K.acc, 'ma_G and I_Gα'], [K.vel, 'Velocity'], [K.ink, 'Cord or support', 'ln']]);
   const motion = DYUI.motion(S, () => (root.App && root.App.res && root.App.res.geo ? root.App.res.geo.span : [0, 1]), { idle: 'the instant asked for' });
   M.anim = () => motion;
   const uNow = () => S()._u;
@@ -162,6 +165,7 @@
   /* ------------------------------------------------------------------ */
   M.draw2D = function (svg, res, U, opt) {
     const g = res.geo;
+    if (XS.SCENES.includes(g.scene)) return XS.draw2D(svg, g, opt, uNow(), S());
     return ({ inertia: inertia2D, car: car2D, pend: pend2D, drum: drum2D, roll: roll2D })[g.scene](svg, g, opt);
   };
 
@@ -368,6 +372,7 @@
   /* ------------------------------------------------------------------ */
   M.plot = function (svg, res) {
     const g = res.geo; if (!g) return false;
+    if (XS.SCENES.includes(g.scene)) return XS.plot(svg, g, uNow());
     if (g.scene === 'inertia') return DYUI.bars(svg, g.list.map((q) => ({ name: `Part ${q.i + 1}`, sub: RbForce.SHAPES[q.t].name.split(' ')[0] + (q.sg < 0 ? ' (hole)' : ''), v: q.sg * q.Ii, color: q.sg < 0 ? CB : CA })).concat([{ name: 'Total I_O', v: g.IO, color: K.ink }]), { title: 'I_O', unit: g.u.I });
     if (g.scene === 'car') {
       const a0 = Math.min(0, g.a) - 0.5, a1 = Math.max(g.aLift, g.a) * 1.05, A = [], B = [], L = g.br + g.bf;
@@ -401,6 +406,7 @@
   }
   M.draw3D = function (v, res) {
     const g = res.geo;
+    if (XS.SCENES.includes(g.scene)) return XS.draw3D(v, g, uNow());
     if (g.scene === 'inertia') {
       const psi = swing(), B = inertiaBounds(g), sz = Math.max(B.xmax - B.xmin, B.ymax - B.ymin), t = 0.05 * sz;
       g.list.forEach((q) => {
@@ -477,7 +483,9 @@
       expect: [{ k: 'Angular acceleration α (+ clockwise)', v: -10.32 }, { k: 'Acceleration of G, a_G', v: -5.161 }] },
     { name: 'Solid cylinder rolling 3 m down a 30° slope from rest (work and energy)', units: 'SI', state: P0({ scene: 'roll', method: 'energy', surf: 'ground', rm: 10, rk: 0.1414, R: 0.2, Ro: 0.2, phi: 30, RM: 0, P: 0, yP: 0, mus: 0.5, muk: 0.4, rv1: 0, rs: 3 }) },
     { name: 'Edge: rod released 60° above the level cannot climb to 70° (fails on purpose)', units: 'SI', fails: true, state: P0({ scene: 'pend', method: 'energy', shape: 'rod', pm: 1, pL: 1, th: -60, w: 0, M: 0, th2: -70 }) },
-  ];
+    { name: 'Test: Problem 17–83, 30-lb square plate 2 ft × 2 ft on a pin at a corner, support removed (pin force 21.9 lb)', units: 'US', state: P0({ scene: 'pend', method: 'force', shape: 'body', pm: 30, kG: 0.8165, rG: 1.4142, th: 45, w: 0, M: 0 }),
+      expect: [{ k: 'Angular acceleration α (+ clockwise)', v: 12.075 }, { k: 'Total pin force', v: 21.87 }] },
+  ].concat(XS.presets(P0));
 
   root.DRbForce = M;
 })(window);

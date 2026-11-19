@@ -9,12 +9,14 @@
  *   Impulse and momentum: I_Oω₁ + ΣM_O dt = I_Oω₂ (about a fixed axis or the IC)  (19–14)
  * Scenes: composite moment of inertia, a car or motorcycle (translation), a pendulum (fixed axis),
  * a drum lowering a block (fixed axis, connected), and a wheel or spool rolling (general plane motion).
+ * dy/rbsys.js adds wheels joined by a link, an arm driving gears, two bars released from rest and eccentric impact.
  * Signs: a clockwise rotation is + in the pendulum, drum and rolling scenes, as the book draws them.
  * ===================================================================== */
 (function (root) {
   'use strict';
   const Core = root.Core || require('../shared/core.js');
   const DY = root.DY || require('./dycore.js');
+  const RbSys = root.RbSys || require('./rbsys.js');
   const { fmt, fail, Steps } = Core;
   const D2R = Math.PI / 180;
 
@@ -33,6 +35,8 @@
       // drum
       Iby: 'k', dm: 60, kO: 0.25, IO: 3.75, dr: 0.4, bm: 20, Mf: 0, dv1: 0, ds: 1, dt: 2,
       // rolling
+      // connected bodies and eccentric impact (dy/rbsys.js)
+      ...RbSys.defaults(),
       surf: 'ground', rm: 50, rk: 0.7, R: 1.25, Ro: 1.25, phi: 0, RM: 35, P: 0, yP: 0, mus: 0.3, muk: 0.25, rv1: 0, rs: 2, rt: 2,
     };
   }
@@ -41,11 +45,13 @@
   function convertState(st, from, to) {
     DY.convertObj(st, KINDS, from, to);
     DY.convertList(st.parts, PART, from, to);
+    RbSys.convert(st, from, to);
     return st;
   }
 
   function solve(st, U) {
     const u = DY.units(U);
+    if (RbSys.SCENES.includes(st.scene)) return RbSys.solve(st, u);
     switch (st.scene) {
       case 'inertia': return inertia(st, u);
       case 'car': return car(st, u);

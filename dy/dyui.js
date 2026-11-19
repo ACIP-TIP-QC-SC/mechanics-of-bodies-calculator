@@ -109,7 +109,7 @@
     if (o.ri) D.circle(c, o.ri, { fill: o.fill2 || '#c3cbd3', stroke: K.edge, sw: 1.2 });
     const n = o.spokes === undefined ? 1 : o.spokes;
     for (let i = 0; i < n; i++) { const a = (th || 0) + (i * Math.PI * 2) / Math.max(1, n); D.line(c, [c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)], { stroke: o.spoke || K.ink, sw: 1.6 }); }
-    D.circle(c, Math.max(r * 0.06, 0.02), { fill: K.ink });
+    D.circle(c, Math.min(Math.max(r * 0.06, 2 / D.sc), 4 / D.sc), { fill: K.ink }); // hub: a few pixels whatever the scale
   }
   /** Pin support drawn under the point p. */
   function pin(D, p, size) {

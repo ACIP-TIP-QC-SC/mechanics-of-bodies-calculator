@@ -1132,6 +1132,25 @@ group('dynamics: impulse and momentum', () => {
   ['ft', 'cons', 'angmom', 'stream', 'vary'].forEach((mode) => { const st = Object.assign(Impact.defaults(), { mode }); const a = Impact.solve(st, U.SI).out[0].v; Impact.convertState(st, 'SI', 'US'); Impact.convertState(st, 'US', 'SI'); close(`${mode}: units round trip`, Impact.solve(st, U.SI).out[0].v, a, 1e-4); });
 });
 
+group('dynamics: connected bodies and eccentric impact', () => {
+  const run = (o, sys) => RbForce.solve(Object.assign(RbForce.defaults(), o), U[sys]);
+  let r = run({ scene: 'linked' }, 'SI'); close('17-110 α', out(r, 'Angular acceleration α'), 6.2089, 1e-4); close('17-110 link force', Math.abs(out(r, 'Force in the link T (+ tension)')), 6.2089, 1e-3);
+  r = run({ scene: 'geararm' }, 'SI'); close('18-33 turns', out(r, 'Turns of the arm θ'), 0.8913, 1e-4);
+  r = run({ scene: 'geararm', xgtask: 'speed', xgrev: 0.89127 }, 'SI'); close('18-33 inverse ω', out(r, 'Angular velocity of the arm ω'), 20, 1e-4);
+  r = run({ scene: 'twobar' }, 'SI'); close('18-46 ω_AB = √(3g/L)', out(r, 'Angular velocity of AB, ω_AB'), Math.sqrt(3 * 9.81), 1e-6); close('18-46 ω_BC', out(r, 'Angular velocity of BC, ω_BC'), Math.sqrt(3 * 9.81), 1e-6);
+  r = run({ scene: 'twobar', xbth2: 30 }, 'SI');
+  { // equal bars: ω_BC = ω_AB, C moves at 2Lω sin θ, v_G2 = (L/2)ω√(1 + 8 sin²θ); T = ½mL²ω²[1/3 + 1/12 + (1 + 8 sin²θ)/4] = mgL(1 − sin θ)
+    const s = 0.5, J = 1 / 3 + 1 / 12 + (1 + 8 * s * s) / 4; close('18-46 at θ = 30° by hand', out(r, 'Angular velocity of AB, ω_AB'), Math.sqrt((2 * 9.81 * (1 - s)) / J), 1e-5); }
+  r = run({ scene: 'eimpact' }, 'SI'); close('19-49 v_D', out(r, 'Velocity of the block after, v_B'), 1.539, 1e-3); close('19-49 ω', out(r, 'Angular velocity just after, ω₂'), -0.9336, 1e-3);
+  r = run({ scene: 'eimpact', xem: 300, xerG: 10, xeIby: 'k', xekO: 10, xeth0: 60, xed: 10, xemb: 0, xee: 0.4 }, 'US'); close('19-41 rebound (from the vertical)', out(r, 'Swing after impact θ₃ (from the vertical)'), 90 - 66.93, 1e-3);
+  r = run({ scene: 'eimpact', xetask: 'tip', xebm: 10, xebb: 1, xebh: 1 }, 'US'); close('19-45 v_min', out(r, 'Least speed to tip over, v_min'), 5.964, 1e-3);
+  r = run({ scene: 'eimpact', xetask: 'land' }, 'SI'); close('19-57 ω', out(r, 'Angular velocity after, ω₂ (+ ccw)'), -5, 1e-9); close('19-57 v_G', out(r, 'Speed of G after, v_G'), 1, 1e-9); close('19-57 angle', out(r, 'Direction of v_G from +x'), 60, 1e-9);
+  r = run({ scene: 'eimpact', xetask: 'land', xeshape: 'rod', xedm: 0.05, xedl: 0.12, xedb: 60, xedv: 0.2, xedang: 90, xedw: 0, xede: 0.8 }, 'SI'); close('19-53 ω', out(r, 'Angular velocity after, ω₂ (+ ccw)'), -2.25, 1e-3); close('19-53 v_G', out(r, 'Speed of G after, v_G'), 0.149, 3e-3);
+  r = run({ scene: 'eimpact', xetask: 'land', xedang: 90, xedv: 2, xedw: 0, xede: 1 }, 'SI'); close('disk dropped straight, e = 1: bounces back at the same speed', out(r, 'Speed of G after, v_G'), 2, 1e-9);
+  r = run({ scene: 'pend', method: 'force', shape: 'body', pm: 30, kG: 0.8165, rG: 1.4142, th: 45, w: 0 }, 'US'); close('17-83 pin force', out(r, 'Total pin force'), 21.87, 2e-3);
+  r = run({ scene: 'twobar', xbL2: 0.5 }, 'SI'); truthy('short BC fails', !r.ok);
+});
+
 group('dynamics: absolute motion, rotating frames, slotted links and planetary gears', () => {
   const run = (o, sys) => RbMotion.solve(Object.assign(RbMotion.defaults(), o), U[sys]);
   let r = run({ mode: 'abs' }, 'SI'); close('16-42 v', out(r, 'Velocity v'), 0.41569, 1e-4); close('16-42 a', out(r, 'Acceleration a'), -0.75215, 1e-4);
