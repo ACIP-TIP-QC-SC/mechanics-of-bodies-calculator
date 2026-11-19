@@ -3,7 +3,7 @@
  * ===================================================================== */
 (function (root) {
   'use strict';
-  const { Core, UI, RbMotion, DY, DYUI } = root;
+  const { Core, UI, RbMotion, DY, DYUI, DRbExtraUI: XU } = root;
   const { fmt } = Core;
   const K = DYUI.K, CA = '#2f7fc1', CB = '#d4612a', LINK = '#5d6d7e', D2R = Math.PI / 180, TAU = 2 * Math.PI;
 
@@ -19,8 +19,10 @@
     const num = (sec, k, label, unit) => C.num(sec, { label, get: () => st[k], set: (v) => (st[k] = v), unit });
     let sec = C.section(c, 'Mechanism');
     C.select(sec, { label: 'Mechanism', get: () => st.mode, set: (v) => (st.mode = v), options: [
-      ['fixed', 'Rotation about a fixed axis (gears, belts)'], ['slider', 'Slider-crank'], ['fourbar', 'Four-bar linkage'], ['roll', 'Wheel or spool rolling without slipping'], ['bar', 'Bar sliding on a wall and a floor']] });
+      ['fixed', 'Rotation about a fixed axis (gears, belts)'], ['slider', 'Slider-crank'], ['fourbar', 'Four-bar linkage'], ['roll', 'Wheel or spool rolling without slipping'], ['bar', 'Bar sliding on a wall and a floor'],
+      ['abs', 'Absolute motion: cam or linkage, s = f(θ)'], ['slot', 'Slotted link driven by a peg'], ['rotframe', 'Rotating frame and Coriolis acceleration'], ['planet', 'Planetary gears']] });
     C.note(sec, 'Angular velocities and accelerations are + counterclockwise.');
+    if (XU.MODES.includes(st.mode)) return XU.controls(c, C, st, u);
     if (st.mode === 'fixed') {
       sec = C.section(c, 'Driving wheel A');
       num(sec, 'rA', 'Radius r_A', u.L); num(sec, 'w0', 'Starting ω₀', 'rad/s'); num(sec, 'al', 'Constant angular acceleration α', 'rad/s²');
@@ -56,6 +58,10 @@
   };
   M.diagram = function (c, C) {
     const st = S();
+    if (XU.MODES.includes(st.mode)) {
+      C.toggle(c, { label: 'Velocity and acceleration arrows', get: () => dopt('showV', true), set: (v) => (st.showV = v), rebuild: false });
+      return XU.diagram(c, C, st);
+    }
     C.toggle(c, { label: 'Velocity arrows', get: () => dopt('showV', true), set: (v) => (st.showV = v), rebuild: false });
     C.toggle(c, { label: 'Acceleration arrows', get: () => dopt('showA', false), set: (v) => (st.showA = v), rebuild: false });
     if (st.mode !== 'fixed') C.toggle(c, { label: 'Instantaneous centre of zero velocity', get: () => dopt('ic', true), set: (v) => (st.ic = v), rebuild: false });
@@ -65,11 +71,11 @@
   M.compute = (U) => RbMotion.solve(S(), U);
   M.onUnits = (from, to) => RbMotion.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => ({ fixed: 'Wheels and point P', slider: 'Slider-crank', fourbar: 'Four-bar linkage', roll: 'Rolling body', bar: 'Bar on a wall and a floor' }[S().mode]);
+  M.cap2D = () => (XU.MODES.includes(S().mode) ? XU.cap2D(S()) : { fixed: 'Wheels and point P', slider: 'Slider-crank', fourbar: 'Four-bar linkage', roll: 'Rolling body', bar: 'Bar on a wall and a floor' }[S().mode]);
   M.cap3D = () => '3D view';
-  M.plotCaption = () => ({ fixed: 'Angular velocity against time', slider: 'Slider velocity and acceleration over one turn of the crank', fourbar: 'Angular velocities over the crank angle', roll: 'Speed of P over one turn', bar: 'ω and v_B as the bar slides' }[S().mode]);
-  M.hint = () => 'Press Play to run the mechanism. Arrows show the velocity (green) and acceleration (purple) at the instant on the diagram; the dot marked IC is the instantaneous centre of zero velocity.';
-  M.legend = () => [[K.vel, 'Velocity'], [K.acc, 'Acceleration'], [K.ic, 'Instantaneous centre'], [LINK, 'Links', 'ln']];
+  M.plotCaption = () => (XU.MODES.includes(S().mode) ? XU.plotCaption(S()) : { fixed: 'Angular velocity against time', slider: 'Slider velocity and acceleration over one turn of the crank', fourbar: 'Angular velocities over the crank angle', roll: 'Speed of P over one turn', bar: 'ω and v_B as the bar slides' }[S().mode]);
+  M.hint = () => (XU.MODES.includes(S().mode) ? 'Press Play to run the mechanism. Arrows show the velocity (green) and acceleration (purple); acceleration arrows show at the instant asked for.' : 'Press Play to run the mechanism. Arrows show the velocity (green) and acceleration (purple) at the instant on the diagram; the dot marked IC is the instantaneous centre of zero velocity.');
+  M.legend = () => (XU.MODES.includes(S().mode) ? XU.legend(S()) : [[K.vel, 'Velocity'], [K.acc, 'Acceleration'], [K.ic, 'Instantaneous centre'], [LINK, 'Links', 'ln']]);
   const motion = DYUI.motion(S, () => (root.App && root.App.res && root.App.res.geo ? root.App.res.geo.span : [0, 1]), { idle: 'the instant asked for' });
   M.anim = () => motion;
   const uNow = () => S()._u;
@@ -92,6 +98,7 @@
   /* ------------------------------------------------------------------ */
   M.draw2D = function (svg, res, U, opt) {
     const g = res.geo;
+    if (XU.MODES.includes(g.mode)) return XU.draw2D(svg, g, opt, uNow(), S());
     return ({ fixed: fixed2D, slider: slider2D, fourbar: fourbar2D, roll: roll2D, bar: bar2D })[g.mode](svg, g, opt);
   };
   const link = (D, a, b, w) => { D.line(a, b, { stroke: LINK, sw: w || 7 }); D.line(a, b, { stroke: '#aab7c4', sw: (w || 7) - 3 }); };
@@ -212,6 +219,7 @@
   /* ------------------------------------------------------------------ */
   M.plot = function (svg, res) {
     const g = res.geo, u = g.u;
+    if (XU.MODES.includes(g.mode)) return XU.plot(svg, g, uNow());
     if (g.mode === 'fixed') {
       const T = g.span[1], a = [], b = []; for (let i = 0; i <= 100; i++) { const t = (T * i) / 100, w = g.w0 + g.al * t; a.push([t, w]); b.push([t, g.sgn * g.ratio * w]); }
       const cur = uNow() === undefined ? g.t : T * uNow();
@@ -249,6 +257,7 @@
   }
   M.draw3D = function (v, res) {
     const g = res.geo;
+    if (XU.MODES.includes(g.mode)) return XU.draw3D(v, g, uNow());
     if (g.mode === 'fixed') {
       const two = g.link !== 'none', gap = g.link === 'gear' ? g.rA + g.rB : (g.rA + g.rB) * 1.6, t = uNow() === undefined ? g.t : g.span[1] * uNow(), thA = g.thA(t), thB = g.sgn * g.ratio * thA, h = Math.max(g.rA, g.rB) * 0.25;
       disk(v, [0, 0], g.rA, -h / 2, h / 2, '#c3cbd3', thA); if (two) disk(v, [gap, 0], g.rB, -h / 2, h / 2, '#d5dbe1', thB);
@@ -300,7 +309,7 @@
     { name: 'Offset slider-crank (quick return)', units: 'SI', state: P0({ mode: 'slider', r: 0.1, l: 0.35, th: 120, beta: 0, e: 0.05, wAB: 5, aAB: 0 }) },
     { name: 'Ladder 4 m at 60°, top sliding down at 1.5 m/s and speeding up', units: 'SI', state: P0({ mode: 'bar', L: 4, thb: 60, vA: 1.5, aA: 0.5 }) },
     { name: 'Edge: connecting rod shorter than the crank offset (fails on purpose)', units: 'SI', fails: true, state: P0({ mode: 'slider', r: 0.2, l: 0.1, th: 90, beta: 0, e: 0, wAB: 5, aAB: 0 }) },
-  ];
+  ].concat(XU.presets(P0));
 
   root.DRbMotion = M;
 })(window);

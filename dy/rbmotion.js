@@ -8,12 +8,15 @@
  *   Rolling without slipping: v_G = ωr, a_G = αr                                       (16–20)
  * Modes: rotation about a fixed axis with a gear or belt drive, a slider-crank, a four-bar linkage,
  * a wheel or spool rolling without slipping, and a bar whose ends slide on a wall and a floor.
+ * dy/rbextra.js adds absolute motion s = f(θ) (16.4), rotating axes and Coriolis (16.8), slotted
+ * links and planetary gears.
  * Signs: angular quantities are + counterclockwise (k points out of the page).
  * ===================================================================== */
 (function (root) {
   'use strict';
   const Core = root.Core || require('../shared/core.js');
   const DY = root.DY || require('./dycore.js');
+  const RbExtra = root.RbExtra || require('./rbextra.js');
   const { fmt, fail, Steps } = Core;
   const D2R = Math.PI / 180, TAU = 2 * Math.PI;
 
@@ -30,10 +33,12 @@
       surf: 'floor', R: 0.5, Ro: 0.75, w: -6, alr: -4, rho: 0.5, phi: 270,
       // bar on a wall and floor
       L: 0.2, thb: 45, vA: 2, aA: 0,
+      // absolute motion, rotating frames, slotted links, planetary gears (dy/rbextra.js)
+      ...RbExtra.defaults(),
     };
   }
   const KINDS = { rA: 'L', rB: 'L', rP: 'L', r: 'L', l: 'L', e: 'L', a4: 'L', b4: 'L', c4: 'L', d4: 'L', R: 'L', Ro: 'L', rho: 'L', L: 'L', vA: 'V', aA: 'A' };
-  function convertState(st, from, to) { return DY.convertObj(st, KINDS, from, to); }
+  function convertState(st, from, to) { DY.convertObj(st, KINDS, from, to); RbExtra.convert(st, from, to); return st; }
 
   /* small vector helpers (2D; k × r = (−r_y, r_x)) */
   const add = (a, b) => [a[0] + b[0], a[1] + b[1]], sub = (a, b) => [a[0] - b[0], a[1] - b[1]], mul = (a, k) => [a[0] * k, a[1] * k];
@@ -51,6 +56,7 @@
 
   function solve(st, U) {
     const u = DY.units(U);
+    if (RbExtra.MODES.includes(st.mode)) return RbExtra.solve(st, u);
     switch (st.mode) {
       case 'fixed': return fixed(st, u);
       case 'fourbar': return fourbar(st, u);

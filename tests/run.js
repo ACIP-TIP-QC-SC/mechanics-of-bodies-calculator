@@ -1132,6 +1132,27 @@ group('dynamics: impulse and momentum', () => {
   ['ft', 'cons', 'angmom', 'stream', 'vary'].forEach((mode) => { const st = Object.assign(Impact.defaults(), { mode }); const a = Impact.solve(st, U.SI).out[0].v; Impact.convertState(st, 'SI', 'US'); Impact.convertState(st, 'US', 'SI'); close(`${mode}: units round trip`, Impact.solve(st, U.SI).out[0].v, a, 1e-4); });
 });
 
+group('dynamics: absolute motion, rotating frames, slotted links and planetary gears', () => {
+  const run = (o, sys) => RbMotion.solve(Object.assign(RbMotion.defaults(), o), U[sys]);
+  let r = run({ mode: 'abs' }, 'SI'); close('16-42 v', out(r, 'Velocity v'), 0.41569, 1e-4); close('16-42 a', out(r, 'Acceleration a'), -0.75215, 1e-4);
+  r = run({ mode: 'abs', jf: '2 cot θ', jw: 5, jal: 0, jth: 40 }, 'US'); close('16-41 v = −10 csc²θ', out(r, 'Velocity v'), -10 / Math.sin(40 * Math.PI / 180) ** 2, 1e-5);
+  r = run({ mode: 'abs', jgiven: 'v', jv: 0.415692, ja: -0.752154 }, 'SI'); close('inverse ω', out(r, 'Angular velocity ω'), 4, 1e-4); close('inverse α', out(r, 'Angular acceleration α'), 2, 1e-3);
+  r = run({ mode: 'abs', jf: '0.1 * (', jth: 30 }, 'SI'); truthy('bad formula fails', !r.ok);
+  r = run({ mode: 'rotframe', jW: 3, jWd: 5, jrx: 2, jry: 0, jvrx: 5, jvry: 0, jarx: 3, jary: 0 }, 'US');
+  close('16-130 a_x', out(r, 'Acceleration a_B, x'), -15, 1e-9); close('16-130 a_y', out(r, 'Acceleration a_B, y'), 40, 1e-9);
+  r = run({ mode: 'rotframe' }, 'SI'); close('16-133 v_x', out(r, 'Velocity v_B, x'), -17.15, 1e-6); close('16-133 a_x', out(r, 'Acceleration a_B, x'), 349.02, 1e-6); close('16-133 a_y', out(r, 'Acceleration a_B, y'), 597, 1e-6);
+  r = run({ mode: 'rotframe', jW: 4, jWd: 0, jrx: 0.1, jry: 0, jvrx: -2, jvry: 0, jarx: -4, jary: 0 }, 'SI'); close('16-134 a_x', out(r, 'Acceleration a_B, x'), -5.6, 1e-9); close('16-134 a_y', out(r, 'Acceleration a_B, y'), -16, 1e-9);
+  r = run({ mode: 'slot' }, 'SI'); close('16-141 ω_AC', out(r, 'Angular velocity of the link ω_AC'), 0, 1e-9); close('16-141 α_AC', out(r, 'Angular acceleration of the link α_AC'), -14.4, 1e-9);
+  r = run({ mode: 'slot', jbx: 0.2, jby: 0, jcx: 0.225, jcy: 0.05 * Math.cos(Math.PI / 6), jcw: 3, jca: 0 }, 'SI'); close('16-139 ω_CD', out(r, 'Angular velocity of the link ω_AC'), -0.375, 1e-6); close('16-139 α_CD', out(r, 'Angular acceleration of the link α_AC'), 2.4357, 1e-4);
+  r = run({ mode: 'slot', jsrc: 'given', jbx: 0.3, jby: 0.4, jvbx: 1, jvby: 2, jabx: 0, jaby: 0 }, 'SI');
+  { const k = R('dy/rbextra.js').slotSolve([0.3, 0.4], [1, 2], [0, 0]), vB = [-0.4 * k.w + k.vrel * 0.6, 0.3 * k.w + k.vrel * 0.8]; close('slot velocity closes', Math.hypot(vB[0] - 1, vB[1] - 2), 0, 1e-12); }
+  r = run({ mode: 'planet' }, 'SI'); close('16-122 ω_B', out(r, 'Angular velocity of gear B, ω_B'), -15, 1e-12); close('16-122 α_B', out(r, 'Angular acceleration of gear B, α_B'), -7.5, 1e-12);
+  r = run({ mode: 'planet', jwA: 10 }, 'SI'); close('16-123 ω_B', out(r, 'Angular velocity of gear B, ω_B'), -30, 1e-12); close('16-123 α_B', out(r, 'Angular acceleration of gear B, α_B'), -7.5, 1e-12);
+  r = run({ mode: 'planet', jring: 'ring', jrA: 0.5, jrB: 0.2, jwarm: 2, jaarm: 0 }, 'SI'); close('ring gear fixed: ω_B = −ω_arm(r_A − r_B)/r_B', out(r, 'Angular velocity of gear B, ω_B'), -3, 1e-12);
+  r = run({ mode: 'planet', jring: 'ring', jrA: 0.2, jrB: 0.3 }, 'SI'); truthy('planet bigger than ring fails', !r.ok);
+  const st = Object.assign(RbMotion.defaults(), { mode: 'slot' }); RbMotion.convertState(st, 'SI', 'US'); RbMotion.convertState(st, 'US', 'SI'); close('units round trip', +st.jcy, -0.3, 1e-9);
+});
+
 group('dynamics: planar kinematics of rigid bodies', () => {
   const run = (o, sys) => RbMotion.solve(Object.assign(RbMotion.defaults(), o), U[sys]);
   { const r = run({ mode: 'slider', r: 0.25, l: 0.75, th: 45, beta: 90, e: 0, wAB: -10, aAB: -20 }, 'US'); [{ k: 'Velocity of the slider v_C', v: 2.197 }, { k: 'Angular velocity of BC, ω_BC', v: 2.425 }, { k: 'Angular acceleration of BC, α_BC', v: 27.68 }, { k: 'Acceleration of the slider a_C', v: -13.54 }].forEach((e) => close('Book Examples 16.12 and 16.17, crank 0.25 ft at 10 rad/s cw : ' + e.k, out(r, e.k), e.v)); }
