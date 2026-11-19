@@ -28,7 +28,7 @@
   M.controls = function (c, C) {
     const st = S(), U = Core.UNITS[M.units], Lu = U.len, Ls = U.lenS, F = st.fu;
     let sec = C.section(c, 'Problem');
-    C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [['block', 'Block on a floor or slope: slip or tip'], ['incline', 'Block sliding on an incline'], ['ladder', 'Ladder against a wall'], ['wedge', 'Wedge'], ['screw', 'Square-threaded screw'], ['belt', 'Flat belt or rope over drums'], ['vehicle', 'Vehicle on wheels (car, truck, cart)'], ['bearing', 'Bearings and rolling resistance'], ['two', 'Two bodies: joined or stacked blocks, person and crate']] });
+    C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [['block', 'Block on a floor or slope: slip or tip'], ['incline', 'Block sliding on an incline'], ['ladder', 'Ladder against a wall'], ['wedge', 'Wedge'], ['screw', 'Square-threaded screw'], ['belt', 'Belt, rope or V-belt over drums; band brakes'], ['vehicle', 'Vehicle on wheels (car, truck, cart)'], ['bearing', 'Bearings and rolling resistance'], ['two', 'Two bodies: joined or stacked blocks, person and crate']] });
     C.seg(sec, { label: 'Force unit', get: () => st.fu, set: (v) => (st.fu = v), options: U.forces.map((f) => [f, f]) });
     if (st.mode === 'block') {
       const q = st.bk;
@@ -178,12 +178,32 @@
         if (q.task === 'force') C.seg(sec, { label: 'The vehicle is about to move toward', get: () => q.move, set: (v) => (q.move = v), options: [['A', 'A'], ['B', 'B']] });
       }
     } else {
-      const q = st.bt;
-      sec = C.section(c, 'Tension');
-      C.seg(sec, { label: 'The known tension is', get: () => q.known, set: (v) => (q.known = v), options: [['high', 'The larger one T₂'], ['low', 'The smaller one T₁']] });
-      C.num(sec, { label: 'Known tension', get: () => q.T, set: (v) => (q.T = v), unit: F });
-      sec = C.section(c, 'Drums (in order from the known end)');
-      C.list(sec, { items: q.drums, max: 4, min: 1, color: () => '#e2cdef', title: (it, i) => `Drum ${i + 1}`, fields: () => [{ key: 'beta', label: 'Contact angle β', unit: '°' }, { key: 'turns', label: 'Extra full turns', unit: '' }, { key: 'mu', label: 'μs', unit: '', wide: true }], add: [['Drum', () => ({ beta: 180, turns: 0, mu: 0.3 })]] });
+      const q = st.bt, FLu = `${F}·${Lu}`;
+      sec = C.section(c, 'Set-up');
+      C.toggle(sec, { label: 'Band on a wheel carrying a torque (band brake or belt drive)', get: () => !!q.wheel, set: (v) => { q.wheel = v; if (v) q.drums.splice(1); } });
+      if (q.wheel) {
+        C.seg(sec, { label: 'Find', get: () => q.task || 'T', set: (v) => (q.task = v), options: [['T', 'Tensions (and P) for a torque M'], ['M', 'Torque from a known tension'], ['lever', 'Torque a lever force P resists']] });
+        C.num(sec, { label: 'Radius of the wheel r', get: () => q.rW, set: (v) => (q.rW = v), unit: Lu });
+        if (q.task === 'T' || !q.task) C.num(sec, { label: 'Torque on the wheel M', get: () => q.M, set: (v) => (q.M = v), unit: FLu });
+      }
+      if (!q.wheel || q.task === 'M') {
+        sec = C.section(c, 'Tension');
+        C.seg(sec, { label: 'The known tension is', get: () => q.known, set: (v) => (q.known = v), options: [['high', 'The larger one T₂'], ['low', 'The smaller one T₁']] });
+        C.num(sec, { label: 'Known tension', get: () => q.T, set: (v) => (q.T = v), unit: F });
+      }
+      if (q.wheel && q.task !== 'M') {
+        sec = C.section(c, 'Lever that tightens the band');
+        C.toggle(sec, { label: 'The band ends are pinned to a lever pulled by P', get: () => !!q.lever, set: (v) => (q.lever = v) });
+        if (q.lever || q.task === 'lever') {
+          if (q.task === 'lever') C.num(sec, { label: 'Force on the lever P', get: () => q.P, set: (v) => (q.P = v), unit: F });
+          C.num(sec, { label: 'Moment arm of P about the pivot a', get: () => q.aL, set: (v) => (q.aL = v), unit: Lu });
+          C.num(sec, { label: 'Moment arm of the tight end T₂, d_T', get: () => q.dT, set: (v) => (q.dT = v), unit: Lu });
+          C.num(sec, { label: 'Moment arm of the slack end T₁, d_S', get: () => q.dS, set: (v) => (q.dS = v), unit: Lu });
+          C.note(sec, 'Enter an arm as positive when that band tension turns the lever against P, negative when it helps P, and 0 when the band end is pinned at the pivot. Moments about the pivot: P a = d_T T₂ + d_S T₁.');
+        }
+      }
+      sec = C.section(c, q.wheel ? 'Contact on the wheel' : 'Drums (in order from the known end)');
+      C.list(sec, { items: q.drums, max: q.wheel ? 1 : 4, min: 1, color: () => '#e2cdef', title: (it, i) => (q.wheel ? 'Wheel' : `Drum ${i + 1}`), fields: () => [{ key: 'beta', label: 'Contact angle β', unit: '°' }, { key: 'turns', label: 'Extra full turns', unit: '' }, { key: 'mu', label: 'μs', unit: '' }, { key: 'alpha', label: 'V-groove angle α (0 = flat belt)', unit: '°' }], add: [['Drum', () => ({ beta: 180, turns: 0, mu: 0.3, alpha: 0 })]] });
     }
   };
 
@@ -198,7 +218,7 @@
     ladder: 'The foot slips away from the wall and the top slides down, so friction acts toward the wall at A and upward at B.',
     wedge: 'Friction opposes the motion that is about to happen on each surface. Purple arrows are friction forces.',
     screw: 'The thread is unwrapped into a slope of rise l over a run of 2πr. The resultant R of the normal and friction forces leans at φs from the normal.',
-    belt: 'The tension grows by e^(μβ) over each drum, toward the side the belt is about to slip to.',
+    belt: 'The tension grows by e^(μβ) over each drum, toward the side the belt is about to slip to. A V-belt wedged in a groove of angle α grips harder: μ is replaced by μ / sin(α/2). On a wheel carrying a torque M, (T₂ − T₁) r = M.',
     bearing: 'Collar and disk bearings: the axial force is spread uniformly over the ring, and friction on each ring dA acts at its radius. Journal bearings: the resultant R is tangent to the friction circle r_f = r sin φk. Rolling: the ground reaction acts a distance a ahead of the lowest point.',
     two: 'Green: normal forces. Purple: friction at its limit μs N wherever slipping is about to happen. On a joined pair the spring or cord pulls the two blocks toward each other when it is in tension.',
     vehicle: 'Green: the normal forces at the two axles. Purple: friction, which acts only at braked or driven wheels; freely rolling wheels carry none. A wheel marked with a cross is locked by its brake. For tipping sideways on a road tilted across it, enter half the track width as the distances from G to A and B.',
@@ -652,14 +672,14 @@
 
   /* -------- belt -------- */
   function drawBelt(svg, g, opt) {
-    const { W, H } = Charts.clear(svg), { F } = g.c, n = g.drums.length, gg = s('g', {}, svg);
-    const cell = W / n, R = Math.min(cell * 0.22, H * 0.18), cy = H * 0.48;
+    const { W, H } = Charts.clear(svg), { F } = g.c, n = g.drums.length, gg = s('g', {}, svg), wh = g.wheel;
+    const cell = wh ? (wh.lever ? W * 0.52 : W) : W / n, R = Math.min(cell * 0.22, H * 0.18), cy = H * 0.5;
     g.drums.forEach((d, i) => {
       const cx = cell * (i + 0.5), vis = Math.min(d.deg, 359.5), a0 = 90 + vis / 2, a1 = 90 - vis / 2;
       s('circle', { cx, cy, r: R, fill: '#dfe5ea', stroke: '#4a5661', 'stroke-width': 1.6 }, gg);
       s('circle', { cx, cy, r: 5, fill: '#4a5661' }, gg);
       arcPx(gg, cx, cy, R + 3, a1, a0, '#2c3e50', 4);
-      if (d.deg >= 360) lbl(gg, cx, cy + 4, `${fmt(d.deg / 360, 3)} turns`, { anchor: 'middle', color: '#2c3e50', size: 11 });
+      if (d.deg >= 360) lbl(gg, cx, cy + 22, `${fmt(d.deg / 360, 3)} turns`, { anchor: 'middle', color: '#2c3e50', size: 11 });
       // the belt leaves tangentially at both ends of the contact
       const ends = [[a0, 1], [a1, -1]];
       ends.forEach(([a, sg], k) => {
@@ -667,12 +687,44 @@
         s('line', { x1: px, y1: py, x2: px + tx * L, y2: py + ty * L, stroke: '#2c3e50', 'stroke-width': 4 }, gg);
         const Tv = g.hi ? (k === 0 ? g.Ts[i] : g.Ts[i + 1]) : (k === 0 ? g.Ts[i + 1] : g.Ts[i]), big = g.hi ? k === 0 : k === 0;
         arrowPx(gg, px + tx * L * 0.4, py + ty * L * 0.4, px + tx * (L + 16), py + ty * (L + 16), big ? LCOL : RCOL, 2.4, 10);
-        lbl(gg, px + tx * (L + 20), py + ty * (L + 20) + 14, opt.showP ? `${fmt(Tv)} ${F}` : (big ? 'T₂' : 'T₁'), { anchor: 'middle', color: big ? LCOL : RCOL, size: 11.5 });
+        // ends that leave sideways are labelled beside their tip, so two ends crossing below the drum keep their labels apart
+        const anc = tx > 0.25 ? 'start' : tx < -0.25 ? 'end' : 'middle', lx = px + tx * (L + 18) + (anc === 'start' ? 4 : anc === 'end' ? -4 : 0), ly = py + ty * (L + 18) + (ty > 0 ? 12 : -4);
+        if (k === 0 && i > 0) return; // the cord between two drums carries one tension: it is labelled once, at the earlier drum
+        lbl(gg, lx, ly, opt.showP ? `${big ? 'T₂' : 'T₁'} = ${fmt(Tv)} ${F}` : (big ? 'T₂' : 'T₁'), { anchor: anc, color: big ? LCOL : RCOL, size: 11.5 });
       });
-      lbl(gg, cx, cy - R - 18, `β = ${fmt(d.deg)}°, μs = ${fmt(d.mu)}`, { anchor: 'middle', color: '#5a6b75', size: 11 });
-      lbl(gg, cx, cy + R + 22, `Drum ${i + 1}`, { anchor: 'middle', color: '#1d2733', size: 12, weight: 800 });
+      lbl(gg, cx, cy - R - 14, `β = ${fmt(d.deg)}°, μs = ${fmt(d.mu)}${d.al > 0 ? `, α = ${fmt(d.al)}°` : ''}`, { anchor: 'middle', color: '#5a6b75', size: 11 });
+      lbl(gg, cx, cy - R - 30, wh ? `Wheel, r = ${fmt(wh.r)} ${g.c.Lu}` : `Drum ${i + 1}`, { anchor: 'middle', color: '#1d2733', size: 12, weight: 800 });
+      if (wh) {
+        // the torque M turns the wheel so that its rim moves from the tight end toward the slack end
+        const rm = R * 0.58, aS = 150, aE = 30;
+        arcPx(gg, cx, cy, rm, aS, aE + 8, '#1d2733', 2.2);
+        const ae = aE * DEG, hx = cx + rm * Math.cos(ae), hy = cy - rm * Math.sin(ae);
+        arrowPx(gg, hx - 10 * Math.sin(ae), hy - 10 * Math.cos(ae), hx, hy, '#1d2733', 2.2, 10);
+        lbl(gg, cx, cy - rm - 6, opt.showP ? `M = ${fmt(wh.M)} ${g.c.FL}` : 'M', { anchor: 'middle', color: '#1d2733', size: 11.5 });
+      }
     });
-    lbl(gg, 12, 20, `Slip is about to happen toward the larger tension (red); e^(μβ) multiplies the tension over each drum.`, { color: '#5a6b75', size: 11.5, weight: 600 });
+    if (wh && wh.lever) drawLever(gg, g, opt, W * 0.56, W - 16, H);
+    lbl(gg, 12, 20, wh ? 'The band is about to slip toward the tight end T₂ (red); T₂ = T₁ e^(μβ) and (T₂ − T₁) r = M.' : 'Slip is about to happen toward the larger tension (red); e^(μβ) multiplies the tension over each drum.', { color: '#5a6b75', size: 11.5, weight: 600 });
+  }
+  /** Lever schematic: pivot O, the two band ends at their signed arms and P at arm a (positions to scale along the bar). */
+  function drawLever(gg, g, opt, x0, x1, H) {
+    const wh = g.wheel, F = g.c.F, xs = [0, wh.a, -wh.dT, -wh.dS], lo = Math.min(...xs), hi = Math.max(...xs), span = hi - lo || 1;
+    const pad = 34, sc = (x1 - x0 - 2 * pad) / span, X = (x) => x0 + pad + (x - lo) * sc, y = H * 0.56;
+    lbl(gg, (x0 + x1) / 2, H * 0.28, 'Lever (moments about O)', { anchor: 'middle', color: '#1d2733', size: 12, weight: 800 });
+    s('rect', { x: X(lo) - 10, y: y - 5, width: X(hi) - X(lo) + 20, height: 10, rx: 4, fill: '#c9b48f', stroke: '#6b5530', 'stroke-width': 1.4 }, gg);
+    poly(gg, [[X(0), y + 5], [X(0) - 10, y + 22], [X(0) + 10, y + 22]], { fill: '#dfe4e8', stroke: '#4a5661', 'stroke-width': 1.4 });
+    s('circle', { cx: X(0), cy: y, r: 4, fill: '#fff', stroke: '#1d2733', 'stroke-width': 1.6 }, gg);
+    lbl(gg, X(0), y + 38, 'O', { anchor: 'middle', color: '#1d2733', size: 12 });
+    // P pulls down at a; the band ends pull down too, so an end that resists P sits on the other side of O
+    arrowPx(gg, X(wh.a), y - 56, X(wh.a), y - 7, LCOL, 2.6, 11);
+    lbl(gg, X(wh.a), y - 62, opt.showP && wh.P != null ? `P = ${fmt(wh.P)} ${F}` : 'P', { anchor: 'middle', color: LCOL, size: 11.5 });
+    [[wh.dT, 'T₂', wh.T2, LCOL], [wh.dS, 'T₁', wh.T1, RCOL]].forEach(([d, nm, T, col], k) => {
+      if (Math.abs(d) < 1e-12) { lbl(gg, X(0), y + 54 + 14 * k, `${nm} passes through O`, { anchor: 'middle', color: col, size: 10.5 }); return; }
+      const xx = X(-d); // a band end pulling down opposes P (downward at +a) when it lies on the other side of O
+      arrowPx(gg, xx, y + 7, xx, y + 52, col, 2.4, 10);
+      lbl(gg, xx + (d > 0 ? 3 : -3), y + 66 + 14 * k, opt.showP ? `${nm} = ${fmt(T)} ${F}` : nm, { anchor: d > 0 ? 'end' : 'start', color: col, size: 11 });
+    });
+    lbl(gg, (x0 + x1) / 2, y + 104, `a = ${fmt(wh.a)}, d_T = ${fmt(wh.dT)}, d_S = ${fmt(wh.dS)} ${g.c.Lu}`, { anchor: 'middle', color: '#5a6b75', size: 10.5 });
   }
 
   /* ------------------------------------------------------------------ */
@@ -921,6 +973,12 @@
     { name: 'Screw with a steep thread that is not self-locking', units: 'US', state: { mode: 'screw', fu: 'lb', sc: { W: 1500, r: 0.4, l: 0.9, mu: 0.15, n: 1, task: 'lower' } } },
     { name: 'Test: Book Example 8.8, cord over two drums holding a hanging mass', units: 'SI', state: { mode: 'belt', fu: 'N', bt: { known: 'high', T: 500, drums: [{ beta: 135, turns: 0, mu: 0.25 }, { beta: 135, turns: 0, mu: 0.25 }] } },
       expect: [{ k: 'Tension after drum 1', v: 277.4 }, { k: 'Tension after drum 2', v: 153.9 }, { k: 'Mass that can be held', v: 15.69 }] },
+    { name: 'Test: V-belt in a 60° groove, 180° contact (Prob. 8-98 relation)', units: 'SI', state: { mode: 'belt', fu: 'N', bt: { known: 'low', T: 100, drums: [{ beta: 180, turns: 0, mu: 0.3, alpha: 60 }] } },
+      expect: [{ k: 'Tension after drum 1', v: 658.5 }, { k: 'Ratio of the tensions', v: 6.585 }] },
+    { name: 'Test: Prob. 8-93, band brake: torque a 30 N lever force resists', units: 'SI', state: { mode: 'belt', fu: 'N', bt: { known: 'high', T: 100, drums: [{ beta: 270, turns: 0, mu: 0.3, alpha: 0 }], wheel: true, task: 'lever', rW: 0.3, M: 50, P: 30, lever: true, aL: 0.7, dT: 0.025, dS: -0.06 } },
+      expect: [{ k: 'Torque on the wheel M', v: 458.1 }] },
+    { name: 'Test: Prob. 8-99, band brake: lever force to hold M = 50 N·m', units: 'SI', state: { mode: 'belt', fu: 'N', bt: { known: 'high', T: 100, drums: [{ beta: 270, turns: 0, mu: 0.3, alpha: 0 }], wheel: true, task: 'T', rW: 0.15, M: 50, P: 30, lever: true, aL: 0.4, dT: 0, dS: 0.2 } },
+      expect: [{ k: 'Slack-side tension T₁', v: 107.14 }, { k: 'Force on the lever P', v: 53.57 }] },
     { name: 'Rope with two turns around a capstan', units: 'US', state: { mode: 'belt', fu: 'lb', bt: { known: 'low', T: 20, drums: [{ beta: 0, turns: 2, mu: 0.3 }] } } },
     { name: 'Test: car parked on a 12° incline with the rear wheels locked (Ellis\'s Problem 14)', units: 'SI', state: { mode: 'vehicle', fu: 'N', vh: { wBy: 'mass', m: 1500, a: 1.5, b: 3, h: 1.1, phi: 12, rise: 'A', mu: 0.6, axA: 'locked', axB: 'free', task: 'park', front: 'B', hasP: false } },
       expect: [{ k: 'Normal force at A, N_A', v: 8847.8 }, { k: 'Normal force at B, N_B', v: 5545.7 }, { k: 'Friction at A, F_A', v: -3059.4 }] },

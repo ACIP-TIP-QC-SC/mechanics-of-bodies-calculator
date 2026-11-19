@@ -7,7 +7,8 @@
  *   ladder  ladder against a wall: smallest angle, or the floor friction needed (8.2)
  *   wedge   wedge lifting a block in a guide or a lever pinned at one end (8.3)
  *   screw   square-threaded screw: M = W r tan(θ ± φs) (8.4)
- *   belt    flat belt or rope over one or more drums: T2 = T1 e^(μβ) (8.5)
+ *   belt    flat belt, rope or V-belt over one or more drums: T2 = T1 e^(μβ) (8.5); a band on a wheel carrying
+ *           a torque, with the lever that tightens it (band brakes)
  *   bearing collar, disk and pivot bearings M = ⅔ μs P (R₂³ − R₁³)/(R₂² − R₁²) (8.6), journal bearings
  *           M = R r sin φk (8.7), rolling resistance P ≈ W a / r (8.8)
  *   vehicle car, truck or cart on two axles on a level road or a slope; each axle rolls freely,
@@ -37,7 +38,7 @@
         hasP: false, P: 0, xP: -0.75, yP: 0.3, psi: 150, move: 'A' },
       tw: { arr: 'inc', wBy: 'force', mA: 10, WA: 98.1, mB: 6, WB: 58.86, muA: 0.15, muB: 0.25, phi: 0, lower: 'A', conn: 'spring', k: 30, task: 'both',
         Pon: 'B', al: 0, tie: true, beta: 30, muG: 0.3, how: 'push', thC: 0, thM: 0, tip: false, b: 1, h: 1.2 },
-      bt: { known: 'high', T: 500, drums: [{ beta: 135, turns: 0, mu: 0.25 }, { beta: 135, turns: 0, mu: 0.25 }] },
+      bt: { known: 'high', T: 500, drums: [{ beta: 135, turns: 0, mu: 0.25, alpha: 0 }, { beta: 135, turns: 0, mu: 0.25, alpha: 0 }], wheel: false, task: 'T', rW: 0.15, M: 50, P: 30, lever: false, aL: 0.4, dT: 0, dS: 0.2 },
     };
   }
   const gOf = (U) => (U.id === 'US' ? 32.2 : 9.81);
@@ -315,34 +316,88 @@
   /* Flat belt over one or more drums                                   */
   /* ------------------------------------------------------------------ */
   function belt(q, c) {
-    const { F, U } = c, err = [], T0 = +q.T, drums = q.drums || [];
-    if (!(T0 > 0)) err.push('The known tension must be greater than zero.');
+    const { F, U, FL } = c, err = [], drums = q.drums || [];
+    const wheel = !!q.wheel, task = wheel ? q.task || 'T' : 'chain';
+    const T0 = +q.T;
     if (!drums.length) err.push('Add at least one drum.');
-    drums.forEach((d, i) => { if (!(+d.beta > 0) && !(+d.turns > 0)) err.push(`Drum ${i + 1}: enter the contact angle.`); if (!(+d.mu >= 0)) err.push(`Drum ${i + 1}: μ must be zero or more.`); });
-    if (err.length) return fail(err);
-    const hi = q.known === 'high', S = Steps(), out = [], Ts = [T0];
-    S.add({ t: 'Belt friction', f: 'T₂ = T₁ e^(μβ)', n: `T₂ is the tension on the side toward which the belt is about to slip (the larger one), β the contact angle in radians. The ${hi ? 'larger' : 'smaller'} tension ${fmt(T0)} ${F} is known, and the drums are taken in order ${hi ? 'from that end' : 'from that end toward the larger tension'}.` });
+    if (!wheel && !(T0 > 0)) err.push('The known tension must be greater than zero.');
     drums.forEach((d, i) => {
-      const deg = (+d.beta || 0) + 360 * (+d.turns || 0), b = deg * DEG, k = Math.exp(+d.mu * b), T = Ts[i], Tn = hi ? T / k : T * k;
-      S.add({ t: `Drum ${i + 1}`, f: hi ? 'T₁ = T₂ / e^(μβ)' : 'T₂ = T₁ e^(μβ)', s: `β = ${fmt(deg)}° = ${fmt(b)} rad;   e^(${fmt(+d.mu)} · ${fmt(b)}) = ${fmt(k)};   ${hi ? `T₁ = ${fmt(T)} / ${fmt(k)}` : `T₂ = ${fmt(T)} · ${fmt(k)}`}`, r: `T = ${fmt(Tn)} ${F}` });
+      if (!(+d.beta > 0) && !(+d.turns > 0)) err.push(`Drum ${i + 1}: enter the contact angle.`);
+      if (!(+d.mu >= 0)) err.push(`Drum ${i + 1}: μ must be zero or more.`);
+      const al = +d.alpha || 0; if (al < 0 || al >= 180) err.push(`Drum ${i + 1}: the groove angle α must be from 0° (flat belt) to less than 180°.`);
+    });
+    if (err.length) return fail(err);
+    // V-belt: the wedging raises the friction, μ' = μ / sin(α/2) (Prob. 8-98); α = 0 is a flat belt
+    const D = drums.map((d) => { const deg = (+d.beta || 0) + 360 * (+d.turns || 0), al = +d.alpha || 0, mue = al > 0 ? +d.mu / Math.sin((al / 2) * DEG) : +d.mu; return { deg, b: deg * DEG, al, mu: +d.mu, mue, k: Math.exp(mue * deg * DEG) }; });
+    const S = Steps(), out = [], vb = D.some((d) => d.al > 0);
+    S.add({ t: 'Belt friction', f: vb ? "T₂ = T₁ e^(μβ / sin(α/2))  (V-belt in a groove of angle α; α = 0 is a flat belt)" : 'T₂ = T₁ e^(μβ)', n: 'T₂ is the tension on the side toward which the belt is about to slip (the larger one), β the contact angle in radians.' });
+    if (wheel) return beltWheel(q, c, D[0], S, out, drums.length > 1);
+    const hi = q.known === 'high', Ts = [T0];
+    S.add({ t: 'Known tension', n: `The ${hi ? 'larger' : 'smaller'} tension ${fmt(T0)} ${F} is known, and the drums are taken in order from that end.` });
+    D.forEach((d, i) => {
+      const T = Ts[i], Tn = hi ? T / d.k : T * d.k;
+      S.add({ t: `Drum ${i + 1}`, f: hi ? 'T₁ = T₂ / e^(μ′β)' : 'T₂ = T₁ e^(μ′β)', s: `β = ${fmt(d.deg)}° = ${fmt(d.b)} rad;${d.al > 0 ? ` μ′ = ${fmt(d.mu)}/sin ${fmt(d.al / 2)}° = ${fmt(d.mue)};` : ''}   e^(${fmt(d.mue)} · ${fmt(d.b)}) = ${fmt(d.k)};   ${hi ? `T₁ = ${fmt(T)} / ${fmt(d.k)}` : `T₂ = ${fmt(T)} · ${fmt(d.k)}`}`, r: `T = ${fmt(Tn)} ${F}` });
       Ts.push(Tn);
     });
-    const Tend = Ts[Ts.length - 1], sumMB = drums.reduce((a, d) => a + (+d.mu) * ((+d.beta || 0) + 360 * (+d.turns || 0)) * DEG, 0);
-    S.add({ t: 'Check: the whole belt at once', f: 'T₂ / T₁ = e^(Σμβ)', s: `e^(${fmt(sumMB)}) = ${fmt(Math.exp(sumMB))}`, r: `T₂ / T₁ = ${fmt(Math.max(T0, Tend))} / ${fmt(Math.min(T0, Tend))} = ${fmt(Math.max(T0, Tend) / Math.min(T0, Tend))}` });
+    const Tend = Ts[Ts.length - 1], sumMB = D.reduce((a, d) => a + d.mue * d.b, 0);
+    S.add({ t: 'Check: the whole belt at once', f: 'T₂ / T₁ = e^(Σμ′β)', s: `e^(${fmt(sumMB)}) = ${fmt(Math.exp(sumMB))}`, r: `T₂ / T₁ = ${fmt(Math.max(T0, Tend))} / ${fmt(Math.min(T0, Tend))} = ${fmt(Math.max(T0, Tend) / Math.min(T0, Tend))}` });
     Ts.forEach((T, i) => out.push({ k: i === 0 ? 'Known tension' : `Tension after drum ${i}`, v: T, u: F, hl: i === Ts.length - 1 }));
     out.push({ k: 'Ratio of the tensions', v: Math.max(T0, Tend) / Math.min(T0, Tend), u: '' });
     if (hi) {
-      const Tb = U.id === 'US' ? Core.convert(Tend, F, 'lb') : Core.convert(Tend, F, 'N'), m = Tb / (U.id === 'US' ? 32.2 : 9.81);
-      S.add({ t: 'Load that can be held', n: 'A weight hanging from the low-tension end can be as large as the last tension.', s: `m = W / g = ${fmt(Tb)} / ${fmt(U.id === 'US' ? 32.2 : 9.81)}`, r: `W = ${fmt(Tend)} ${F},  m = ${fmt(m)} ${U.id === 'US' ? 'slug' : 'kg'}` });
+      const Tb = U.id === 'US' ? Core.convert(Tend, F, 'lb') : Core.convert(Tend, F, 'N'), m = Tb / gOf(U);
+      S.add({ t: 'Load that can be held', n: 'A weight hanging from the low-tension end can be as large as the last tension.', s: `m = W / g = ${fmt(Tb)} / ${fmt(gOf(U))}`, r: `W = ${fmt(Tend)} ${F},  m = ${fmt(m)} ${U.id === 'US' ? 'slug' : 'kg'}` });
       out.push({ k: 'Mass that can be held', v: m, u: U.id === 'US' ? 'slug' : 'kg' });
     }
-    return res(`Belt about to slip · tension ratio ${fmt(Math.max(T0, Tend) / Math.min(T0, Tend))}`, 'ok', out, S, { kind: 'belt', c, Ts, drums: drums.map((d) => ({ deg: (+d.beta || 0) + 360 * (+d.turns || 0), mu: +d.mu })), hi });
+    return res(`Belt about to slip · tension ratio ${fmt(Math.max(T0, Tend) / Math.min(T0, Tend))}`, 'ok', out, S, { kind: 'belt', c, Ts, drums: D, hi });
+  }
+  /**
+   * Band or belt on a wheel that carries a torque M (band brakes, belt drives, Probs. 8-93, 8-99, 8-106):
+   *   (T₂ − T₁) r = M with T₂ = T₁ e^(μ′β); optionally the two band ends pull on a lever pivoted at O,
+   *   P a = d_T T₂ + d_S T₁ (signed moment arms about O; + where the band resists P).
+   * task 'M': torque the band can carry from a known tension; 'T': tensions (and P on the lever) for a given M;
+   * 'lever': torque that a given lever force P can resist.
+   */
+  function beltWheel(q, c, d, S, out, extra) {
+    const { F, FL } = c, err = [], r = +q.rW, task = q.task || 'T', lever = !!q.lever, a = +q.aL, dT = +q.dT || 0, dS = +q.dS || 0;
+    if (!(r > 0)) err.push('Enter the radius of the wheel.');
+    if (lever && !(a > 0)) err.push('Enter the arm of P about the lever pivot.');
+    if (task === 'M' && !(+q.T > 0)) err.push('The known tension must be greater than zero.');
+    if (task === 'T' && !(+q.M > 0)) err.push('Enter the torque M on the wheel.');
+    if (task === 'lever' && !(+q.P > 0)) err.push('Enter the force P on the lever.');
+    if (err.length) return fail(err);
+    const k = d.k, warn = extra ? ['Only the first drum is used: the wheel carries the band over one contact angle.'] : [];
+    S.add({ t: 'Ratio of the tensions on the wheel', s: `β = ${fmt(d.deg)}° = ${fmt(d.b)} rad${d.al > 0 ? `, μ′ = ${fmt(d.mu)}/sin ${fmt(d.al / 2)}° = ${fmt(d.mue)}` : ''}`, r: `T₂ / T₁ = e^(${fmt(d.mue)} · ${fmt(d.b)}) = ${fmt(k)}` });
+    let T1, T2, M, P = null;
+    const leverArm = (dT * k + dS) / (r * (k - 1)); // P a = leverArm · M
+    if (task === 'M') {
+      const hi = q.known === 'high';
+      T2 = hi ? +q.T : +q.T * k; T1 = T2 / k; M = (T2 - T1) * r;
+      S.add({ t: 'Torque the band can carry', f: 'M = (T₂ − T₁) r', s: `T₁ = ${fmt(T1)}, T₂ = ${fmt(T2)};  M = (${fmt(T2)} − ${fmt(T1)})(${fmt(r)})`, r: `M = ${fmt(M)} ${FL}` });
+    } else if (task === 'lever') {
+      if (!lever) return fail('Turn on the lever to find the torque from the force P.');
+      if (!(leverArm > 0)) return fail('With these arms the band does not resist P: check the signs of d_T and d_S.');
+      P = +q.P; M = (P * a) / leverArm; T1 = M / (r * (k - 1)); T2 = k * T1;
+      S.add({ t: 'Wheel', f: '(T₂ − T₁) r = M,  T₂ = T₁ e^(μ′β)  ⇒  T₁ = M / (r(e^(μ′β) − 1)),  T₂ = e^(μ′β) T₁', s: `T₁ = ${fmt(1 / (r * (k - 1)))} M, T₂ = ${fmt(k / (r * (k - 1)))} M` });
+      S.add({ t: 'Lever', n: 'Moments about the lever pivot. d_T and d_S are the moment arms of the tight and slack ends, positive when that tension opposes P.', f: 'P a = d_T T₂ + d_S T₁', s: `${fmt(P)}(${fmt(a)}) = ${fmt(dT)}(${fmt(k / (r * (k - 1)))} M) + ${fmt(dS)}(${fmt(1 / (r * (k - 1)))} M)`, r: `M = ${fmt(M)} ${FL}, T₁ = ${fmt(T1)} ${F}, T₂ = ${fmt(T2)} ${F}` });
+    } else {
+      M = +q.M; T1 = M / (r * (k - 1)); T2 = k * T1;
+      S.add({ t: 'Wheel', f: '(T₂ − T₁) r = M,  T₂ = T₁ e^(μ′β)', s: `T₁ = ${fmt(M)} / (${fmt(r)}(${fmt(k)} − 1))`, r: `T₁ = ${fmt(T1)} ${F}, T₂ = ${fmt(T2)} ${F}` });
+      if (lever) {
+        P = (dT * T2 + dS * T1) / a;
+        if (!(P > 0)) return fail('With these arms the band ends alone hold the lever: P would be negative. Check the signs of d_T and d_S.');
+        S.add({ t: 'Lever', n: 'Moments about the lever pivot. d_T and d_S are the moment arms of the tight and slack ends, positive when that tension opposes P.', f: 'P = (d_T T₂ + d_S T₁) / a', s: `P = (${fmt(dT)}(${fmt(T2)}) + ${fmt(dS)}(${fmt(T1)})) / ${fmt(a)}`, r: `P = ${fmt(P)} ${F}` });
+      }
+    }
+    out.push({ k: 'Slack-side tension T₁', v: T1, u: F, hl: task === 'T' && !lever }, { k: 'Tight-side tension T₂', v: T2, u: F, hl: task === 'T' && !lever }, { k: 'Torque on the wheel M', v: M, u: FL, hl: task !== 'T' });
+    if (P !== null) out.push({ k: 'Force on the lever P', v: P, u: F, hl: task === 'T' });
+    out.push({ k: 'Ratio of the tensions', v: k, u: '' });
+    return res(task === 'T' ? (P !== null ? `P = ${fmt(P)} ${F}` : `T₂ = ${fmt(T2)} ${F}`) : `M = ${fmt(M)} ${FL}`, 'ok', out, S, { kind: 'belt', c, Ts: [T1, T2], drums: [d], hi: false, wheel: { r, M, T1, T2, lever, a, dT, dS, P } }, warn);
   }
 
   /* ------------------------------------------------------------------ */
   /* Units                                                              */
   /* ------------------------------------------------------------------ */
-  const LEN = new Set(['b', 'H', 'hP', 'L', 's', 'a', 'xW', 'd', 'acc', 'h', 'xP', 'yP', 'R1', 'R2', 'rw', 'aB', 'rs']), SML = new Set(['r', 'l']), FOR = new Set(['W', 'P', 'Wp', 'T', 'WA', 'WB']), MAS = new Set(['m', 'mp', 'mA', 'mB']), MOM = new Set(['M']);
+  const LEN = new Set(['rW', 'aL', 'dT', 'dS', 'b', 'H', 'hP', 'L', 's', 'a', 'xW', 'd', 'acc', 'h', 'xP', 'yP', 'R1', 'R2', 'rw', 'aB', 'rs']), SML = new Set(['r', 'l']), FOR = new Set(['W', 'P', 'Wp', 'T', 'WA', 'WB']), MAS = new Set(['m', 'mp', 'mA', 'mB']), MOM = new Set(['M']);
 
 
   /* ------------------------------------------------------------------ */
@@ -640,6 +695,7 @@
       });
     });
     if (st.tw) st.tw.k = tidy(+st.tw.k * kF / kL, 9);
+    if (st.bt && typeof st.bt.M === 'number') st.bt.M = tidy(st.bt.M * kML, 9);
     st.fu = f1;
     return st;
   }

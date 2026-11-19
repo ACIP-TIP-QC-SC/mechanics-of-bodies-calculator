@@ -369,6 +369,19 @@ group('friction module', () => {
   // Example 8.7 turnbuckle
   r = Friction.solve(mk({ mode: 'screw' }), SI);
   close('8.7 M', out(r, 'Moment to raise M'), 6.375); close('8.7 θ', out(r, 'Lead angle θ'), 3.643); close('8.7 φs', out(r, 'Friction angle φs'), 14.04);
+  // V-belts and band brakes (Probs. 8-98, 8-93, 8-99)
+  { const bt = (o) => mk({ mode: 'belt', bt: Object.assign({ known: 'low', T: 100, drums: [{ beta: 180, turns: 0, mu: 0.3, alpha: 60 }], wheel: false, task: 'T', rW: 0.15, M: 50, P: 30, lever: false, aL: 0.4, dT: 0, dS: 0.2 }, o) });
+    close('V-belt T2 = T1 e^(μβ/sin(α/2))', out(Friction.solve(bt({}), SI), 'Tension after drum 1'), 100 * Math.exp(0.3 * Math.PI / 0.5));
+    const B270 = [{ beta: 270, turns: 0, mu: 0.3, alpha: 0 }];
+    close('8-93 M', out(Friction.solve(bt({ drums: B270, wheel: true, task: 'lever', rW: 0.3, P: 30, lever: true, aL: 0.7, dT: 0.025, dS: -0.06 }), SI), 'Torque on the wheel M'), 458.1, 2e-3);
+    r = Friction.solve(bt({ drums: B270, wheel: true, task: 'T', lever: true }), SI);
+    close('8-99 T1', out(r, 'Slack-side tension T₁'), 107.14); close('8-99 P', out(r, 'Force on the lever P'), 53.57);
+    const T2 = out(r, 'Tight-side tension T₂');
+    close('band: torque from the known T2 returns M', out(Friction.solve(bt({ drums: B270, wheel: true, task: 'M', known: 'high', T: T2 }), SI), 'Torque on the wheel M'), 50, 1e-6);
+    truthy('lever that the band cannot resist fails', !Friction.solve(bt({ drums: B270, wheel: true, task: 'lever', lever: true, dT: 0, dS: -0.2 }), SI).ok);
+    truthy('groove angle out of range fails', !Friction.solve(bt({ drums: [{ beta: 180, mu: 0.3, alpha: 190 }] }), SI).ok);
+    const sU = Friction.convertState(Friction.convertState(bt({ drums: B270, wheel: true, task: 'T', lever: true }), 'SI', 'US'), 'US', 'SI');
+    close('band brake units round trip', out(Friction.solve(sU, SI), 'Force on the lever P'), 53.57); }
   // Example 8.8 belt
   r = Friction.solve(mk({ mode: 'belt' }), SI);
   close('8.8 T1', out(r, 'Tension after drum 1'), 277.4); close('8.8 W', out(r, 'Tension after drum 2'), 153.9); close('8.8 m', out(r, 'Mass that can be held'), 15.69);
