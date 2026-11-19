@@ -95,6 +95,20 @@ group('beam engine', () => {
   truthy('no support', Beam.solve({ L: 6, supports: [], loads: [] }).ok === false);
 });
 
+group('statics: pipe assembly in space', () => {
+  const I = R('st/internal.js'), SI = U.SI;
+  const mk = (o) => { const st = I.defaults(); st.mode = 'pipe3d'; st.fu = 'N'; Object.assign(st.pp, o || {}); return st; };
+  let r = I.solve(mk(), SI);
+  close('7-44 N_x', out(r, 'N_x'), -200); close('7-44 V_y', out(r, 'V_y'), -300); close('7-44 V_z', out(r, 'V_z'), 300);
+  close('7-44 T_x', out(r, 'T_x (torque)'), 450); close('7-44 M_y', out(r, 'M_y'), -300); close('7-44 M_z', out(r, 'M_z'), -150);
+  r = I.solve(mk({ loads: [{ x: 1, y: 1.5, z: 0, Fx: 200, Fy: -100, Fz: -400 }, { x: 1, y: 0, z: 0, Fx: 300, Fy: 0, Fz: -500 }] }), SI);
+  close('7-43 V_z', out(r, 'V_z'), 900); close('7-43 T_x', out(r, 'T_x (torque)'), 600); close('7-43 M_y', out(r, 'M_y'), -900); close('7-43 M_z', out(r, 'M_z'), 400);
+  // a couple alone passes straight through: M_B = −M
+  r = I.solve(mk({ loads: [], couples: [{ Mx: 5, My: -3, Mz: 2 }] }), SI); close('couple only', out(r, 'M_y'), 3);
+  truthy('no loads fails', !I.solve(mk({ loads: [], couples: [] }), SI).ok);
+  { const st = mk(); I.convertState(st, 'SI', 'US'); I.convertState(st, 'US', 'SI'); close('pipe units round trip', out(I.solve(st, SI), 'M_y'), -300, 1e-6); }
+});
+
 group('internal forces module', () => {
   const D = Internal.defaults;
   const st = (o) => Core.deepMerge(D(), o);

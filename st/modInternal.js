@@ -31,7 +31,7 @@
     let sec = C.section(c, 'Problem');
     C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [
       ['diagrams', 'Shear and moment diagrams', 'Beams'], ['cut', 'Internal loadings at a cut', 'Beams'],
-      ['cableP', 'Cable with concentrated loads', 'Cables'], ['cableU', 'Cable with a uniform load (parabola)', 'Cables'], ['catenary', 'Cable under its own weight (catenary)', 'Cables']] });
+      ['pipe3d', 'Pipe assembly in space: loadings at a section', 'Beams'], ['cableP', 'Cable with concentrated loads', 'Cables'], ['cableU', 'Cable with a uniform load (parabola)', 'Cables'], ['catenary', 'Cable under its own weight (catenary)', 'Cables']] });
     C.seg(sec, { label: 'Force unit', get: () => st.fu, set: (v) => (st.fu = v), options: U.forces.map((f) => [f, f]) });
     if (isBeam()) {
       const big = M.units === 'US';
@@ -67,6 +67,19 @@
       if (res && res.ok && res.geo.kind === 'beam' && res.geo.beam.jumpAt(Math.min(st.L, Math.max(0, st.cut)))) {
         C.seg(sec, { label: 'A force or couple acts here', get: () => st.side, set: (v) => (st.side = v), options: [['L', 'Just to the left'], ['R', 'Just to the right']] });
       }
+    } else if (st.mode === 'pipe3d') {
+      const q = st.pp, FL = `${F}·${Lu}`, P3 = (lbl) => [{ key: 'x', label: `${lbl} x`, unit: Lu }, { key: 'y', label: 'y', unit: Lu }, { key: 'z', label: 'z (up)', unit: Lu, wide: true }];
+      sec = C.section(c, 'Pipe (for the drawing)');
+      C.list(sec, { items: q.pipe, max: 8, min: 2, title: (it, i) => (i ? `Point ${i + 1}` : 'Point 1 (support end)'), fields: () => P3('Point'), add: [['Point', () => { const l = q.pipe[q.pipe.length - 1]; return { x: l.x, y: tidy(l.y + 1), z: l.z }; }]] });
+      sec = C.section(c, 'Section');
+      C.num(sec, { label: 'Section through B: x', get: () => q.B.x, set: (v) => (q.B.x = v), unit: Lu });
+      C.num(sec, { label: 'y', get: () => q.B.y, set: (v) => (q.B.y = v), unit: Lu });
+      C.num(sec, { label: 'z (up)', get: () => q.B.z, set: (v) => (q.B.z = v), unit: Lu });
+      C.seg(sec, { label: 'The pipe at B runs along', get: () => q.axis, set: (v) => (q.axis = v), options: [['x', 'x'], ['y', 'y'], ['z', 'z']] });
+      sec = C.section(c, 'Loads on the segment beyond B');
+      C.note(sec, 'Enter only the forces and couples on the free part beyond the section (away from the support). Components follow the axes, z up.');
+      C.list(sec, { items: q.loads, max: 6, color: () => '#f6c9c2', title: (it, i) => `Force F${i + 1}`, fields: () => P3('Acts at').concat([{ key: 'Fx', label: 'F_x', unit: F }, { key: 'Fy', label: 'F_y', unit: F }, { key: 'Fz', label: 'F_z', unit: F, wide: true }]), add: [['Force', () => ({ x: 0, y: 0, z: 0, Fx: 0, Fy: 0, Fz: -100 })]] });
+      C.list(sec, { items: q.couples, max: 3, color: () => '#e2cdef', title: (it, i) => `Couple M${i + 1}`, fields: () => [{ key: 'Mx', label: 'M_x', unit: FL }, { key: 'My', label: 'M_y', unit: FL }, { key: 'Mz', label: 'M_z', unit: FL, wide: true }], add: [['Couple', () => ({ Mx: 0, My: 0, Mz: -30 })]] });
     } else if (st.mode === 'cableP') {
       const cb = st.cab;
       sec = C.section(c, 'Supports');
@@ -126,11 +139,11 @@
     if (st.defl !== false) C.seg(c, { label: 'Play animates', get: () => st.play || 'deflect', set: (v) => { st.play = v; delete st._k; }, options: [['deflect', 'The beam deflecting'], ['cut', 'The moving cut']] });
   };
   const showDefl = () => isBeam() && S().defl !== false;
-  M.cap2D = () => (isBeam() ? (showDefl() ? 'Beam diagrams and deflected shape' : 'Beam, shear and moment diagrams') : 'Cable diagram');
+  M.cap2D = () => (isBeam() ? (showDefl() ? 'Beam diagrams and deflected shape' : 'Beam, shear and moment diagrams') : S().mode === 'pipe3d' ? 'Top and front views' : 'Cable diagram');
   M.cap3D = '3D view';
   M.plotCaption = 'Tension along the span';
-  M.hint = () => (isBeam() ? 'Drag the orange cut line along the beam. Press Play to watch the beam deflect or to sweep the cut (choose which under Diagram options). Positive shear acts downward on the right face of the left segment; positive moment bends the beam concave upward.' + (showDefl() ? ' The deflected shape is exaggerated and assumes the same EI along the whole beam; results list EI × deflection, so divide by EI for the actual deflection.' : '') : 'Tension is tangent to the cable, and its horizontal component F_H is the same at every point.');
-  M.legend = () => (isBeam()
+  M.hint = () => (S().mode === 'pipe3d' ? 'Red: the loads on the segment beyond the section. Green at B: the internal force on the cut face, and purple (double head): the internal moment, both as they act on the free segment. Use the 3D view to see the pipe in space.' : isBeam() ? 'Drag the orange cut line along the beam. Press Play to watch the beam deflect or to sweep the cut (choose which under Diagram options). Positive shear acts downward on the right face of the left segment; positive moment bends the beam concave upward.' + (showDefl() ? ' The deflected shape is exaggerated and assumes the same EI along the whole beam; results list EI × deflection, so divide by EI for the actual deflection.' : '') : 'Tension is tangent to the cable, and its horizontal component F_H is the same at every point.');
+  M.legend = () => (S().mode === 'pipe3d' ? [[COL.load, 'Loads'], [COL.react, 'Internal force at B'], ['#8e44ad', 'Internal moment at B']] : isBeam()
     ? [[COL.load, 'Loads'], [COL.react, 'Reactions'], [COL.shear, 'Shear V', 'sq'], [COL.moment, 'Moment M', 'sq']].concat(showDefl() ? [[DCOL, 'Deflected shape', 'ln']] : [], [[COL.accent, 'Cut', 'ln']])
     : [[COL.cable, 'Cable', 'ln'], [COL.load, 'Loads'], [COL.react, 'Support reactions'], [COL.tension, 'Tension']]);
 
@@ -460,9 +473,23 @@
       if (opt.showP) D.text(p, `T_max = ${fmt(g.Tmax)} ${F}`, { dy: -34, dx: atA ? -12 : 12, anchor: atA ? 'start' : 'end', color: COL.tension, size: 12.5, weight: 700 });
     }
   }
-  M.draw2D = (svg, res, U, opt) => (res.geo.kind === 'beam' ? drawBeam2D : drawCable2D)(svg, res, U, opt);
+  /* pipe assembly: the pipe, the loads beyond B, and the internal force and moment on the cut face */
+  function pipeItems(g, opt) {
+    const P = g.pipe.concat([g.B]), e = Math.max(...[0, 1, 2].map((k) => Math.max(...P.map((p) => p[k])) - Math.min(...P.map((p) => p[k]))), 1e-9);
+    const it = [], Fmax = Math.max(...g.loads.map((l) => Math.hypot(...l.F)), Math.hypot(...g.Fb), 1e-12), Mmax = Math.max(...g.cps.map((c) => Math.hypot(...c)), Math.hypot(...g.Mb), 1e-12);
+    const add = (a, d, len, color, kind, label) => { const m = Math.hypot(...d); if (!(m > 1e-12)) return; it.push({ a, b: a.map((x, i) => x + (d[i] / m) * len), color, kind, label }); };
+    for (let i = 0; i + 1 < g.pipe.length; i++) it.push({ a: g.pipe[i], b: g.pipe[i + 1], color: '#7f8c8d', w: 5, kind: 'line' });
+    it.push({ a: g.B, color: '#1d2733', kind: 'dot', label: 'B' });
+    g.loads.forEach((l, i) => add(l.r, l.F, e * (0.2 + 0.25 * Math.hypot(...l.F) / Fmax), COL.load, 'arrow', opt.showP ? `F${i + 1} = ${fmt(Math.hypot(...l.F))} ${g.F}` : `F${i + 1}`));
+    g.cps.forEach((c, i) => add(g.loads.length ? g.loads[g.loads.length - 1].r : g.B, c, e * 0.3, '#8e44ad', 'moment', `M${i + 1}`));
+    add(g.B, g.Fb, e * (0.2 + 0.25 * Math.hypot(...g.Fb) / Fmax), COL.react, 'arrow', opt.showP ? `F_B = ${fmt(Math.hypot(...g.Fb))} ${g.F}` : 'F_B');
+    add(g.B, g.Mb, e * (0.2 + 0.2 * Math.hypot(...g.Mb) / Mmax), '#8e44ad', 'moment', opt.showP ? `M_B = ${fmt(Math.hypot(...g.Mb))} ${g.FL}` : 'M_B');
+    return { it, e };
+  }
+  M.draw2D = (svg, res, U, opt) => (res.geo.kind === 'pipe3d' ? Charts.twoViews(svg, pipeItems(res.geo, opt).it) : (res.geo.kind === 'beam' ? drawBeam2D : drawCable2D)(svg, res, U, opt));
 
   M.plot = function (svg, res) {
+    if (res.geo.kind === 'pipe3d') return false;
     const g = res.geo;
     if (g.kind === 'beam') return false;
     let pts = [], mark;
@@ -586,7 +613,23 @@
     }
     v.autoBounds();
   }
-  M.draw3D = (v, res, U, opt) => (res.geo.kind === 'beam' ? drawBeam3D : drawCable3D)(v, res, U, opt);
+  function drawPipe3D(v, res, U, opt) {
+    const g = res.geo, { it, e } = pipeItems(g, opt), V = (p) => [p[0], p[2], -p[1]], r = e * 0.025; v._hs = e * 0.05;
+    for (let i = 0; i + 1 < g.pipe.length; i++) {
+      const a = g.pipe[i], b = g.pipe[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]); if (!(L > 0)) continue;
+      const lo = a.map((x, k) => Math.min(x, b[k]) - r), hi = a.map((x, k) => Math.max(x, b[k]) + r), A = V(lo), Bv = V(hi);
+      v.box(Math.min(A[0], Bv[0]), Math.min(A[1], Bv[1]), Math.min(A[2], Bv[2]), Math.max(A[0], Bv[0]), Math.max(A[1], Bv[1]), Math.max(A[2], Bv[2]), '#b8c2ca', 1, '#4a5661');
+    }
+    const p0 = V(g.pipe[0]), h = e * 0.06; v.box(p0[0] - h, p0[1] - h, p0[2] - h, p0[0] + h, p0[1] + h, p0[2] + h, '#7f8c8d', 1, '#1d2733'); v.label([p0[0] + h, p0[1] + h, p0[2]], 'support', '#1d2733');
+    it.filter((x) => x.kind !== 'line').forEach((x) => {
+      if (x.kind === 'dot') { v.label(V(x.a), x.label, '#1d2733'); return; }
+      arrow3(v, V(x.a), V(x.b), x.color, 2.6);
+      if (x.kind === 'moment') { const d = x.b.map((q, k) => q - x.a[k]), m = Math.hypot(...d); arrow3(v, V(x.a), V(x.a.map((q, k) => q + d[k] * 0.86)), x.color, 2.6); }
+      v.label(V(x.b), x.label, x.color);
+    });
+    v.autoBounds();
+  }
+  M.draw3D = (v, res, U, opt) => (res.geo.kind === 'pipe3d' ? drawPipe3D : res.geo.kind === 'beam' ? drawBeam3D : drawCable3D)(v, res, U, opt);
 
   /* ------------------------------------------------------------------ */
   /* Presets: complete snapshots merged over the defaults.              */
@@ -596,6 +639,11 @@
   const SS = (L) => [{ type: 'pin', x: 0 }, { type: 'roller', x: L }];
   const kMax = 'Maximum moment (most positive)', kMin = 'Minimum moment (most negative)';
   M.presets = [
+    { name: 'Test: Prob. 7-44, pipe assembly: internal loadings at B', units: 'SI', state: { mode: 'pipe3d', fu: 'N', pp: { pipe: [{ x: -1, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 1, y: 1.5, z: 0 }], B: { x: 0, y: 0, z: 0 }, axis: 'x', loads: [{ x: 1, y: 1.5, z: 0, Fx: 100, Fy: -200, Fz: -300 }, { x: 1, y: 0, z: 0, Fx: 100, Fy: 500, Fz: 0 }], couples: [] } },
+      expect: [{ k: 'N_x', v: -200 }, { k: 'V_y', v: -300 }, { k: 'V_z', v: 300 }, { k: 'T_x (torque)', v: 450 }, { k: 'M_y', v: -300 }, { k: 'M_z', v: -150 }] },
+    { name: 'Test: Prob. 7-43, pipe assembly: internal loadings at B', units: 'SI', state: { mode: 'pipe3d', fu: 'N', pp: { pipe: [{ x: -1, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 1, y: 1.5, z: 0 }], B: { x: 0, y: 0, z: 0 }, axis: 'x', loads: [{ x: 1, y: 1.5, z: 0, Fx: 200, Fy: -100, Fz: -400 }, { x: 1, y: 0, z: 0, Fx: 300, Fy: 0, Fz: -500 }], couples: [] } },
+      expect: [{ k: 'N_x', v: -500 }, { k: 'V_y', v: 100 }, { k: 'V_z', v: 900 }, { k: 'T_x (torque)', v: 600 }, { k: 'M_y', v: -900 }, { k: 'M_z', v: 400 }] },
+    { name: 'Pipe bent twice with a couple on its free end (vertical riser)', units: 'US', state: { mode: 'pipe3d', fu: 'lb', pp: { pipe: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 3.5, z: 0 }, { x: 0, y: 3.5, z: 3 }], B: { x: 0, y: 1.5, z: 0 }, axis: 'y', loads: [{ x: 0, y: 3.5, z: 3, Fx: -24, Fy: 0, Fz: -10 }, { x: 0, y: 3.5, z: 0, Fx: -80, Fy: 0, Fz: 0 }], couples: [{ Mx: 0, My: 0, Mz: -30 }] } } },
     { name: 'Test: 5 kN at midspan of a 4 m shaft, M_max = 5 kN·m', units: 'SI',
       state: { mode: 'diagrams', fu: 'kN', L: 4, supports: SS(4), loads: [{ kind: 'point', x: 2, P: 5, ang: 90 }], hinges: [], cut: 1, side: 'R' },
       expect: [{ k: kMax, v: 5 }, { k: 'Largest shear |V|', v: 2.5 }] },

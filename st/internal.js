@@ -5,6 +5,7 @@
  *   - cable with concentrated loads
  *   - cable with a load uniform along the horizontal (parabola)
  *   - cable under its own weight (catenary)
+ *   - pipe assembly in space: the six internal loadings at a section through a point (Probs. 7-42 to 7-44)
  * State values are in the units shown beside each input: forces in the
  * chosen force unit `fu`, lengths in m or ft. Statics is linear, so the
  * numbers are used directly as one consistent set of units.
@@ -25,6 +26,8 @@
       hinges: [], cut: 4.5, side: 'R', defl: true, play: 'deflect',
       cab: { span: 18, hB: 0, loads: [{ x: 3, P: 4 }, { x: 8, P: 15 }, { x: 16, P: 3 }], known: 'sag', at: 2, sag: 12, FH: 6 },
       par: { L: 100, level: true, hA: 10, hB: 10, w0: 5, given: 'sag', Tmax: 700, len: 103 },
+      pp: { pipe: [{ x: -1, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 1, y: 1.5, z: 0 }], B: { x: 0, y: 0, z: 0 }, axis: 'x',
+        loads: [{ x: 1, y: 1.5, z: 0, Fx: 100, Fy: -200, Fz: -300 }, { x: 1, y: 0, z: 0, Fx: 100, Fy: 500, Fz: 0 }], couples: [] },
       cat: { L: 20, h: 6, w0: 5, given: 'sag', len: 24, level: true, hA: 4, hB: 9 },
     };
   }
@@ -34,6 +37,7 @@
     if (st.mode === 'cableP') return cablePoint(st, U);
     if (st.mode === 'cableU') return cableUniform(st, U);
     if (st.mode === 'catenary') return catenary(st, U);
+    if (st.mode === 'pipe3d') return pipe3d(st, U);
     return beam(st, U);
   }
 
@@ -301,6 +305,40 @@
     return { ok: true, err: [], warn: [], status: { cls: 'ok', text: 'OK' }, out, steps: S.list, geo: { kind: 'catenary', L, hA, hB, xA, FH, w, y, T, Tmax, TA, TB, F, Lu, WL, len, c } };
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Pipe assembly in space: internal loadings at a section             */
+  /* ------------------------------------------------------------------ */
+  /**
+   * The section through B separates the assembly; the loads entered are those on the free segment beyond B.
+   * Its equilibrium gives the force and moment on the cut face: F_B = −ΣF, M_B = −Σ (r − r_B) × F − ΣM.
+   * Along the pipe axis at B the force is the normal force N and the moment the torque T; across it they are
+   * the shear components V and the bending moments M.
+   */
+  function pipe3d(st, U) {
+    const q = st.pp, F = st.fu, Lu = U.len, FL = `${F}·${Lu}`, err = [];
+    const B = [+q.B.x || 0, +q.B.y || 0, +q.B.z || 0], ax = ['x', 'y', 'z'], k = Math.max(0, ax.indexOf(q.axis));
+    const loads = (q.loads || []).map((l) => ({ r: [+l.x || 0, +l.y || 0, +l.z || 0], F: [+l.Fx || 0, +l.Fy || 0, +l.Fz || 0] }));
+    const cps = (q.couples || []).map((c) => [+c.Mx || 0, +c.My || 0, +c.Mz || 0]);
+    if (!loads.length && !cps.length) err.push('Enter the forces or couples on the segment beyond the section.');
+    if (err.length) return fail(err);
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const v3 = (v) => `{${v.map((x, i) => `${i && x >= 0 ? '+ ' : x < 0 ? '− ' : ''}${fmt(Math.abs(x))}${'ijk'[i]}`).join(' ')}}`;
+    const S = Steps();
+    S.add({ t: 'Free-body diagram of the segment beyond the section', n: `Section through B ${v3(B)} ${Lu}. On the cut face act the unknown force F_B and moment M_B; the pipe runs along ${ax[k]} at B, so the ${ax[k]} components are the normal force and the torque, and the other two are shear forces and bending moments.` });
+    const rows = loads.map((l, i) => { const r = l.r.map((v, j) => v - B[j]); return { i, r, F: l.F, M: cross(r, l.F) }; });
+    const SF = [0, 1, 2].map((j) => rows.reduce((a, w) => a + w.F[j], 0)), SM = [0, 1, 2].map((j) => rows.reduce((a, w) => a + w.M[j], 0) + cps.reduce((a, c) => a + c[j], 0));
+    S.add({ t: 'Moments of the forces about B', f: 'M = r_BP × F', table: { head: ['Force', `r from B (${Lu})`, `F (${F})`, `r × F (${FL})`], rows: rows.map((w) => [`F${w.i + 1}`, v3(w.r), v3(w.F), v3(w.M)]).concat(cps.map((c, i) => [`M${i + 1} (couple)`, '—', '—', v3(c)])) } });
+    const Fb = SF.map((v) => -v), Mb = SM.map((v) => -v);
+    S.add({ t: 'Equations of equilibrium', f: 'ΣF = 0: F_B + ΣF = 0;   ΣM_B = 0: M_B + Σ r × F + ΣM = 0', s: `ΣF = ${v3(SF)} ${F};  Σ(r × F) + ΣM = ${v3(SM)} ${FL}`, r: `F_B = ${v3(Fb)} ${F},  M_B = ${v3(Mb)} ${FL}` });
+    const nmF = ax.map((a, j) => (j === k ? `N_${a}` : `V_${a}`)), nmM = ax.map((a, j) => (j === k ? `T_${a} (torque)` : `M_${a}`));
+    S.add({ t: 'Internal loadings', n: 'A negative value means the component acts opposite to the positive axis on the face of the segment beyond B.', r: ax.map((a, j) => `${nmF[j].split(' ')[0]} = ${fmt(Fb[j])} ${F}`).join(', ') + ';  ' + ax.map((a, j) => `${nmM[j].split(' ')[0]} = ${fmt(Mb[j])} ${FL}`).join(', ') });
+    const out = ax.map((a, j) => ({ k: nmF[j], v: Fb[j], u: F, hl: true })).concat(ax.map((a, j) => ({ k: nmM[j], v: Mb[j], u: FL, hl: true })));
+    const sh = Math.hypot(...Fb.filter((v, j) => j !== k)), bm = Math.hypot(...Mb.filter((v, j) => j !== k));
+    out.push({ k: 'Resultant shear V', v: sh, u: F }, { k: 'Resultant bending moment M', v: bm, u: FL });
+    const pipe = (q.pipe || []).map((p) => [+p.x || 0, +p.y || 0, +p.z || 0]);
+    return { ok: true, err: [], warn: [], status: { cls: 'ok', text: `At B: N = ${fmt(Fb[k])} ${F}, T = ${fmt(Mb[k])} ${FL}` }, out, steps: S.list, geo: { kind: 'pipe3d', F, Lu, FL, B, k, pipe, loads, cps, Fb, Mb } };
+  }
+
   /** Convert every input when the viewer switches between SI and U.S. Customary, so the problem stays the same. */
   function convertState(st, from, to) {
     if (from === to) return st;
@@ -319,6 +357,7 @@
     });
     const c = st.cab; c.span = Lc(c.span); c.hB = Lc(c.hB); c.sag = Lc(c.sag); c.FH = Fc(c.FH); c.loads.forEach((q) => { q.x = Lc(q.x); q.P = Fc(q.P); });
     const p = st.par; p.L = Lc(p.L); p.hA = Lc(p.hA); p.hB = Lc(p.hB); p.w0 = Wc(p.w0); p.Tmax = Fc(p.Tmax); p.len = Lc(p.len);
+    if (st.pp) { const pp = st.pp; (pp.pipe || []).concat([pp.B], pp.loads || []).forEach((o) => ['x', 'y', 'z'].forEach((a) => (o[a] = Lc(+o[a] || 0)))); (pp.loads || []).forEach((o) => ['Fx', 'Fy', 'Fz'].forEach((a) => (o[a] = Fc(+o[a] || 0)))); (pp.couples || []).forEach((o) => ['Mx', 'My', 'Mz'].forEach((a) => (o[a] = Mc(+o[a] || 0)))); }
     const k = st.cat; k.L = Lc(k.L); k.h = Lc(k.h); k.w0 = Wc(k.w0); k.len = Lc(k.len); if (k.hA !== undefined) { k.hA = Lc(k.hA); k.hB = Lc(k.hB); }
     return st;
   }
