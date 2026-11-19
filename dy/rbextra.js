@@ -7,6 +7,8 @@
  *                         a_B = a_A + Ω̇ × r_B/A + Ω × (Ω × r_B/A) + 2Ω × (v_B/A)xyz + (a_B/A)xyz  (16–27)
  *   Slotted link: a peg moves along a straight slot that passes through the link's pivot A.
  *   Planetary gears: an arm carries gear B round a sun gear (or inside a ring gear) A.
+ *   Frame carried on an arm: a car spins on the end B of an arm AB that turns about A; the car is the moving
+ *   frame (origin B, Ω = ω_AB + ω′), and B moves on a circle about A (16–24 and 16–27 twice).
  * Signs: angular quantities are + counterclockwise (k points out of the page).
  * State keys start with j so they never meet the other mechanisms' keys.
  * ===================================================================== */
@@ -24,13 +26,16 @@
     jf: '0.12 sin θ + 0.15', jdir: 'x', jth: 30, jgiven: 'w', jw: 4, jal: 2, jv: 0.416, ja: 0,
     // rotating frame
     jvox: 0, jvoy: 0, jaox: 0, jaoy: 0, jW: -15, jWd: 0, jrx: 0, jry: 0.3, jvrx: -21.65, jvry: 12.5, jarx: -25.98, jary: 15,
+    // rotating frame carried on an arm AB (the car spins on the end B; point C rides in the car)
+    jframe: 'given', jLa: 3, jang: 30, jwab: 2, jaab: 1, jwr: -0.5, jar: -0.6, jkx: 0, jky: -0.6, jkvx: 0, jkvy: 0, jkax: 0, jkay: 0,
     // slotted link pivoted at A (origin); peg B
     jbx: 0.75, jby: 0, jsrc: 'crank', jcx: 0.75, jcy: -0.3, jcw: 6, jca: 10, jvbx: 0, jvby: 0, jabx: 0, jaby: 0,
     // planetary gears
     jring: 'sun', jrA: 0.3, jrB: 0.2, jwA: 0, jaA: 0, jwarm: -6, jaarm: -3, jpth: 30,
   });
   const KINDS = { jvox: 'V', jvoy: 'V', jaox: 'A', jaoy: 'A', jrx: 'L', jry: 'L', jvrx: 'V', jvry: 'V', jarx: 'A', jary: 'A',
-    jbx: 'L', jby: 'L', jcx: 'L', jcy: 'L', jvbx: 'V', jvby: 'V', jabx: 'A', jaby: 'A', jrA: 'L', jrB: 'L' };
+    jbx: 'L', jby: 'L', jcx: 'L', jcy: 'L', jvbx: 'V', jvby: 'V', jabx: 'A', jaby: 'A', jrA: 'L', jrB: 'L',
+    jLa: 'L', jkx: 'L', jky: 'L', jkvx: 'V', jkvy: 'V', jkax: 'A', jkay: 'A' };
   /** s = f(θ) carries a length or an angle; its formula's numbers are in the units typed and are not rescaled. */
   function convert(st, from, to) {
     if (from === to) return st;
@@ -50,7 +55,7 @@
   function solve(st, u) {
     switch (st.mode) {
       case 'abs': return absolute(st, u);
-      case 'rotframe': return rotframe(st, u);
+      case 'rotframe': return st.jframe === 'arm' ? armFrame(st, u) : rotframe(st, u);
       case 'slot': return slot(st, u);
       default: return planet(st, u);
     }
@@ -114,6 +119,49 @@
     return DY.result(`v_B = {${vtxt(k.v)}} ${u.V}, a_B = {${vtxt(k.a)}} ${u.A}`, 'ok', out, S, { mode: 'rotframe', u, vO, aO, W, Wd, r, vr, ar, k, span: [0, T] }, []);
   }
 
+  /* ---------------- frame carried on an arm (16–24, 16–27 with origin B) ---------------- */
+  /**
+   * Motion of the end B of an arm AB turning about the fixed point A (rotation about a fixed axis, 16–9 and 16–11):
+   *   v_B = ω_AB k × r_B/A,   a_B = α_AB k × r_B/A − ω_AB² r_B/A.
+   */
+  function armEnd(rBA, wab, aab) {
+    return { v: mul(kx(rBA), wab), a: add(mul(kx(rBA), aab), mul(rBA, -wab * wab)) };
+  }
+  /**
+   * A car spins on the end B of the arm with ω′ and α′ measured relative to the arm. The car is the moving frame xyz
+   * (origin B), so Ω = ω_AB + ω′ and Ω̇ = α_AB + α′, and for a point C in the car (16–24, 16–27):
+   *   v_C = v_B + Ω × r_C/B + (v_C/B)xyz,
+   *   a_C = a_B + Ω̇ × r_C/B + Ω × (Ω × r_C/B) + 2Ω × (v_C/B)xyz + (a_C/B)xyz.
+   * Returns { rBA, B: arm end terms, W, Wd, k: frameTerms(...) }.
+   */
+  function armFrameTerms(La, ang, wab, aab, wr, ar, rC, vrel, arel) {
+    const rBA = [La * Math.cos(ang), La * Math.sin(ang)], B = armEnd(rBA, wab, aab), W = wab + wr, Wd = aab + ar;
+    return { rBA, B, W, Wd, k: frameTerms(B.v, B.a, W, Wd, rC, vrel, arel) };
+  }
+  function armFrame(st, u) {
+    const S = Steps(), out = [];
+    const La = +st.jLa, angD = num(st.jang, 0), wab = num(st.jwab, 0), aab = num(st.jaab, 0), wr = num(st.jwr, 0), ar = num(st.jar, 0);
+    const rC = [num(st.jkx, 0), num(st.jky, 0)], vrel = [num(st.jkvx, 0), num(st.jkvy, 0)], arel = [num(st.jkax, 0), num(st.jkay, 0)];
+    if (!(La > 0)) return fail('Enter the length of the arm AB (above zero).');
+    if (![angD, wab, aab, wr, ar, ...rC, ...vrel, ...arel].every(isFinite)) return fail('Every entry must be a number: the arm angle, the four rates and the position and motion of C in the car.');
+    const q = armFrameTerms(La, angD * D2R, wab, aab, wr, ar, rC, vrel, arel), k = q.k, B = q.B;
+    S.add({ t: 'Motion of the end B of the arm', n: `The arm AB turns about the fixed point A; B moves on a circle of radius ${fmt(La)} ${u.L}.`, f: 'v_B = ω_AB × r_B/A,   a_B = α_AB × r_B/A − ω_AB² r_B/A',
+      s: `r_B/A = {${vtxt(q.rBA)}} ${u.L},  v_B = ${fmt(wab)}k × r_B/A,  a_B = ${fmt(aab)}k × r_B/A − (${fmt(wab)})² r_B/A`, r: `v_B = {${vtxt(B.v)}} ${u.V},  a_B = {${vtxt(B.a)}} ${u.A}` });
+    S.add({ t: 'Motion of the moving frame (the car)', n: 'The xyz frame is fixed in the car with its origin at B. The car turns with the arm and also spins relative to it, so the rates add.',
+      f: 'Ω = ω_AB + ω′,   Ω̇ = α_AB + α′', s: `Ω = ${fmt(wab)} + (${fmt(wr)}),  Ω̇ = ${fmt(aab)} + (${fmt(ar)})`, r: `Ω = ${fmt(q.W)}k rad/s${sense(q.W)},  Ω̇ = ${fmt(q.Wd)}k rad/s²${sense(q.Wd)}` });
+    S.add({ t: 'Point C measured in the car', s: `r_C/B = {${vtxt(rC)}} ${u.L},  (v_C/B)xyz = {${vtxt(vrel)}} ${u.V},  (a_C/B)xyz = {${vtxt(arel)}} ${u.A}` });
+    S.add({ t: 'Velocity of C', f: 'v_C = v_B + Ω × r_C/B + (v_C/B)xyz', s: `v_C = (${vtxt(B.v)}) + (${vtxt(k.Wr)}) + (${vtxt(vrel)})`, r: `v_C = {${vtxt(k.v)}} ${u.V},  |v_C| = ${fmt(len(k.v))} ${u.V} at ${fmt(dirn(k.v))}°` });
+    S.add({ t: 'Acceleration of C', f: 'a_C = a_B + Ω̇ × r_C/B + Ω × (Ω × r_C/B) + 2Ω × (v_C/B)xyz + (a_C/B)xyz',
+      s: `a_C = (${vtxt(B.a)}) + (${vtxt(k.Wdr)}) + (${vtxt(k.WWr)}) + (${vtxt(k.cor)}) + (${vtxt(arel)})`, r: `a_C = {${vtxt(k.a)}} ${u.A},  |a_C| = ${fmt(len(k.a))} ${u.A} at ${fmt(dirn(k.a))}°` });
+    out.push({ k: 'Velocity of B, x', v: B.v[0], u: u.V }, { k: 'Velocity of B, y', v: B.v[1], u: u.V }, { k: 'Acceleration of B, x', v: B.a[0], u: u.A }, { k: 'Acceleration of B, y', v: B.a[1], u: u.A },
+      { k: 'Angular velocity of the car Ω', v: q.W, u: 'rad/s' }, { k: 'Angular acceleration of the car Ω̇', v: q.Wd, u: 'rad/s²' },
+      { k: 'Velocity v_C, x', v: k.v[0], u: u.V }, { k: 'Velocity v_C, y', v: k.v[1], u: u.V }, { k: 'Speed of C, |v_C|', v: len(k.v), u: u.V, hl: true }, { k: 'Direction of v_C from +x', v: dirn(k.v), u: '°' },
+      { k: 'Acceleration a_C, x', v: k.a[0], u: u.A }, { k: 'Acceleration a_C, y', v: k.a[1], u: u.A }, { k: 'Magnitude |a_C|', v: len(k.a), u: u.A }, { k: 'Direction of a_C from +x', v: dirn(k.a), u: '°' });
+    const T = Math.abs(wab) > 1e-9 ? Math.min(1.2 / Math.abs(wab), 3) : 2;
+    return DY.result(`v_C = {${vtxt(k.v)}} ${u.V}, a_C = {${vtxt(k.a)}} ${u.A}`, 'ok', out, S,
+      { mode: 'rotframe', arm: true, u, La, ang: angD * D2R, wab, aab, wr, ar, rC, vrel, arel, q, span: [0, T] }, []);
+  }
+
   /* ---------------- slotted link ---------------- */
   /** Link pivoted at A = origin, slot through A along r_B; peg B has velocity vB and acceleration aB. */
   function slotSolve(r, vB, aB) {
@@ -171,7 +219,7 @@
     return DY.result(`ω_B = ${fmt(wB)} rad/s, α_B = ${fmt(aB)} rad/s²`, 'ok', out, S, { mode: 'planet', u, ring, rA, rB, L, wA, aA, warm, aarm, wB, aB, th, vE, aE, span: [0, T] }, []);
   }
 
-  const RbExtra = { MODES, defaults, convert, solve, frameTerms, slotSolve, planetRate };
+  const RbExtra = { MODES, defaults, convert, solve, frameTerms, armEnd, armFrameTerms, slotSolve, planetRate };
   root.RbExtra = RbExtra;
   if (typeof module !== 'undefined' && module.exports) module.exports = RbExtra;
 })(typeof window !== 'undefined' ? window : globalThis);

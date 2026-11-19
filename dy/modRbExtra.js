@@ -33,7 +33,21 @@
       const vu = st.jdir === 'ang' ? 'rad/s' : u.V, au = st.jdir === 'ang' ? 'rad/s²' : u.A;
       if (st.jgiven === 'v') { num(sec, 'jv', 'Velocity of the part v', vu); num(sec, 'ja', 'Acceleration of the part a', au); }
       else { num(sec, 'jw', 'Angular velocity ω = dθ/dt', 'rad/s'); num(sec, 'jal', 'Angular acceleration α', 'rad/s²'); }
+    } else if (st.mode === 'rotframe' && st.jframe === 'arm') {
+      sec = C.section(c, 'Moving frame');
+      C.seg(sec, { label: 'Frame', get: () => st.jframe, set: (v) => (st.jframe = v), options: [['given', 'Given directly'], ['arm', 'Carried on an arm']] });
+      sec = C.section(c, 'Arm AB (turns about the fixed point A)');
+      num(sec, 'jLa', 'Length of the arm AB', u.L); num(sec, 'jang', 'Angle of the arm from +x', '°');
+      num(sec, 'jwab', 'Angular velocity ω_AB (+ counterclockwise)', 'rad/s'); num(sec, 'jaab', 'Angular acceleration α_AB', 'rad/s²');
+      sec = C.section(c, 'Car spinning on the end B');
+      C.note(sec, 'Measured relative to the arm. The car is the moving frame xyz, with its origin at B.');
+      num(sec, 'jwr', 'Angular velocity ω′ relative to the arm', 'rad/s'); num(sec, 'jar', 'Angular acceleration α′ relative to the arm', 'rad/s²');
+      sec = C.section(c, 'Point C in the car');
+      C.note(sec, 'Components along the fixed x and y axes at this instant. Leave the motion at 0 when C is fixed in the car.');
+      pair(sec, 'jkx', 'jky', 'Position r_C/B', u.L); pair(sec, 'jkvx', 'jkvy', 'Velocity in the car (v_C/B)xyz', u.V); pair(sec, 'jkax', 'jkay', 'Acceleration in the car (a_C/B)xyz', u.A);
     } else if (st.mode === 'rotframe') {
+      sec = C.section(c, 'Moving frame');
+      C.seg(sec, { label: 'Frame', get: () => st.jframe, set: (v) => (st.jframe = v), options: [['given', 'Given directly'], ['arm', 'Carried on an arm']] });
       sec = C.section(c, 'Moving frame xyz (origin O)');
       C.note(sec, 'The frame turns with the body. Its axes line up with the fixed X and Y axes at this instant, so all vectors are in i, j components.');
       pair(sec, 'jvox', 'jvoy', 'Velocity of O', u.V); pair(sec, 'jaox', 'jaoy', 'Acceleration of O', u.A);
@@ -61,9 +75,9 @@
     if (st.mode === 'rotframe') C.toggle(c, { label: 'Each acceleration term', get: () => !!st.jterms, set: (v) => (st.jterms = v), rebuild: false });
     if (st.mode === 'slot' || st.mode === 'planet' || st.mode === 'rotframe') C.toggle(c, { label: 'Path of the point', get: () => st.jtrace !== false, set: (v) => (st.jtrace = v), rebuild: false });
   }
-  const cap2D = (st) => ({ abs: 'Driving angle θ and the coordinate it sets', rotframe: 'Rotating frame xyz and point B', slot: 'Slotted link and peg', planet: 'Planetary gear train' }[st.mode]);
+  const cap2D = (st) => ({ abs: 'Driving angle θ and the coordinate it sets', rotframe: st.jframe === 'arm' ? 'Arm, car and point C' : 'Rotating frame xyz and point B', slot: 'Slotted link and peg', planet: 'Planetary gear train' }[st.mode]);
   const plotCaption = (st) => ({ abs: 'Position and velocity of the part against θ (at the given ω)', rotframe: 'Acceleration terms (x and y components)', slot: 'Angular velocity of the link as the peg goes round', planet: 'Angular velocities against time' }[st.mode]);
-  const legend = (st) => (st.mode === 'rotframe' ? [[K.vel, 'Velocity'], [K.acc, 'Acceleration'], [CA, 'Moving frame'], [CB, 'Point B']] : [[K.vel, 'Velocity'], [K.acc, 'Acceleration'], [LINK, 'Links', 'ln'], [CB, 'Moving point']]);
+  const legend = (st) => (st.mode === 'rotframe' ? [[K.vel, 'Velocity'], [K.acc, 'Acceleration'], [CA, 'Moving frame'], [CB, st.jframe === 'arm' ? 'Point C' : 'Point B']] : [[K.vel, 'Velocity'], [K.acc, 'Acceleration'], [LINK, 'Links', 'ln'], [CB, 'Moving point']]);
 
   /* ------------------------------------------------------------------ */
   /* 2D                                                                 */
@@ -91,7 +105,7 @@
 
   function draw2D(svg, g, opt, uNow, st) {
     showArrows = !st || st.showV !== false;
-    return ({ abs: abs2D, rotframe: frame2D, slot: slot2D, planet: planet2D })[g.mode](svg, g, opt, uNow, st || {});
+    return ({ abs: abs2D, rotframe: g.arm ? arm2D : frame2D, slot: slot2D, planet: planet2D })[g.mode](svg, g, opt, uNow, st || {});
   }
 
   /* absolute motion: a driving link at angle θ and the part whose coordinate s = f(θ) */
@@ -169,6 +183,39 @@
     return true;
   }
 
+  /* frame carried on an arm: the arm turns about A, the car spins on B, and C rides in the car */
+  function armAt(g, t) {
+    const phi = g.ang + g.wab * t + 0.5 * g.aab * t * t, psi = (g.wab + g.wr) * t + 0.5 * (g.aab + g.ar) * t * t;
+    const rl = add(add(g.rC, mul(g.vrel, t)), mul(g.arel, 0.5 * t * t)), vl = add(g.vrel, mul(g.arel, t));
+    const q = RbExtra.armFrameTerms(g.La, phi, g.wab + g.aab * t, g.aab, g.wr + g.ar * t, g.ar, rot(rl, psi), rot(vl, psi), rot(g.arel, psi));
+    return { phi, psi, q, B: q.rBA, C: add(q.rBA, rot(rl, psi)) };
+  }
+  function arm2D(svg, g, opt, uN, st) {
+    const u = g.u, t = uN === undefined ? 0 : g.span[1] * uN, f = armAt(g, t), k = f.q.k;
+    const Rc = Math.max(L2(g.rC) * 1.3, 0.15 * g.La);
+    const pts = [[0, 0]], path = []; for (let i = 0; i <= 40; i++) { const q = armAt(g, (g.span[1] * i) / 40); pts.push(add(q.B, [Rc, Rc]), add(q.B, [-Rc, -Rc]), q.C); path.push(q.C); }
+    const D = UI.Draw2D(svg, bbox(pts, 0.12), { pad: 30 });
+    D.line([0, 0], [g.La * 0.45, 0], { stroke: K.ink, sw: 1, dash: '5 4' });
+    D.arc([0, 0], 34, 0, f.phi / D2R, `${fmt(f.phi / D2R)}°`, { color: K.ink });
+    if (st.jtrace !== false) D.pline(path, { stroke: CB, sw: 1.2, dash: '3 3' });
+    DYUI.wheel(D, f.B, Rc, g.ang + f.psi + Math.PI / 2, { spokes: 4, fill: '#e3e8ec' });
+    link(D, [0, 0], f.B); DYUI.pin(D, [0, 0], 0.07 * g.La); joint(D, [0, 0]); joint(D, f.B);
+    name(D, [0, 0], 'A', -18, 16); name(D, f.B, 'B', 10, -10);
+    D.line(f.B, f.C, { stroke: K.ink, sw: 1, dash: '4 3' });
+    D.circle(f.C, 5.5 / D.sc, { fill: CB, stroke: '#fff', sw: 1.5 }); name(D, f.C, 'C', 10, 16, CB);
+    spin(D, [0, 0], 48, g.wab + g.aab * t, `ω_AB = ${fmt(g.wab + g.aab * t)} rad/s`, K.ink);
+    spin(D, f.B, Rc * D.sc + 12, g.wr + g.ar * t, `ω′ = ${fmt(g.wr + g.ar * t)} rad/s`, CA);
+    const vmax = Math.max(L2(k.v), 1e-9);
+    if (st.jterms && uN === undefined && showArrows) {
+      const terms = [[f.q.B.a, 'a_B'], [k.Wdr, 'Ω̇×r'], [k.WWr, 'Ω×(Ω×r)'], [k.cor, '2Ω×v_rel'], [rot(g.arel, f.psi), 'a_rel']].filter(([a]) => L2(a) > 1e-9 * L2(k.a) + 1e-12);
+      const amax = Math.max(...terms.map(([a]) => L2(a)), 1e-9);
+      terms.forEach(([a, nm], i) => DYUI.vec(D, f.C, a, 20 + 60 * L2(a) / amax, { color: K.acc, w: 1.8, label: lbl(opt, `${nm} = ${fmt(L2(a))}`, nm), size: 11, anchor: a[0] < 0 ? 'end' : 'start', ldx: a[0] < 0 ? -6 : 6, ldy: 4 + (i % 2) * 10 }));
+      arrowsAt(D, f.C, k.v, null, vmax, 1, opt, 'C', u);
+    } else arrowsAt(D, f.C, k.v, uN === undefined ? k.a : null, vmax, Math.max(L2(k.a), 1e-9), opt, 'C', u);
+    DYUI.title(D, 12, 20, uN === undefined ? `At the instant: v_C = ${fmt(L2(k.v))} ${u.V}, a_C = ${fmt(L2(k.a))} ${u.A}, Ω = ${fmt(f.q.W)} rad/s` : `t = ${fmt(t)} s: the arm is at ${fmt(f.phi / D2R)}°, v_C = ${fmt(L2(k.v))} ${u.V}`);
+    return true;
+  }
+
   /* slotted link: the peg goes round the disk (when it is on one) and the link follows */
   function slotAt(g, psi) {
     if (!g.crank) return { B: g.r, vB: g.vB, aB: g.aB, k: g.k };
@@ -237,6 +284,10 @@
       for (let i = 0; i <= 120; i++) { const x = th0 - 45 + (90 * i) / 120, s = sAt(x), v = vAt(x); if (isFinite(s) && isFinite(v) && Math.abs(v) < 1e6) { p1.push([x, s]); p2.push([x, v]); } }
       return DYUI.stack(svg, [{ label: `${g.name} (${su})`, color: CB, pts: p1, at: sAt }, { label: `v (${vu})`, color: K.vel, pts: p2, at: vAt }], { xlabel: 'θ (°)', cursor: absTheta(g, uN) / D2R, xmin: th0 - 45, xmax: th0 + 45 });
     }
+    if (g.mode === 'rotframe' && g.arm) {
+      const k = g.q.k, terms = [['a_B', g.q.B.a], ['Ω̇×r', k.Wdr], ['Ω×(Ω×r)', k.WWr], ['2Ω×v_rel', k.cor], ['a_rel', g.arel], ['a_C', k.a]];
+      return DYUI.bars(svg, terms.flatMap(([n, a]) => [{ name: `${n} x`, v: a[0], color: n === 'a_C' ? K.acc : CA }, { name: 'y', v: a[1], color: n === 'a_C' ? K.acc : CB }]), { title: 'Acceleration', unit: u.A });
+    }
     if (g.mode === 'rotframe') {
       const k = g.k, terms = [['a_O', g.aO], ['Ω̇×r', k.Wdr], ['Ω×(Ω×r)', k.WWr], ['2Ω×v_rel', k.cor], ['a_rel', g.ar], ['a_B', k.a]];
       return DYUI.bars(svg, terms.flatMap(([n, a]) => [{ name: `${n} x`, v: a[0], color: n === 'a_B' ? K.acc : CA }, { name: 'y', v: a[1], color: n === 'a_B' ? K.acc : CB }]), { title: 'Acceleration', unit: u.A });
@@ -280,6 +331,13 @@
       const pts = [[0, 0], mul(e, Lm), g.r].concat(g.crank ? [add(g.crank.c, [L2(g.crank.rc) * 1.2, L2(g.crank.rc) * 1.2]), add(g.crank.c, [-L2(g.crank.rc) * 1.2, -L2(g.crank.rc) * 1.2])] : []);
       const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]); v.setBounds([Math.min(...xs), Math.min(...ys), -Lm * 0.3], [Math.max(...xs), Math.max(...ys), Lm * 0.3]); return;
     }
+    if (g.mode === 'rotframe' && g.arm) {
+      const t = uN === undefined ? 0 : g.span[1] * uN, f = armAt(g, t), Rc = Math.max(L2(g.rC) * 1.3, 0.15 * g.La), w = 0.05 * g.La;
+      slab(v, [0, 0], f.B, w, 0, w, '#aab7c4');
+      disk(v, f.B, Rc, w, w * 1.6, '#d5dbe1', g.ang + f.psi + Math.PI / 2);
+      v.extrude([0, 1, 2, 3, 4, 5, 6, 7].map((i) => add(f.C, [Rc * 0.18 * Math.cos((i / 8) * TAU), Rc * 0.18 * Math.sin((i / 8) * TAU)])), w * 1.6, w * 3.2, CB, 1, K.edge);
+      const R = g.La + Rc * 1.2; v.setBounds([-R, -R, -g.La * 0.2], [R, R, g.La * 0.2]); return;
+    }
     if (g.mode === 'rotframe') {
       const t = uN === undefined ? 0 : g.span[1] * uN, f = frameAt(g, t), Lr = Math.max(L2(g.r), 1e-3), w = 0.08 * Lr;
       slab(v, f.O, add(f.O, rot([Lr * 1.3, 0], f.psi)), w, -w, 0, '#c3cbd3'); slab(v, f.O, add(f.O, rot([0, Lr * 1.3], f.psi)), w, -w, 0, '#c3cbd3');
@@ -318,6 +376,14 @@
       expect: [{ k: 'Angular velocity of gear B, ω_B', v: -30 }, { k: 'Angular acceleration of gear B, α_B', v: -7.5 }] },
     { name: 'Planet gear inside a fixed ring gear, arm at 2 rad/s', units: 'SI', state: P0({ mode: 'planet', jring: 'ring', jrA: 0.5, jrB: 0.2, jwA: 0, jaA: 0, jwarm: 2, jaarm: 0.5, jpth: 45 }) },
     { name: 'Edge: planet larger than its ring gear (fails on purpose)', units: 'SI', fails: true, state: P0({ mode: 'planet', jring: 'ring', jrA: 0.2, jrB: 0.3 }) },
+    { name: 'Test: Problem 16–146, ride car on a 10 ft arm at 30°, arm 2 rad/s and 1 rad/s², car −0.5 rad/s and −0.6 rad/s² on the arm, rider 2 ft below B (v_C = −7.00i + 17.3j ft/s, a_C = −38.8i − 6.84j ft/s²)', units: 'US',
+      state: P0({ mode: 'rotframe', jframe: 'arm', jLa: 10, jang: 30, jwab: 2, jaab: 1, jwr: -0.5, jar: -0.6, jkx: 0, jky: -2, jkvx: 0, jkvy: 0, jkax: 0, jkay: 0 }),
+      expect: [{ k: 'Speed of C, |v_C|', v: 18.68 }, { k: 'Velocity v_C, x', v: -7.0 }, { k: 'Velocity v_C, y', v: 17.32 }, { k: 'Acceleration a_C, x', v: -38.84 }, { k: 'Acceleration a_C, y', v: -6.840 }] },
+    { name: 'Test: Problem 16–145, the same ride with both rates steady (v_C = −7.00i + 17.3j ft/s, a_C = −34.6i − 15.5j ft/s²)', units: 'US',
+      state: P0({ mode: 'rotframe', jframe: 'arm', jLa: 10, jang: 30, jwab: 2, jaab: 0, jwr: -0.5, jar: 0, jkx: 0, jky: -2, jkvx: 0, jkvy: 0, jkax: 0, jkay: 0 }),
+      expect: [{ k: 'Speed of C, |v_C|', v: 18.68 }, { k: 'Acceleration a_C, x', v: -34.64 }, { k: 'Acceleration a_C, y', v: -15.5 }] },
+    { name: 'Ride car on a 4 m arm, a passenger walking across the car at 1 m/s', units: 'SI',
+      state: P0({ mode: 'rotframe', jframe: 'arm', jLa: 4, jang: 20, jwab: 0.8, jaab: 0.2, jwr: 1.5, jar: 0, jkx: 0.8, jky: 0, jkvx: 0, jkvy: 1, jkax: 0, jkay: 0 }) },
   ];
 
   root.DRbExtraUI = { MODES, controls, diagram, cap2D, plotCaption, legend, draw2D, plot, draw3D, presets };

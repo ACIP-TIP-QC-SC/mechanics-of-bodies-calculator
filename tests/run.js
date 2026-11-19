@@ -1185,6 +1185,36 @@ group('dynamics: absolute motion, rotating frames, slotted links and planetary g
   const st = Object.assign(RbMotion.defaults(), { mode: 'slot' }); RbMotion.convertState(st, 'SI', 'US'); RbMotion.convertState(st, 'US', 'SI'); close('units round trip', +st.jcy, -0.3, 1e-9);
 });
 
+group('dynamics: point on a car spinning at the end of a rotating arm', () => {
+  const run = (o, sys) => RbMotion.solve(Object.assign(RbMotion.defaults(), { mode: 'rotframe', jframe: 'arm' }, o), U[sys]);
+  const book = { jLa: 10, jang: 30, jwab: 2, jaab: 1, jwr: -0.5, jar: -0.6, jkx: 0, jky: -2 };
+  let r = run(book, 'US');
+  close('16-146 v_B,x', out(r, 'Velocity of B, x'), -10.0); close('16-146 v_B,y', out(r, 'Velocity of B, y'), 17.32);
+  close('16-146 a_B,x', out(r, 'Acceleration of B, x'), -39.64); close('16-146 a_B,y', out(r, 'Acceleration of B, y'), -11.34);
+  close('16-146 Ω = 2 − 0.5', out(r, 'Angular velocity of the car Ω'), 1.5, 1e-12); close('16-146 Ω̇ = 1 − 0.6', out(r, 'Angular acceleration of the car Ω̇'), 0.4, 1e-12);
+  close('16-146 v_C,x', out(r, 'Velocity v_C, x'), -7.00); close('16-146 v_C,y', out(r, 'Velocity v_C, y'), 17.3);
+  close('16-146 a_C,x', out(r, 'Acceleration a_C, x'), -38.8); close('16-146 a_C,y', out(r, 'Acceleration a_C, y'), -6.84);
+  r = run(Object.assign({}, book, { jaab: 0, jar: 0 }), 'US');
+  close('16-145 v_C,x', out(r, 'Velocity v_C, x'), -7.00); close('16-145 v_C,y', out(r, 'Velocity v_C, y'), 17.3);
+  close('16-145 a_C,x', out(r, 'Acceleration a_C, x'), -34.6); close('16-145 a_C,y', out(r, 'Acceleration a_C, y'), -15.5);
+  truthy('one highlighted result', r.out.filter((o) => o.hl).length === 1 && r.out.find((o) => o.hl).k === 'Speed of C, |v_C|');
+  // Hand check (not from the book): arm 2 m along +x at ω_AB = 1 rad/s steady; car spins at ω′ = 1 rad/s steady on the arm;
+  // C is 0.5 m from B along +x and walks across the car at 1 m/s along +y. Working by direct differentiation:
+  // C(t) = 2(cos t, sin t) + R(2t)(0.5, t), so at t = 0
+  //   v_C = (0, 2) + 2 k × (0.5, 0) + (0, 1) = (0, 4) m/s
+  //   a_C = −2(1, 0) − 4(0.5, 0) + 2·2 k × (0, 1) = (−2, 0) + (−2, 0) + (−4, 0) = (−8, 0) m/s².
+  r = run({ jLa: 2, jang: 0, jwab: 1, jaab: 0, jwr: 1, jar: 0, jkx: 0.5, jky: 0, jkvx: 0, jkvy: 1, jkax: 0, jkay: 0 }, 'SI');
+  close('hand check v_C,x', out(r, 'Velocity v_C, x'), 0, 1e-12); close('hand check v_C,y', out(r, 'Velocity v_C, y'), 4, 1e-12);
+  close('hand check a_C,x', out(r, 'Acceleration a_C, x'), -8, 1e-12); close('hand check a_C,y', out(r, 'Acceleration a_C, y'), 0, 1e-12);
+  // units round trip: SI → U.S. → SI gives the same answers, and the U.S. speed is the SI speed in ft/s
+  const st = Object.assign(RbMotion.defaults(), { mode: 'rotframe', jframe: 'arm', jkvx: 0.3, jkay: -0.2 }), a = RbMotion.solve(st, U.SI);
+  RbMotion.convertState(st, 'SI', 'US'); const b = RbMotion.solve(st, U.US); RbMotion.convertState(st, 'US', 'SI'); const c = RbMotion.solve(st, U.SI);
+  close('units: speed of C in ft/s', out(b, 'Speed of C, |v_C|'), out(a, 'Speed of C, |v_C|') / 0.3048, 1e-5);
+  close('units: round trip |a_C|', out(c, 'Magnitude |a_C|'), out(a, 'Magnitude |a_C|'), 1e-5);
+  r = run({ jLa: 0 }, 'SI'); truthy('arm of zero length fails', !r.ok && /length of the arm/.test(r.err[0]));
+  r = run({ jwr: 'x' }, 'SI'); truthy('a word for a rate fails', !r.ok && /Every entry must be a number/.test(r.err[0]));
+});
+
 group('dynamics: planar kinematics of rigid bodies', () => {
   const run = (o, sys) => RbMotion.solve(Object.assign(RbMotion.defaults(), o), U[sys]);
   { const r = run({ mode: 'slider', r: 0.25, l: 0.75, th: 45, beta: 90, e: 0, wAB: -10, aAB: -20 }, 'US'); [{ k: 'Velocity of the slider v_C', v: 2.197 }, { k: 'Angular velocity of BC, ω_BC', v: 2.425 }, { k: 'Angular acceleration of BC, α_BC', v: 27.68 }, { k: 'Acceleration of the slider a_C', v: -13.54 }].forEach((e) => close('Book Examples 16.12 and 16.17, crank 0.25 ft at 10 rad/s cw : ' + e.k, out(r, e.k), e.v)); }
