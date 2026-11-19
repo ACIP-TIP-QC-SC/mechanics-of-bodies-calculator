@@ -245,7 +245,7 @@
     const D = UI.Draw2D(svg, bbox(ext, 0.22), { pad: 30 });
     D.circle(O, R, { stroke: '#8fb3a4', sw: Math.max(6, 0.06 * R * D.sc) }); D.circle(O, R, { stroke: '#5f8a78', sw: 1 });
     D.circle(O, 3.5 / D.sc, { fill: K.ink }); name(D, O, 'O', 8, 16);
-    if (st.jshowR !== false) { D.line(O, q.rC, { stroke: K.ink, sw: 1, dash: '5 4' }); D.text(mul(add(O, q.rC), 0.5), `R = ${fmt(R)} ${u.L}`, { dx: 6, dy: -4, color: K.ink, size: 11 }); }
+    if (st.jshowR !== false) { D.line(O, q.rC, { stroke: K.ink, sw: 1, dash: '5 4' }); D.text(add(O, mul(add(q.rC, mul(O, -1)), 0.3)), `R = ${fmt(R)} ${u.L}`, { dx: 6, dy: -4, color: K.ink, size: 11 }); }
     const Lr = Math.max(q.r * 1.15, q.r + 0.25 * R), e = [Math.cos(th), Math.sin(th)];
     link(D, [0, 0], mul(e, Lr), 8); DYUI.pin(D, [0, 0], 0.12 * R); joint(D, [0, 0]); name(D, [0, 0], 'A', -18, 16);
     D.line([0, 0], [0.45 * R, 0], { stroke: K.ink, sw: 1, dash: '5 4' });
