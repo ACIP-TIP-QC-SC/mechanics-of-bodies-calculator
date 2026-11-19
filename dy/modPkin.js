@@ -21,7 +21,7 @@
     const ml = u.us ? 'Weight W' : 'Mass m';
     let sec = C.section(c, 'Scene');
     C.select(sec, { label: 'Scene', get: () => st.scene, set: (v) => (st.scene = v), options: [
-      ['block', 'Block on a floor or incline'], ['pulley', 'Two blocks joined by a cord'], ['spring', 'Block and spring'], ['curve', 'Car on a flat or banked curve'], ['circle', 'Particle on a vertical circle'], ['stack', 'Stacked blocks and plates'], ['cyl', 'Particle in cylindrical coordinates (r, θ, z)'], ['power', 'Vehicle or hoist driven by a motor (power)']] });
+      ['block', 'Block on a floor or incline'], ['pulley', 'Two blocks joined by a cord'], ['spring', 'Block and spring'], ['curve', 'Car on a flat or banked curve'], ['circle', 'Particle on a vertical circle'], ['stack', 'Stacked blocks and plates'], ['cyl', 'Particle in cylindrical coordinates (r, θ, z)'], ['power', 'Vehicle or hoist driven by a motor (power)'], ['orbit', 'Satellite or rocket in orbit (central force)']] });
     if (st.scene === 'block') {
       C.seg(sec, { label: 'Method', get: () => st.method, set: (v) => (st.method = v), options: [['force', 'ΣF = ma'], ['impulse', 'Impulse'], ['work', 'Work and energy'], ['stop', 'Stopping distance']] });
       sec = C.section(c, 'Block and surface');
@@ -113,6 +113,20 @@
       sec = C.section(c, 'Motor');
       num(sec, 'peff', 'Efficiency ε', '');
       if (st.pfind !== 'power') num(sec, 'pP', 'Power supplied P_in', u.PW);
+    } else if (st.scene === 'orbit') {
+      const Lu = u.us ? 'mi' : 'km';
+      C.select(sec, { label: 'Find', get: () => st.otask, set: (v) => (st.otask = v), options: [['ellipse', 'Speeds on an orbit with known nearest and farthest points'], ['circle', 'Circular orbit'], ['launch', 'Orbit from the launch speed'], ['transfer', 'Speed change to move from a circular orbit out (or in) to another radius']] });
+      sec = C.section(c, 'Planet');
+      num(sec, 'oMf', "Mass as a multiple of the earth's (1 for the earth)", '');
+      C.toggle(sec, { label: 'Distances are heights above the surface', get: () => !!st.oAlt, set: (v) => (st.oAlt = v) });
+      num(sec, 'oRe', 'Radius of the planet (for heights and the drawing)', Lu);
+      sec = C.section(c, 'Orbit');
+      const w = st.oAlt ? 'height' : 'distance from the centre';
+      if (st.otask === 'launch') { num(sec, 'oR0', `Launch point: ${w} r₀`, Lu); num(sec, 'oV0', 'Launch speed v₀ (parallel to the surface)', u.V); }
+      else if (st.otask === 'circle') num(sec, 'oRp', `Orbit radius: ${w}`, Lu);
+      else if (st.otask === 'transfer') { num(sec, 'oRp', `Circular orbit now, r₁: ${w}`, Lu); num(sec, 'oR2', `Radius to reach, r₂: ${w}`, Lu); }
+      else { num(sec, 'oRp', `Periapsis (nearest), r_p: ${w}`, Lu); num(sec, 'oRa', `Apoapsis (farthest), r_a: ${w}`, Lu); }
+      C.note(sec, u.us ? 'G = 34.4(10⁻⁹) lb·ft²/slug² and M_e = 409(10²¹) slug, as in the book.' : 'G = 66.73(10⁻¹²) m³/(kg·s²) and M_e = 5.976(10²⁴) kg, as in the book.');
     } else {
       C.seg(sec, { label: 'Moving', get: () => st.kind, set: (v) => (st.kind = v), options: [['inside', 'Inside a track'], ['cord', 'On a cord'], ['outside', 'Over a dome']] });
       sec = C.section(c, 'Particle and circle');
@@ -123,7 +137,7 @@
   };
   M.diagram = function (c, C) {
     const st = S();
-    C.toggle(c, { label: st.scene === 'pulley' ? 'Free-body diagrams of A and B' : st.scene === 'stack' ? 'Free-body diagrams of the blocks' : st.scene === 'cyl' ? 'Forces on the particle' : st.scene === 'power' ? 'Forces on the vehicle' : 'Free-body and kinetic diagrams', get: () => dopt('fbd', true), set: (v) => (st.fbd = v), rebuild: false });
+    C.toggle(c, { label: st.scene === 'pulley' ? 'Free-body diagrams of A and B' : st.scene === 'stack' ? 'Free-body diagrams of the blocks' : st.scene === 'cyl' ? 'Forces on the particle' : st.scene === 'power' ? 'Forces on the vehicle' : st.scene === 'orbit' ? 'Distances on the orbit' : 'Free-body and kinetic diagrams', get: () => dopt('fbd', true), set: (v) => (st.fbd = v), rebuild: false });
     if (st.scene !== 'curve') C.toggle(c, { label: 'Velocity and acceleration arrows', get: () => dopt('showV', true), set: (v) => (st.showV = v), rebuild: false });
     if (st.scene === 'stack' && st.blocks.length > 3) C.select(c, { label: 'Free-body diagrams of', get: () => dopt('fbdOf', 'ends'), set: (v) => (st.fbdOf = v), rebuild: false, options: [['ends', 'The bottom and top blocks']].concat(st.blocks.map((b, i) => [String(i), `Block ${String(b.name || '').trim() || Stack.NAMES[i]}`])) });
     if (st.scene === 'curve') C.toggle(c, { label: 'Top view of the curve', get: () => dopt('top', true), set: (v) => (st.top = v), rebuild: false });
@@ -132,9 +146,9 @@
   M.compute = (U) => Pkin.solve(S(), U);
   M.onUnits = (from, to) => Pkin.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => ({ block: 'Block, free-body and kinetic diagrams', pulley: 'Blocks, cord and pulleys', spring: 'Block and spring', curve: 'Section through the road', circle: 'Particle on a vertical circle', stack: 'Stacked blocks and their free-body diagrams', cyl: S().qplane === 'vertical' ? 'Path in the vertical plane' : 'Top view of the path', power: 'Vehicle and the force that drives it' }[S().scene]);
+  M.cap2D = () => ({ block: 'Block, free-body and kinetic diagrams', pulley: 'Blocks, cord and pulleys', spring: 'Block and spring', curve: 'Section through the road', circle: 'Particle on a vertical circle', stack: 'Stacked blocks and their free-body diagrams', cyl: S().qplane === 'vertical' ? 'Path in the vertical plane' : 'Top view of the path', power: 'Vehicle and the force that drives it', orbit: 'Orbit in its plane' }[S().scene]);
   M.cap3D = () => '3D view';
-  M.plotCaption = () => ({ curve: 'Friction needed against speed', circle: 'Speed and normal force around the circle', stack: 'Velocity of each block against time', cyl: 'Forces along the path (same rates)', power: 'Power input against speed' }[S().scene] || 'Work and kinetic energy');
+  M.plotCaption = () => ({ curve: 'Friction needed against speed', circle: 'Speed and normal force around the circle', stack: 'Velocity of each block against time', cyl: 'Forces along the path (same rates)', power: 'Power input against speed', orbit: 'Distance and speed around the orbit' }[S().scene] || 'Work and kinetic energy');
   M.hint = () => 'Press Play to watch the motion. Forces are in red on the free-body diagram; the kinetic diagram shows ma.';
   M.legend = () => [[K.force, 'Force'], [K.vel, 'Velocity'], [K.acc, 'Acceleration or ma'], [K.ink, 'Cord, track or support', 'ln']];
   const motion = DYUI.motion(S, () => (root.App && root.App.res && root.App.res.geo ? root.App.res.geo.span : [0, 1]), { idle: 'starting position' });
@@ -183,7 +197,7 @@
   /* ------------------------------------------------------------------ */
   M.draw2D = function (svg, res, U, opt) {
     const g = res.geo;
-    return ({ block: block2D, pulley: pulley2D, spring: spring2D, curve: curve2D, circle: circle2D, stack: stack2D, cyl: cyl2D, power: power2D })[g.scene](svg, g, opt);
+    return ({ block: block2D, pulley: pulley2D, spring: spring2D, curve: curve2D, circle: circle2D, stack: stack2D, cyl: cyl2D, power: power2D, orbit: orbit2D })[g.scene](svg, g, opt);
   };
   const tNow = (g) => (uNow() === undefined ? (g.scene === 'block' || g.scene === 'pulley' || g.scene === 'stack' ? g.span[1] : 0) : g.span[0] + (g.span[1] - g.span[0]) * uNow());
 
@@ -493,6 +507,62 @@
     return true;
   }
 
+  /* ---------------- Orbit ---------------- */
+  /** Angle from the launch point at a fraction w of the motion (Kepler's equation for an ellipse). */
+  function orbitTheta(o, w) {
+    if (!(o.e < 1)) { const lim = Math.acos(Math.max(-1, -1 / o.e)) * 0.92; return -lim + 2 * lim * w; }
+    const M = 2 * Math.PI * w, e = o.e;
+    let E = M; for (let i = 0; i < 30; i++) E -= (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+    const nu = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
+    return o.C >= 0 ? nu : nu + Math.PI; // launched at the periapsis (C ≥ 0) or at the apoapsis
+  }
+  function orbitPts(o, n) {
+    const pts = [];
+    if (o.e < 1) { for (let i = 0; i <= n; i++) { const t = (2 * Math.PI * i) / n, r = o.r(t); pts.push([r * Math.cos(t), r * Math.sin(t)]); } return pts; }
+    const lim = Math.acos(Math.max(-1, -1 / o.e)) * 0.92;
+    for (let i = 0; i <= n; i++) { const t = -lim + (2 * lim * i) / n, r = o.r(t); pts.push([r * Math.cos(t), r * Math.sin(t)]); }
+    return pts;
+  }
+  function orbit2D(svg, g, opt) {
+    const u = g.u, o = g.o, sc = 1 / g.toBase, pts = orbitPts(o, 360).map(([x, y]) => [x * sc, y * sc]), tr = g.tr;
+    const extra = tr ? [tr.r1 * sc, tr.r2 * sc] : [];
+    let R = Math.max(...pts.map((p) => Math.abs(p[0])), ...pts.map((p) => Math.abs(p[1])), ...extra, g.Re * sc);
+    if (!(o.e < 1)) R = Math.min(R, 6 * o.rp * sc);
+    const D = UI.Draw2D(svg, { xmin: -1.15 * R, xmax: 1.15 * R, ymin: -1.1 * R, ymax: 1.1 * R }, { pad: 30 });
+    if (tr) [tr.r1, tr.r2].forEach((r, i) => { D.circle([0, 0], r * sc, { fill: 'none', stroke: i ? CB : CA, sw: 1.4, dash: '6 4' }); });
+    if (g.Re > 0) D.circle([0, 0], g.Re * sc, { fill: '#cfe0f0', stroke: K.edge, sw: 1.4 });
+    D.circle([0, 0], 3 / D.sc, { fill: K.ink });
+    D.text([0, 0], 'O', { dx: -6, dy: 15, anchor: 'end', color: K.ink, size: 12, weight: 700 });
+    D.pline(pts, { stroke: K.ink, sw: 2.2 });
+    // launch point A at θ = 0 and the far apse A′ at θ = π
+    const A = [o.r(0) * sc, 0];
+    D.circle(A, 5 / D.sc, { fill: CA, stroke: '#fff', sw: 1.4 });
+    D.text(A, tr ? 'A (r₁)' : 'A', { dx: 8, dy: 16, color: K.ink, size: 12, weight: 700 });
+    if (o.type === 'circle') {
+      if (dopt('fbd', true)) D.text([A[0] / 2, 0], lbl(opt, `r = ${fmt(o.r(0) * sc)} ${g.Lu}`, 'r'), { anchor: 'middle', dy: -6, color: K.ink, size: 11 });
+      D.line([0, 0], A, { stroke: K.ink, sw: 0.8, dash: '3 3' });
+      if (dopt('showV', true)) DYUI.vec(D, A, [0, 1], 48, { color: K.vel, label: lbl(opt, `v = ${fmt(o.v0)} ${u.V}`, 'v'), size: 11 });
+    } else if (o.e < 1) {
+      const B = [-o.r(Math.PI) * sc, 0];
+      D.circle(B, 5 / D.sc, { fill: CB, stroke: '#fff', sw: 1.4 });
+      D.text(B, tr ? 'A′ (r₂)' : 'A′', { dx: -8, dy: -8, anchor: 'end', color: K.ink, size: 12, weight: 700 });
+      D.line(B, A, { stroke: K.ink, sw: 0.8, dash: '3 3' });
+      if (dopt('fbd', true)) {
+        const rA = o.r(0), rB = o.r(Math.PI);
+        D.text([A[0] / 2, 0], lbl(opt, `${o.C >= 0 ? 'r_p' : 'r_a'} = ${fmt(rA * sc)} ${g.Lu}`, o.C >= 0 ? 'r_p' : 'r_a'), { anchor: 'middle', dy: -6, color: K.ink, size: 11 });
+        D.text([B[0] / 2, 0], lbl(opt, `${o.C >= 0 ? 'r_a' : 'r_p'} = ${fmt(rB * sc)} ${g.Lu}`, o.C >= 0 ? 'r_a' : 'r_p'), { anchor: 'middle', dy: 14, color: K.ink, size: 11 });
+      }
+      if (dopt('showV', true)) {
+        const vA = o.h / o.r(0), vB = o.h / o.r(Math.PI);
+        DYUI.vec(D, A, [0, 1], 48, { color: K.vel, label: lbl(opt, `v = ${fmt(vA)} ${u.V}`, 'v_A'), size: 11 });
+        DYUI.vec(D, B, [0, -1], 48 * Math.max(0.35, vB / vA), { color: K.vel, label: lbl(opt, `v = ${fmt(vB)} ${u.V}`, 'v_A′'), size: 11, anchor: 'end', ldx: -6 });
+      }
+    } else if (dopt('showV', true)) DYUI.vec(D, A, [0, 1], 48, { color: K.vel, label: lbl(opt, `v₀ = ${fmt(o.v0)} ${u.V}`, 'v₀'), size: 11 });
+    if (uNow() !== undefined) { const t = orbitTheta(o, uNow()), r = o.r(t) * sc; D.circle([r * Math.cos(t), r * Math.sin(t)], 6 / D.sc, { fill: CB, stroke: '#fff', sw: 1.5 }); }
+    DYUI.title(D, 12, 20, `${o.type === 'circle' ? 'Circular orbit' : o.type === 'ellipse' ? 'An ellipse' : `A ${o.type}`}, e = ${fmt(o.e)}${o.T ? `, T = ${fmt(o.T / 3600)} h` : ''}`);
+    return true;
+  }
+
   function spring2D(svg, g, opt) {
     const u = g.u, th = g.th * D2R, e = [Math.cos(th), Math.sin(th)], n = [-Math.sin(th), Math.cos(th)], fb = dopt('fbd', true), wB = 1.2, hB = 0.9;
     const Ls = 10, L0 = 4;
@@ -622,6 +692,12 @@
       const cur = uNow() === undefined ? g.f1 / D2R : (g.f0 + (g.f1 - g.f0) * uNow()) / D2R;
       return DYUI.stack(svg, [{ label: `v (${u.V})`, color: K.vel, pts: vp, at: (x) => Math.sqrt(Math.max(0, g.v2(x * D2R))) }, { label: `${g.kind === 'cord' ? 'T' : 'N'} (${u.F})`, color: K.force, pts: np, at: (x) => g.Nf(x * D2R) }], { xlabel: `${g.kind === 'outside' ? 'ψ' : 'φ'} (°)`, cursor: cur, xmin: lo / D2R, xmax: hi / D2R });
     }
+    if (g.scene === 'orbit') {
+      const o = g.o, n = 200, lim = o.e < 1 ? Math.PI : Math.acos(Math.max(-1, -1 / o.e)) * 0.92, rp = [], vp = [];
+      for (let i = 0; i <= n; i++) { const t = -lim + (2 * lim * i) / n, r = o.r(t); rp.push([t / D2R, r / g.toBase]); vp.push([t / D2R, Math.sqrt(Math.max(0, o.GM * (2 / r - (o.a ? 1 / o.a : 0))))]); }
+      const cur = uNow() === undefined ? 0 : (((orbitTheta(o, uNow()) + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+      return DYUI.stack(svg, [{ label: `r (${g.Lu})`, color: K.ink, pts: rp, at: (x) => o.r(x * D2R) / g.toBase }, { label: `v (${u.V})`, color: K.vel, pts: vp, at: (x) => { const r = o.r(x * D2R); return Math.sqrt(Math.max(0, o.GM * (2 / r - (o.a ? 1 / o.a : 0)))); } }], { xlabel: 'θ from the launch point (°)', cursor: cur / D2R, xmin: -lim / D2R, xmax: lim / D2R });
+    }
     if (g.scene === 'cyl') {
       const [x0, x1] = g.xs, deg = g.by === 'θ', X = (x) => (deg ? x / D2R : x), names = g.find === 'comp' ? [['Rr', 'F_r'], ['Rth', 'F_θ']].concat(g.vert ? [] : [['Rz', 'F_z']]) : g.find === 'path' ? [['P', 'P'], ['N', 'N']] : [['F', 'F (arm)'], ['N', 'N (path)']];
       const pts = names.map(() => []);
@@ -708,6 +784,17 @@
         v.box(pc[0] + 0.42 - 0.55, yB - 1, -0.45, pc[0] + 0.42 + 0.55, yB, 0.45, CB, 1, K.edge);
         v.setBounds([st0[0] - 0.3, -6.2, -1], [pc[0] + 1.2, Math.max(1.2, pc[1] + 0.6), 1]);
       }
+      return;
+    }
+    if (g.scene === 'orbit') {
+      const o = g.o, sc = 1 / g.toBase, pts = orbitPts(o, 240).map(([x, y]) => [x * sc, 0, -y * sc]);
+      let R = Math.max(...pts.map((p) => Math.max(Math.abs(p[0]), Math.abs(p[2]))), g.Re * sc); if (!(o.e < 1)) R = Math.min(R, 6 * o.rp * sc);
+      if (g.Re > 0) DYUI.sphere(v, [0, 0, 0], g.Re * sc, '#5d8fc4', { n: 14, seg: 28 });
+      v.line(pts, K.ink, 2.4);
+      if (g.tr) [g.tr.r1, g.tr.r2].forEach((r, i) => { const c = []; for (let j = 0; j <= 96; j++) { const t = (2 * Math.PI * j) / 96; c.push([r * sc * Math.cos(t), 0, -r * sc * Math.sin(t)]); } v.line(c, i ? CB : CA, 1.4, [5, 4]); });
+      const t = orbitTheta(o, u0 === null ? 0 : u0), r = o.r(t) * sc;
+      DYUI.sphere(v, [r * Math.cos(t), 0, -r * Math.sin(t)], 0.04 * R, CB);
+      v.setBounds([-R, -0.3 * R, -R], [R, 0.3 * R, R]);
       return;
     }
     if (g.scene === 'cyl') {
@@ -824,6 +911,15 @@
       expect: [{ k: 'Power output P_out', v: 328586 }, { k: 'Power input P_in', v: 483214 }] },
     { name: 'Test: Problem 14–49, 92 kg rider with 1500 W up a 20° slope, top speed (v = 4.86 m/s)', units: 'SI', state: P0({ scene: 'power', pfind: 'speed', pm: 92, pth: 20, pa: 0, pR: 0, pc: 0, pmc: 0, peff: 1, pP: 1500 }),
       expect: [{ k: 'Speed v', v: 4.859 }] },
+    { name: 'Test: Problem 13–119, rocket on an orbit 7.60 Mm to 18.3 Mm from a planet of 0.60 M_e (v_A = 6.67 km/s, v_B = 2.77 km/s)', units: 'SI', state: P0({ scene: 'orbit', otask: 'ellipse', oMf: 0.6, oAlt: false, oRe: 4000, oRp: 7600, oRa: 18300 }),
+      expect: [{ k: 'Speed at the periapsis v_p', v: 6670 }, { k: 'Speed at the apoapsis v_a', v: 2770 }] },
+    { name: 'Test: Problem 13–125, orbit 4000 mi to 10 000 mi from a planet of 0.60 M_e (v_A = 23.9(10³) ft/s)', units: 'US', state: P0({ scene: 'orbit', otask: 'ellipse', oMf: 0.6, oAlt: false, oRe: 2000, oRp: 4000, oRa: 10000 }),
+      expect: [{ k: 'Speed at the periapsis v_p', v: 23896 }] },
+    { name: 'Test: Problem 13–123, circular orbit 8 Mm up, speed change at A to reach 19 Mm up (v = 5.27 km/s, Δv = 684 m/s)', units: 'SI', state: P0({ scene: 'orbit', otask: 'transfer', oMf: 1, oAlt: true, oRe: 6378, oRp: 8000, oR2: 19000 }),
+      expect: [{ k: 'Speed in the circular orbit at r₁', v: 5266 }, { k: 'Speed change at r₁ to reach r₂, Δv₁', v: 684.1 }] },
+    { name: 'Test: Problem 13–115, circular orbit 800 km above the earth (v = 7.45 km/s)', units: 'SI', state: P0({ scene: 'orbit', otask: 'circle', oMf: 1, oAlt: true, oRe: 6378, oRp: 800 }),
+      expect: [{ k: 'Speed at the periapsis v_p', v: 7454 }] },
+    { name: 'Satellite launched at 9 km/s, 7000 km from the earth\'s centre', units: 'SI', state: P0({ scene: 'orbit', otask: 'launch', oMf: 1, oAlt: false, oRe: 6378, oR0: 7000, oV0: 9000 }) },
     { name: 'Block on a table pulled by a hanging block, μ_k = 0.2', units: 'SI', state: P0({ scene: 'pulley', onA: 'table', mA: 10, mB: 5, nA: 1, nB: 1, mus: 0.3, muk: 0.2, find: 'time', t: 2 }) },
     { name: 'Edge: P lifts the block off the floor (fails on purpose)', units: 'SI', fails: true, state: P0({ scene: 'block', method: 'force', m: 5, th: 0, P: 100, al: 80, t: 2 }) },
   ];

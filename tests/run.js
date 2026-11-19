@@ -1094,6 +1094,19 @@ group('dynamics: cylindrical components and motor power', () => {
   { const st = Object.assign(Pkin.defaults(), { scene: 'power', pc: 0.3, pa: 1 }); const a = out(Pkin.solve(st, U.SI), 'Power input P_in'); Pkin.convertState(st, 'SI', 'US'); close('power units', out(Pkin.solve(st, U.US), 'Power input P_in') * 745.69987, a, 1e-3); }
 });
 
+group('dynamics: central-force motion', () => {
+  const run = (o, sys) => Pkin.solve(Object.assign(Pkin.defaults(), { scene: 'orbit' }, o), U[sys]);
+  let r = run({ otask: 'ellipse', oMf: 0.6, oRp: 7600, oRa: 18300 }, 'SI');
+  close('13-119 v_A', out(r, 'Speed at the periapsis v_p'), 6669.99, 1e-4); close('13-119 v_B', out(r, 'Speed at the apoapsis v_a'), 2770.05, 1e-4);
+  r = run({ otask: 'ellipse', oMf: 0.6, oRp: 4000, oRa: 10000 }, 'US'); close('13-125 v_A', out(r, 'Speed at the periapsis v_p'), 23900, 2e-3);
+  r = run({ otask: 'transfer', oMf: 1, oAlt: true, oRe: 6378, oRp: 8000, oR2: 19000 }, 'SI'); close('13-123 Δv', out(r, 'Speed change at r₁ to reach r₂, Δv₁'), 684.14, 1e-4);
+  r = run({ otask: 'circle', oMf: 1, oAlt: true, oRe: 6378, oRp: 800 }, 'SI'); close('13-115 v', out(r, 'Speed at the periapsis v_p'), 7453.6, 1e-4); close('circle e = 0', out(r, 'Eccentricity e'), 0, 1e-9);
+  // launched from the apoapsis: the orbit found is the same ellipse
+  r = run({ otask: 'launch', oMf: 0.6, oR0: 18300, oV0: 2770.05 }, 'SI'); close('launch at apoapsis: r_p', out(r, 'Periapsis r_p'), 7600, 1e-4);
+  r = run({ otask: 'launch', oMf: 1, oR0: 7000, oV0: 12000 }, 'SI'); truthy('hyperbola above escape speed', out(r, 'Eccentricity e') > 1);
+  { const st = Object.assign(Pkin.defaults(), { scene: 'orbit' }); const a = out(Pkin.solve(st, U.SI), 'Speed at the periapsis v_p'); Pkin.convertState(st, 'SI', 'US'); Pkin.convertState(st, 'US', 'SI'); close('orbit units round trip', out(Pkin.solve(st, U.SI), 'Speed at the periapsis v_p'), a, 1e-4); }
+});
+
 group('dynamics: planar kinematics of rigid bodies', () => {
   const run = (o, sys) => RbMotion.solve(Object.assign(RbMotion.defaults(), o), U[sys]);
   { const r = run({ mode: 'slider', r: 0.25, l: 0.75, th: 45, beta: 90, e: 0, wAB: -10, aAB: -20 }, 'US'); [{ k: 'Velocity of the slider v_C', v: 2.197 }, { k: 'Angular velocity of BC, ω_BC', v: 2.425 }, { k: 'Angular acceleration of BC, α_BC', v: 27.68 }, { k: 'Acceleration of the slider a_C', v: -13.54 }].forEach((e) => close('Book Examples 16.12 and 16.17, crank 0.25 ft at 10 rad/s cw : ' + e.k, out(r, e.k), e.v)); }
