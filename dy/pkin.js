@@ -7,13 +7,15 @@
  *   Impulse and momentum: mv₁ + Σ∫F dt = mv₂ (15–3)
  * Scenes: a block on a floor or incline pushed or pulled by a force, two blocks joined by a cord
  * over pulleys, a block launched by (or landing on) a spring, a car on a flat or banked curve,
- * and a particle moving on a vertical circle (inside a track, on a cord, or over a dome).
+ * a particle moving on a vertical circle (inside a track, on a cord, or over a dome), and blocks
+ * stacked on one another (dy/stack.js).
  * Static friction is always checked before motion is assumed.
  * ===================================================================== */
 (function (root) {
   'use strict';
   const Core = root.Core || require('../shared/core.js');
   const DY = root.DY || require('./dycore.js');
+  const Stack = root.Stack || require('./stack.js');
   const { fmt, fail, Steps } = Core;
   const { toBase: B } = DY;
   const D2R = Math.PI / 180;
@@ -31,10 +33,12 @@
       r: 100, bank: 20, cmus: 0.3, cv: 20,
       // vertical circle
       kind: 'inside', R: 4, cm: 60, phi0: 90, cv0: 0, phi: 30,
+      // stacked blocks (dy/stack.js)
+      ...Stack.defaults(),
     };
   }
   const KINDS = { m: 'M', P: 'F', k: 'K', s1: 'L', v0: 'V', d: 'L', mA: 'M', mB: 'M', dB: 'L', vB: 'V', d1: 'L', d2: 'L', y0: 'L', sk: 'K', sm: 'M', sv0: 'V', hdrop: 'L', r: 'L', cv: 'V', R: 'L', cm: 'M', cv0: 'V' };
-  function convertState(st, from, to) { return DY.convertObj(st, KINDS, from, to); }
+  function convertState(st, from, to) { DY.convertObj(st, KINDS, from, to); Stack.convert(st, from, to); return st; }
   const sgnTxt = (x, pos, neg) => (Math.abs(x) < 1e-12 ? 'at rest' : x > 0 ? pos : neg);
 
   function solve(st, U) {
@@ -44,6 +48,7 @@
       case 'spring': return spring(st, u);
       case 'curve': return curve(st, u);
       case 'circle': return circle(st, u);
+      case 'stack': return Stack.solve(st, u);
       default: return block(st, u);
     }
   }

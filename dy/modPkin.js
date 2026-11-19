@@ -3,7 +3,7 @@
  * ===================================================================== */
 (function (root) {
   'use strict';
-  const { Core, UI, Charts, Pkin, DY, DYUI } = root;
+  const { Core, UI, Charts, Pkin, DY, DYUI, Stack } = root;
   const { fmt } = Core;
   const K = DYUI.K, CA = '#2f7fc1', CB = '#d4612a', SPR = '#2c3e50', D2R = Math.PI / 180;
 
@@ -20,7 +20,7 @@
     const ml = u.us ? 'Weight W' : 'Mass m';
     let sec = C.section(c, 'Scene');
     C.select(sec, { label: 'Scene', get: () => st.scene, set: (v) => (st.scene = v), options: [
-      ['block', 'Block on a floor or incline'], ['pulley', 'Two blocks joined by a cord'], ['spring', 'Block and spring'], ['curve', 'Car on a flat or banked curve'], ['circle', 'Particle on a vertical circle']] });
+      ['block', 'Block on a floor or incline'], ['pulley', 'Two blocks joined by a cord'], ['spring', 'Block and spring'], ['curve', 'Car on a flat or banked curve'], ['circle', 'Particle on a vertical circle'], ['stack', 'Stacked blocks and plates']] });
     if (st.scene === 'block') {
       C.seg(sec, { label: 'Method', get: () => st.method, set: (v) => (st.method = v), options: [['force', 'ΣF = ma'], ['impulse', 'Impulse'], ['work', 'Work and energy'], ['stop', 'Stopping distance']] });
       sec = C.section(c, 'Block and surface');
@@ -61,6 +61,21 @@
     } else if (st.scene === 'curve') {
       sec = C.section(c, 'Car and road');
       num(sec, 'm', ml, u.M); num(sec, 'r', 'Radius of the curve r', u.L); num(sec, 'bank', 'Banking angle θ (0 for flat)', '°'); num(sec, 'cmus', 'Static friction μ_s', ''); num(sec, 'cv', 'Speed to check v', u.V);
+    } else if (st.scene === 'stack') {
+      C.seg(sec, { label: 'Find', get: () => st.ktask, set: (v) => (st.ktask = v), options: [['motion', 'Motion for a given P'], ['Pmax', 'P at which the blocks slip on each other']] });
+      sec = C.section(c, 'Blocks, from the bottom up');
+      C.note(sec, 'Each block lists the friction of the contact under it (with the floor or incline for the bottom block).');
+      const NM = Stack.NAMES, bn = (it, i) => String((it && it.name) || '').trim() || NM[i];
+      C.list(sec, { items: st.blocks, max: 5, min: 1, color: (it, i) => (i % 2 ? '#f6d5c4' : '#cfe0f0'), title: (it, i) => `Block ${bn(it, i)}${i ? ` on ${bn(st.blocks[i - 1], i - 1)}` : ' on the surface'}`,
+        fields: () => [{ key: 'name', label: 'Name', text: true }, { key: 'm', label: ml, unit: u.M }, { key: 'mus', label: 'μ_s under it' }, { key: 'muk', label: 'μ_k under it' }],
+        add: [['Block', () => ({ name: '', m: 10, mus: 0.3, muk: 0.25 })]] });
+      sec = C.section(c, 'Surface and force');
+      num(sec, 'kth', 'Incline angle θ (0 for a floor)', '°');
+      if (st.ktask === 'motion') num(sec, 'kP', 'Force P (0 for none)', u.F);
+      num(sec, 'kal', 'Angle of P from the surface α (+ away from it)', '°');
+      C.select(sec, { label: 'P acts on', get: () => String(Math.min(+st.kon, st.blocks.length - 1)), set: (v) => (st.kon = +v), options: st.blocks.map((b, i) => [String(i), `Block ${bn(b, i)}`]) });
+      if (st.blocks.length >= 2) C.toggle(sec, { label: `A cord over a pulley at the ${+st.kth > 0 ? 'top' : 'right end'} ties the top block to the bottom one`, get: () => !!st.ktie, set: (v) => (st.ktie = v) });
+      if (st.ktask === 'motion') { sec = C.section(c, 'Also find'); num(sec, 'kd', 'Time for the top block to slide this far on the one below (0 to skip)', u.L); }
     } else {
       C.seg(sec, { label: 'Moving', get: () => st.kind, set: (v) => (st.kind = v), options: [['inside', 'Inside a track'], ['cord', 'On a cord'], ['outside', 'Over a dome']] });
       sec = C.section(c, 'Particle and circle');
@@ -71,17 +86,18 @@
   };
   M.diagram = function (c, C) {
     const st = S();
-    C.toggle(c, { label: st.scene === 'pulley' ? 'Free-body diagrams of A and B' : 'Free-body and kinetic diagrams', get: () => dopt('fbd', true), set: (v) => (st.fbd = v), rebuild: false });
+    C.toggle(c, { label: st.scene === 'pulley' ? 'Free-body diagrams of A and B' : st.scene === 'stack' ? 'Free-body diagrams of the blocks' : 'Free-body and kinetic diagrams', get: () => dopt('fbd', true), set: (v) => (st.fbd = v), rebuild: false });
     if (st.scene !== 'curve') C.toggle(c, { label: 'Velocity and acceleration arrows', get: () => dopt('showV', true), set: (v) => (st.showV = v), rebuild: false });
+    if (st.scene === 'stack' && st.blocks.length > 3) C.select(c, { label: 'Free-body diagrams of', get: () => dopt('fbdOf', 'ends'), set: (v) => (st.fbdOf = v), rebuild: false, options: [['ends', 'The bottom and top blocks']].concat(st.blocks.map((b, i) => [String(i), `Block ${String(b.name || '').trim() || Stack.NAMES[i]}`])) });
     if (st.scene === 'curve') C.toggle(c, { label: 'Top view of the curve', get: () => dopt('top', true), set: (v) => (st.top = v), rebuild: false });
   };
 
   M.compute = (U) => Pkin.solve(S(), U);
   M.onUnits = (from, to) => Pkin.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => ({ block: 'Block, free-body and kinetic diagrams', pulley: 'Blocks, cord and pulleys', spring: 'Block and spring', curve: 'Section through the road', circle: 'Particle on a vertical circle' }[S().scene]);
+  M.cap2D = () => ({ block: 'Block, free-body and kinetic diagrams', pulley: 'Blocks, cord and pulleys', spring: 'Block and spring', curve: 'Section through the road', circle: 'Particle on a vertical circle', stack: 'Stacked blocks and their free-body diagrams' }[S().scene]);
   M.cap3D = () => '3D view';
-  M.plotCaption = () => ({ curve: 'Friction needed against speed', circle: 'Speed and normal force around the circle' }[S().scene] || 'Work and kinetic energy');
+  M.plotCaption = () => ({ curve: 'Friction needed against speed', circle: 'Speed and normal force around the circle', stack: 'Velocity of each block against time' }[S().scene] || 'Work and kinetic energy');
   M.hint = () => 'Press Play to watch the motion. Forces are in red on the free-body diagram; the kinetic diagram shows ma.';
   M.legend = () => [[K.force, 'Force'], [K.vel, 'Velocity'], [K.acc, 'Acceleration or ma'], [K.ink, 'Cord, track or support', 'ln']];
   const motion = DYUI.motion(S, () => (root.App && root.App.res && root.App.res.geo ? root.App.res.geo.span : [0, 1]), { idle: 'starting position' });
@@ -130,9 +146,9 @@
   /* ------------------------------------------------------------------ */
   M.draw2D = function (svg, res, U, opt) {
     const g = res.geo;
-    return ({ block: block2D, pulley: pulley2D, spring: spring2D, curve: curve2D, circle: circle2D })[g.scene](svg, g, opt);
+    return ({ block: block2D, pulley: pulley2D, spring: spring2D, curve: curve2D, circle: circle2D, stack: stack2D })[g.scene](svg, g, opt);
   };
-  const tNow = (g) => (uNow() === undefined ? (g.scene === 'block' || g.scene === 'pulley' ? g.span[1] : 0) : g.span[0] + (g.span[1] - g.span[0]) * uNow());
+  const tNow = (g) => (uNow() === undefined ? (g.scene === 'block' || g.scene === 'pulley' || g.scene === 'stack' ? g.span[1] : 0) : g.span[0] + (g.span[1] - g.span[0]) * uNow());
 
   function block2D(svg, g, opt) {
     const u = g.u, th = g.th * D2R, e = [Math.cos(th), Math.sin(th)], n = [-Math.sin(th), Math.cos(th)], Ls = 10, wB = 1.6, hB = 1.1;
@@ -228,6 +244,104 @@
     if (g.onA !== 'hang') { a.push(fArrow([-Math.sin(th), Math.cos(th)], g.NA, maxF, K.force, lbl(opt, `N_A = ${fmt(g.NA)}`, 'N_A'))); if (!g.rest && g.muk > 0 && Math.abs(g.aA) > 1e-12) { const mv = Math.sign(g.aA); a.push(fArrow([e[0] * mv, e[1] * mv], g.muk * g.NA, maxF, K.force, lbl(opt, `F = ${fmt(g.muk * g.NA)}`, 'F'))); } }
     const b = [fArrow([0, -1], WB, maxF, K.force, lbl(opt, `W_B = ${fmt(WB)}`, 'W_B')), fArrow([0, 1], g.nB * T, maxF, K.force, lbl(opt, `${g.nB > 1 ? g.nB : ''}T = ${fmt(g.nB * T)}`, `${g.nB > 1 ? g.nB : ''}T`))];
     panels(D, [['Free-body diagram of A', th, a, { name: 'A' }], ['Free-body diagram of B', 0, b, { name: 'B' }]]);
+  }
+
+  /* ---------------- Stacked blocks ---------------- */
+  const SW = (j) => Math.max(1.3, 3.2 - 0.5 * j), SH = 0.62;
+  /** Layout of the stack at time t: slope frame, each block's bottom-centre along the slope and its height above the surface. */
+  function stackLayout(g, t) {
+    const n = g.a.length, th = g.th * D2R, e = [Math.cos(th), Math.sin(th)], nr = [-Math.sin(th), Math.cos(th)], Ls = 10;
+    const T = g.span[1], xs = g.a.map((a) => 0.5 * a * T * T), xr = Math.max(1e-9, ...xs.map(Math.abs)), Ks = xr > 1e-9 ? Math.min(2 / xr, 1e6) : 0;
+    const s0 = g.tie ? 6 : 3.6;
+    let hs = 0;
+    const blocks = g.a.map((a, j) => {
+      const w = SW(j), s = Math.max(w / 2, Math.min(Ls - w / 2 - (g.tie ? 0.9 : 0), s0 + 0.5 * a * t * t * Ks)), b = { s, h: hs, w };
+      hs += SH; return b;
+    });
+    const P = (s, h) => [s * e[0] + h * nr[0], s * e[1] + h * nr[1]];
+    return { n, th, e, nr, Ls, blocks, P, H: hs };
+  }
+  function stack2D(svg, g, opt) {
+    const u = g.u, fb = dopt('fbd', true), t = tNow(g), L = stackLayout(g, t), { th, e, Ls, P } = L, NM = g.names;
+    const D = UI.Draw2D(svg, { xmin: -1.6, xmax: Ls * e[0] + 1.4, ymin: -1.4, ymax: Ls * e[1] + L.H + 2.6 }, opts2(svg, fb));
+    if (th > 0) D.poly([[0, 0], [Ls * e[0], Ls * e[1]], [Ls * e[0], 0]], { fill: '#e3e8ec', stroke: K.edge, sw: 1.4 });
+    else DYUI.ground(D, [-0.4, 0], [Ls, 0]);
+    if (th > 0) D.arc([0.9, 0], 36, 0, g.th, `θ = ${fmt(g.th)}°`, { color: K.ink });
+    L.blocks.forEach((b, j) => DYUI.block(D, P(b.s, b.h), b.w, SH, th, { label: NM[j], fill: j % 2 ? '#f6d5c4' : '#cfe0f0', size: 12 }));
+    const mid = (j, side) => { const b = L.blocks[j]; return P(b.s + side * b.w / 2, b.h + SH / 2); };
+    if (g.tie) {
+      const n = L.n, bt = L.blocks[n - 1], b0 = L.blocks[0], hTop = bt.h + SH / 2, hBot = SH / 2, r = (hTop - hBot) / 2, sp = Ls - 0.45;
+      const c = P(sp, (hTop + hBot) / 2);
+      D.line(P(sp, 0), c, { stroke: K.ink, sw: 2.4 });
+      D.line(mid(n - 1, 1), P(sp, hTop), { stroke: K.ink, sw: 1.6 }); D.line(mid(0, 1), P(sp, hBot), { stroke: K.ink, sw: 1.6 });
+      DYUI.wheel(D, c, r, 0, { spokes: 0 });
+      D.text([c[0], c[1] + r], 'C', { dx: 6, dy: -4, color: K.ink, size: 11.5, weight: 700 });
+      void b0;
+    }
+    if (g.P > 0) {
+      const dir = [Math.cos(th + g.al * D2R), Math.sin(th + g.al * D2R)], side = dir[0] * e[0] + dir[1] * e[1] >= 0 ? 1 : -1;
+      const p0 = mid(g.on, side);
+      const q = side > 0 ? [p0[0] + dir[0] * 1.5, p0[1] + dir[1] * 1.5] : p0, p = side > 0 ? p0 : [p0[0] - dir[0] * 1.5, p0[1] - dir[1] * 1.5];
+      if (side > 0) DYUI.vec(D, p, dir, 58, { color: K.force, label: lbl(opt, `P = ${fmt(g.P)} ${u.F}`, 'P'), size: 11.5 });
+      else D.arrow(p, q, { color: K.force, w: 2.6, head: 11, label: lbl(opt, `P = ${fmt(g.P)} ${u.F}`, 'P'), lp: 'tail' });
+    }
+    if (dopt('showV', true)) L.blocks.forEach((b, j) => {
+      const a = g.a[j]; if (Math.abs(a) < 1e-9) return;
+      const p = P(b.s - b.w / 2 - 0.25, b.h + SH / 2), d = [Math.sign(a) * e[0], Math.sign(a) * e[1]];
+      DYUI.vec(D, a > 0 ? [p[0] - e[0] * 1.2, p[1] - e[1] * 1.2] : p, d, 34, { color: K.acc, label: lbl(opt, `a_${NM[j]} = ${fmt(Math.abs(a))}`, `a_${NM[j]}`), size: 11, anchor: 'end', ldx: -4 });
+    });
+    if (fb) fbdStack(D, g, opt);
+    const moving = g.a.some((a) => Math.abs(a) > 1e-9);
+    DYUI.title(D, 12, 20, !moving ? 'Friction holds: at rest' : uNow() === undefined ? `At t = ${fmt(g.span[1])} s` : `t = ${fmt(t)} s`);
+    return true;
+  }
+  /** Contact names: under A on the ground "A", between A and B "AB". */
+  const cName = (g, i) => (i === 0 ? g.names[0] : g.names[i - 1] + g.names[i]);
+  /** Free-body diagram of each block (or of the chosen ones), with every force drawn where it acts. */
+  function fbdStack(D, g, opt) {
+    const n = g.a.length, NM = g.names, gg = g.u.g, m = g.sys.m, th = g.th * D2R;
+    const pick = dopt('fbdOf', 'ends');
+    const list = n <= 3 ? [...Array(n).keys()].reverse() : pick === 'ends' ? [n - 1, 0] : [+pick];
+    const maxF = Math.max(1e-9, ...m.map((x) => x * gg), ...g.N, ...g.F.map(Math.abs), g.P, g.T || 0);
+    const bw = Math.min(230, D.W * 0.34), k = list.length, gap = 14, bh = Math.min(200, (D.H - 30 - gap * (k - 1)) / k), x0 = D.W - bw - 10;
+    const ca = Math.cos(th), sa = Math.sin(th);
+    list.forEach((j, idx) => {
+      const y0 = 26 + idx * (bh + gap), cx = x0 + bw / 2, cy = y0 + bh / 2 + 4, w2 = 34, h2 = 14;
+      D.el('rect', { x: x0, y: y0, width: bw, height: bh, fill: '#ffffff', stroke: '#d3dce0', rx: 6 });
+      D.text([x0 + 8, y0 + 16], `Block ${NM[j]}`, { px: true, color: K.ink, size: 11.5, weight: 700 });
+      // slope frame in screen pixels (y down)
+      const S = (s, h) => D.inv(cx + s * ca - h * sa, cy - (s * sa + h * ca)), dir = (s, h) => [s * ca - h * sa, s * sa + h * ca];
+      D.poly([S(-w2, -h2), S(w2, -h2), S(w2, h2), S(-w2, h2)], { fill: j % 2 ? '#f6d5c4' : '#cfe0f0', stroke: K.edge, sw: 1.4 });
+      D.text(S(0, 0), NM[j], { anchor: 'middle', base: 'middle', color: K.ink, size: 11.5, weight: 700 });
+      const len = (f) => 12 + 24 * Math.abs(f) / maxF;
+      const arr = (a, b, label, o) => { D.arrow(a, b, { color: K.force, w: 2, head: 8 }); if (label) D.text(o && o.at === 'tail' ? a : b, label, Object.assign({ color: K.force, size: 10.5, weight: 700 }, o || {})); };
+      const ann = (d) => { const a = Math.atan2(d[1], d[0]), c = Math.cos(a), s = Math.sin(a); return { anchor: c > 0.4 ? 'start' : c < -0.4 ? 'end' : 'middle', dx: c > 0.4 ? 3 : c < -0.4 ? -3 : 0, dy: s > 0.4 ? -4 : s < -0.4 ? 12 : 4 }; };
+      // weight from the centre, straight down
+      const W = m[j] * gg, lw = 26 + 14 * W / maxF;
+      D.arrow(S(0, 0), D.inv(cx, cy + 6 + lw), { color: K.force, w: 2, head: 8 });
+      D.text(D.inv(cx, cy + 6 + lw), lbl(opt, `W = ${fmt(W)}`, `W_${NM[j]}`), { color: K.force, size: 10.5, weight: 700, anchor: 'start', dx: 4, dy: 10 });
+      // contact below: N up into the bottom face, friction along it
+      const Nb = g.N[j], lN = len(Nb);
+      arr(S(-w2 * 0.72, -h2 - lN), S(-w2 * 0.72, -h2), lbl(opt, `N_${cName(g, j)} = ${fmt(Nb)}`, `N_${cName(g, j)}`), Object.assign({ at: 'tail' }, ann(dir(-0.3, -1)), { anchor: 'end', dx: -2 }));
+      const Fb = g.F[j];
+      if (Math.abs(Fb) > 1e-9 * maxF) { const l = len(Fb), sg = Math.sign(Fb), s1 = w2 * 0.12, s2 = s1 + l; arr(S(sg > 0 ? s1 : s2, -h2 - 3), S(sg > 0 ? s2 : s1, -h2 - 3), lbl(opt, `F_${cName(g, j)} = ${fmt(Math.abs(Fb))}`, `F_${cName(g, j)}`), Object.assign(sg > 0 ? {} : { at: 'tail' }, { anchor: 'start', dx: 3, dy: 4 })); }
+      // contact above: reactions of the block on top
+      if (j + 1 < n) {
+        const Na = g.N[j + 1], lA = len(Na);
+        arr(S(w2 * 0.72, h2 + lA), S(w2 * 0.72, h2), lbl(opt, `N_${cName(g, j + 1)}`, `N_${cName(g, j + 1)}`), Object.assign({ at: 'tail' }, ann(dir(0.3, 1)), { anchor: 'start', dx: 2, dy: -3 }));
+        const Fa = -g.F[j + 1];
+        if (Math.abs(Fa) > 1e-9 * maxF) { const l = len(Fa), sg = Math.sign(Fa), s1 = -w2 * 0.12, s2 = s1 - l; arr(S(sg > 0 ? s2 : s1, h2 + 3), S(sg > 0 ? s1 : s2, h2 + 3), lbl(opt, `F_${cName(g, j + 1)}`, `F_${cName(g, j + 1)}`), Object.assign(sg > 0 ? { at: 'tail' } : {}, { anchor: 'end', dx: -3, dy: 4 })); }
+      }
+      // applied force and cord
+      if (g.P > 0 && j === g.on) {
+        const al = g.al * D2R, d = [Math.cos(al), Math.sin(al)], side = d[0] >= 0 ? 1 : -1, l = len(g.P), b = [side * w2, 0];
+        const a1 = side > 0 ? b : [b[0] - d[0] * l, b[1] - d[1] * l], a2 = side > 0 ? [b[0] + d[0] * l, b[1] + d[1] * l] : b;
+        arr(S(a1[0], a1[1] - (g.tie && (j === 0 || j === n - 1) ? 4 : 0)), S(a2[0], a2[1] - (g.tie && (j === 0 || j === n - 1) ? 4 : 0)), lbl(opt, `P = ${fmt(g.P)}`, 'P'), Object.assign(side < 0 ? { at: 'tail' } : {}, ann(dir(side * d[0], d[1]))));
+      }
+      if (g.tie && (j === 0 || j === n - 1) && g.T > 0) { const l = len(g.T); arr(S(w2, 5), S(w2 + l, 5), lbl(opt, `T = ${fmt(g.T)}`, 'T'), ann(dir(1, 0.5))); }
+      // kinetic side: the result
+      D.text([x0 + bw - 8, y0 + 16], `m a = ${fmt(m[j] * g.a[j])}`, { px: true, color: K.acc, size: 10.5, weight: 700, anchor: 'end' });
+    });
   }
 
   function spring2D(svg, g, opt) {
@@ -359,6 +473,13 @@
       const cur = uNow() === undefined ? g.f1 / D2R : (g.f0 + (g.f1 - g.f0) * uNow()) / D2R;
       return DYUI.stack(svg, [{ label: `v (${u.V})`, color: K.vel, pts: vp, at: (x) => Math.sqrt(Math.max(0, g.v2(x * D2R))) }, { label: `${g.kind === 'cord' ? 'T' : 'N'} (${u.F})`, color: K.force, pts: np, at: (x) => g.Nf(x * D2R) }], { xlabel: `${g.kind === 'outside' ? 'ψ' : 'φ'} (°)`, cursor: cur, xmin: lo / D2R, xmax: hi / D2R });
     }
+    if (g.scene === 'stack') {
+      const T = g.span[1], NM = g.names, cols = [CA, CB, '#27ae60', '#8e44ad', '#7f8c8d'];
+      const line = (j) => { const p = []; for (let i = 0; i <= 50; i++) { const t = (T * i) / 50; p.push([t, g.a[j] * t]); } return p; };
+      const more = g.a.slice(1).map((a, j) => ({ pts: line(j + 1), color: cols[(j + 1) % 5] }));
+      const cur = uNow() === undefined ? T : T * uNow();
+      return DYUI.stack(svg, [{ label: `v (${u.V})  ${g.a.map((a, j) => NM[j]).join(', ')}`, color: cols[0], pts: line(0), fill: false, more, marks: g.a.map((a, j) => ({ x: cur, y: a * cur, label: NM[j], color: cols[j % 5] })) }], { xlabel: 't (s)', xmin: 0, xmax: T, cursor: cur });
+    }
     const col = { 'T₁': '#7f8c8d', 'T₂': K.vel, 'ΣT₂': K.vel, U_P: K.force, U_W: '#8e44ad', U_f: '#c0392b', U_s: SPR };
     return DYUI.bars(svg, (g.bars || []).map(([name, v]) => ({ name, v, color: col[name] || CA })), { unit: u.E, title: 'Work and energy' });
   };
@@ -428,6 +549,22 @@
       }
       return;
     }
+    if (g.scene === 'stack') {
+      const t = u0 === null ? g.span[1] : g.span[1] * u0, L = stackLayout(g, t), { th, e, Ls, P } = L;
+      if (th > 1e-9) v.extrude([[0, 0], [Ls * e[0], Ls * e[1]], [Ls * e[0], 0]], -1.6, 1.6, '#d5dbe1', 1, K.edge); else DYUI.floor3(v, -0.5, Ls + 0.5, 0, 1.6);
+      L.blocks.forEach((b, j) => DYUI.block3(v, P(b.s, b.h + 0.015 * (j + 1)), b.w, SH, Math.max(0.8, 2.4 - 0.3 * j), th, j % 2 ? CB : CA));
+      if (g.tie) {
+        const n = L.n, hTop = L.blocks[n - 1].h + SH / 2, hBot = SH / 2, r = (hTop - hBot) / 2, sp = Ls - 0.45, c = P(sp, (hTop + hBot) / 2);
+        cylZ(v, [c[0], c[1], 0], r, 0.3, '#d5dbe1');
+        const m1 = P(L.blocks[n - 1].s + L.blocks[n - 1].w / 2, hTop), m0 = P(L.blocks[0].s + L.blocks[0].w / 2, hBot), t1 = P(sp, hTop), t0 = P(sp, hBot);
+        v.line([[m1[0], m1[1], 0], [t1[0], t1[1], 0]], K.ink, 1.6); v.line([[m0[0], m0[1], 0], [t0[0], t0[1], 0]], K.ink, 1.6);
+      }
+      if (g.P > 0) { const b = L.blocks[g.on], dp = [Math.cos(th + g.al * D2R), Math.sin(th + g.al * D2R), 0], side = Math.cos(g.al * D2R) >= 0 ? 1 : -1, m = P(b.s + side * b.w / 2, b.h + SH / 2), c = [m[0], m[1], 0];
+        if (side > 0) DYUI.arrow3(v, c, DYUI.add(c, DYUI.mul(dp, 2)), K.force, 2.6); else DYUI.arrow3(v, DYUI.sub(c, DYUI.mul(dp, 2)), c, K.force, 2.6);
+        v.label(side > 0 ? DYUI.add(c, DYUI.mul(dp, 2.1)) : DYUI.sub(c, DYUI.mul(dp, 2.1)), lbl(opt, `P = ${fmt(g.P)} ${g.u.F}`, 'P'), K.force); }
+      v.setBounds([-1, -0.3, -1.8], [Ls * e[0] + 1, Ls * e[1] + L.H + 1, 1.8]);
+      return;
+    }
     if (g.scene === 'curve') {
       const th = g.th * D2R, R = 5, w = 1.6, n = 48;
       for (let i = 0; i < n; i++) {
@@ -476,6 +613,13 @@
       expect: [{ k: 'Normal force N', v: 1529 }] },
     { name: 'Test: Book Example 14.9, 8 Mg plane on a 20 m cable released at 60°, at 15° (v = 13.5 m/s, T = 149 kN)', units: 'SI', state: P0({ scene: 'circle', kind: 'cord', cm: 8000, R: 20, phi0: 60, cv0: 0, phi: 15 }),
       expect: [{ k: 'Speed v', v: 13.52 }, { k: 'Cord tension T', v: 148900 }] },
+    { name: 'Test: Problem 13–17, 60 kg A on 30 kg B, μ_s = 0.3 between them, μ_k = 0.35 on the floor (P = 574 N)', units: 'SI', state: P0({ scene: 'stack', ktask: 'Pmax', blocks: [{ name: 'B', m: 30, mus: 0.35, muk: 0.35 }, { name: 'A', m: 60, mus: 0.3, muk: 0.3 }], kth: 0, kal: 0, kon: 0, ktie: false }),
+      expect: [{ k: 'Largest P with no slip between blocks', v: 573.9 }, { k: 'Acceleration of the stack', v: 2.943 }] },
+    { name: 'Test: Problem 13–30, four 2 kg plates, μ_s = 0.3, smooth floor, F on the bottom plate (F = 23.5 N)', units: 'SI', state: P0({ scene: 'stack', ktask: 'Pmax', blocks: [{ name: 'D', m: 2, mus: 0, muk: 0 }, { name: 'C', m: 2, mus: 0.3, muk: 0.3 }, { name: 'B', m: 2, mus: 0.3, muk: 0.3 }, { name: 'A', m: 2, mus: 0.3, muk: 0.3 }], kth: 0, kal: 0, kon: 0, ktie: false }),
+      expect: [{ k: 'Largest P with no slip between blocks', v: 23.54 }] },
+    { name: 'Test: Problem 13–27, 20 kg A on a 60 kg plate B on a 30° incline, tied over pulley C (T = 147.1 N, t = 0.815 s for 0.5 m)', units: 'SI', state: P0({ scene: 'stack', ktask: 'motion', blocks: [{ name: 'B', m: 60, mus: 0.1, muk: 0.1 }, { name: 'A', m: 20, mus: 0.2, muk: 0.2 }], kth: 30, kP: 0, kal: 0, kon: 0, ktie: true, kd: 0.5 }),
+      expect: [{ k: 'Acceleration of A', v: 0.7534 }, { k: 'Acceleration of B', v: -0.7534 }, { k: 'Cord tension T', v: 147.1 }, { k: 'Time for A to slide 0.5 m on block B', v: 0.8147 }] },
+    { name: 'Two blocks: P = 700 N on the bottom one, the top block slides back on it', units: 'SI', state: P0({ scene: 'stack', ktask: 'motion', blocks: [{ m: 30, mus: 0.35, muk: 0.35 }, { m: 60, mus: 0.3, muk: 0.3 }], kth: 0, kP: 700, kal: 0, kon: 0, ktie: false, kd: 1 }) },
     { name: 'Block on a table pulled by a hanging block, μ_k = 0.2', units: 'SI', state: P0({ scene: 'pulley', onA: 'table', mA: 10, mB: 5, nA: 1, nB: 1, mus: 0.3, muk: 0.2, find: 'time', t: 2 }) },
     { name: 'Edge: P lifts the block off the floor (fails on purpose)', units: 'SI', fails: true, state: P0({ scene: 'block', method: 'force', m: 5, th: 0, P: 100, al: 80, t: 2 }) },
   ];

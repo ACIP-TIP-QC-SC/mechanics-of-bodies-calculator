@@ -1049,6 +1049,30 @@ group('dynamics: impact', () => {
   { const r = run({ mode: 'wall', find: 'v', surf: 'wall', v1: 20, th1: 30, e: 0.75 }, 'SI'); [{ k: 'Speed after impact v₂', v: 18.87 }, { k: 'Angle from the surface θ₂', v: 23.41 }].forEach((e) => close('ball at 20 m/s strikes a smooth wall at 30°, e = 0.75: ' + e.k, out(r, e.k), e.v)); }
 });
 
+group('dynamics: stacked blocks', () => {
+  const run = (o, sys) => Pkin.solve(Object.assign(Pkin.defaults(), { scene: 'stack' }, o), U[sys]);
+  const B = (name, m, mus, muk) => ({ name, m, mus, muk: muk === undefined ? mus : muk });
+  let r = run({ ktask: 'Pmax', blocks: [B('B', 30, 0.35), B('A', 60, 0.3)], kth: 0, kal: 0, kon: 0 }, 'SI');
+  close('13-17 P', out(r, 'Largest P with no slip between blocks'), 573.885, 1e-4); close('13-17 a', out(r, 'Acceleration of the stack'), 2.943, 1e-4);
+  r = run({ ktask: 'Pmax', blocks: [B('D', 2, 0), B('C', 2, 0.3), B('B', 2, 0.3), B('A', 2, 0.3)], kth: 0, kal: 0, kon: 0 }, 'SI');
+  close('13-30 F', out(r, 'Largest P with no slip between blocks'), 4 * 0.3 * 2 * 9.81, 1e-4);
+  r = run({ ktask: 'motion', blocks: [B('B', 60, 0.1), B('A', 20, 0.2)], kth: 30, kP: 0, kon: 0, ktie: true, kd: 0.5 }, 'SI');
+  close('13-27 a_A', out(r, 'Acceleration of A'), 0.7533, 1e-3); close('13-27 T', out(r, 'Cord tension T'), 147.1, 1e-3); close('13-27 t', out(r, 'Time for A to slide 0.5 m on block B'), 0.815, 1e-3);
+  // a stack that holds: the cord and friction share the load, the blocks stay at rest
+  r = run({ ktask: 'motion', blocks: [B('B', 60, 0.9, 0.1), B('A', 20, 0.9, 0.2)], kth: 30, kP: 0, kon: 0, ktie: true }, 'SI');
+  close('held by friction: a_A = 0', out(r, 'Acceleration of A'), 0, 1e-9);
+  // each block obeys ΣF = ma when the top block slides back
+  r = run({ ktask: 'motion', blocks: [B('B', 30, 0.35), B('A', 60, 0.3)], kth: 0, kP: 700, kon: 0 }, 'SI');
+  close('slide: a_A = μ_k g', out(r, 'Acceleration of A'), 0.3 * 9.81, 1e-6); close('slide: a_B', out(r, 'Acceleration of B'), (700 - 0.35 * 90 * 9.81 - 0.3 * 60 * 9.81) / 30, 1e-6);
+  // static friction holds a block on a rough incline
+  r = run({ ktask: 'motion', blocks: [B('A', 10, 0.7, 0.5)], kth: 30, kP: 0, kon: 0 }, 'SI');
+  close('holds on the incline', out(r, 'Acceleration of A'), 0, 1e-9);
+  r = run({ ktask: 'motion', blocks: [B('A', 10, 0.3, 0.25)], kth: 30, kP: 0, kon: 0 }, 'SI');
+  close('slides down the incline', out(r, 'Acceleration of A'), -9.81 * (Math.sin(Math.PI / 6) - 0.25 * Math.cos(Math.PI / 6)), 1e-6);
+  { const st = Object.assign(Pkin.defaults(), { scene: 'stack', ktask: 'Pmax' }); const a = out(Pkin.solve(st, U.SI), 'Largest P with no slip between blocks'); Pkin.convertState(st, 'SI', 'US'); const b = out(Pkin.solve(st, U.US), 'Largest P with no slip between blocks'); close('stack units', b * 4.4482216, a, 1e-4); }
+  truthy('lifting P fails', !run({ ktask: 'motion', blocks: [B('A', 1, 0.3)], kP: 100, kal: 80, kon: 0 }, 'SI').ok);
+});
+
 group('dynamics: planar kinematics of rigid bodies', () => {
   const run = (o, sys) => RbMotion.solve(Object.assign(RbMotion.defaults(), o), U[sys]);
   { const r = run({ mode: 'slider', r: 0.25, l: 0.75, th: 45, beta: 90, e: 0, wAB: -10, aAB: -20 }, 'US'); [{ k: 'Velocity of the slider v_C', v: 2.197 }, { k: 'Angular velocity of BC, ω_BC', v: 2.425 }, { k: 'Angular acceleration of BC, α_BC', v: 27.68 }, { k: 'Acceleration of the slider a_C', v: -13.54 }].forEach((e) => close('Book Examples 16.12 and 16.17, crank 0.25 ft at 10 rad/s cw : ' + e.k, out(r, e.k), e.v)); }
