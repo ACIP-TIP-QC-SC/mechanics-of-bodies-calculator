@@ -382,6 +382,25 @@ group('friction module', () => {
     truthy('groove angle out of range fails', !Friction.solve(bt({ drums: [{ beta: 180, mu: 0.3, alpha: 190 }] }), SI).ok);
     const sU = Friction.convertState(Friction.convertState(bt({ drums: B270, wheel: true, task: 'T', lever: true }), 'SI', 'US'), 'US', 'SI');
     close('band brake units round trip', out(Friction.solve(sU, SI), 'Force on the lever P'), 53.57); }
+  // round body on a floor and against a wall (Probs. 8-18, 8-19, 8-35) and block brakes (8-22, 8-29)
+  { const rd = (o) => mk({ mode: 'round', rd: Object.assign({ wBy: 'force', W: 300, R: 3, wall: 'right', muF: 0.25, muW: 0.25, task: 'P', rP: 1, thP: -90, psi: 0, P: 300 }, o) });
+    r = Friction.solve(rd({}), U.US); close('8-18 P', out(r, 'Force P to turn it'), 1350); close('8-18 N_A', out(r, 'N_A (wall)'), 1200); close('8-18 N_B', out(r, 'N_B (floor)'), 600);
+    r = Friction.solve(rd({ muF: 0.35, muW: 0, task: 'check' }), U.US); close('8-19 N_A', out(r, 'N_A (wall)'), 200); close('8-19 F_B', out(r, 'F_B (floor)'), 100); truthy('8-19 stays at rest', /Stays at rest/.test(r.status.text));
+    const hoop = { W: 30, R: 0.3, rP: 0.3, thP: 90, muF: 0.2, muW: 0.2 };
+    r = Friction.solve(rd(hoop), U.US); close('8-35 P', out(r, 'Force P to turn it'), 8.1818); close('8-35 N_B', out(r, 'N_B (floor)'), 27.27);
+    close('hoop μs from P returns 0.2', out(Friction.solve(rd(Object.assign({}, hoop, { task: 'mu', P: out(r, 'Force P to turn it') })), U.US), 'μs at which it just turns'), 0.2, 1e-6);
+    truthy('a larger P turns it', /turns it/.test(Friction.solve(rd(Object.assign({}, hoop, { task: 'check', P: 9 })), U.US).status.text));
+    const mir = Friction.solve(rd({ wall: 'left', thP: -90, psi: 180 }), U.US); close('mirror image gives the same P', out(mir, 'Force P to turn it'), 1350);
+    truthy('P through O fails', !Friction.solve(rd({ rP: 0 }), U.US).ok);
+    truthy('both smooth fails', !Friction.solve(rd({ muF: 0, muW: 0 }), U.US).ok);
+    truthy('pulling away from the wall fails', !Friction.solve(rd({ psi: 180 }), U.US).ok);
+    const br = (o) => mk({ mode: 'brake', br: Object.assign({ rW: 0.25, mu: 0.4, task: 'P', M: 800, P: 100, a: 0.2, b: 0.4, e: 0.05, rev: false }, o) });
+    r = Friction.solve(br({}), SI); close('8-22 spring force', out(r, 'Force on the lever P'), 16800); close('8-22 N', out(r, 'Normal force N'), 8000);
+    close('brake: M from P returns 800', out(Friction.solve(br({ task: 'M', P: 16800 }), SI), 'Torque it resists M'), 800, 1e-9);
+    close('brake reversed: P = N(b − μe)/a', out(Friction.solve(br({ rev: true }), SI), 'Force on the lever P'), 8000 * (0.4 - 0.4 * 0.05) / 0.2);
+    r = Friction.solve(br({ task: 'lock', mu: 0.6, b: 0.3, e: -0.6 }), SI); truthy('pawl self-locking', /^Self-locking/.test(r.status.text)); close('8-29 friction angle', out(r, 'Friction angle φs (largest pawl angle)'), 30.964); close('μ for self-locking', out(r, 'Smallest μs for self-locking'), 0.5);
+    const sU = Friction.convertState(Friction.convertState(br({}), 'SI', 'US'), 'US', 'SI');
+    close('brake units round trip', out(Friction.solve(sU, SI), 'Force on the lever P'), 16800, 1e-6); }
   // Example 8.8 belt
   r = Friction.solve(mk({ mode: 'belt' }), SI);
   close('8.8 T1', out(r, 'Tension after drum 1'), 277.4); close('8.8 W', out(r, 'Tension after drum 2'), 153.9); close('8.8 m', out(r, 'Mass that can be held'), 15.69);

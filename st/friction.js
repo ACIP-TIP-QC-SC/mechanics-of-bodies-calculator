@@ -15,6 +15,10 @@
  *           is braked (locked) or driven: axle reactions, friction needed and μs needed when parked,
  *           the force P that starts it moving (towing) or that it can pull, and the steepest slope
  *           before it slips or tips (8.2)
+ *   round   round body (spool, hoop, disk) on a floor and against a wall, each rough or smooth: the force P that
+ *           turns it in place, whether a given P turns it, or the μs at which it just turns (8.2)
+ *   brake   block brake or pawl: a shoe on a lever pressed against a wheel that carries a torque M; the lever
+ *           force for M, the torque a force resists, and self-locking (8.2)
  *   two     two bodies (8.2): blocks on an incline joined by a spring or cord (the angle at which one or both
  *           slip), a block on a block pulled apart or together, and a person pushing or pulling a crate
  * Forces are in the chosen force unit `fu`, lengths in m or ft, screw sizes in mm or in.
@@ -38,6 +42,8 @@
         hasP: false, P: 0, xP: -0.75, yP: 0.3, psi: 150, move: 'A' },
       tw: { arr: 'inc', wBy: 'force', mA: 10, WA: 98.1, mB: 6, WB: 58.86, muA: 0.15, muB: 0.25, phi: 0, lower: 'A', conn: 'spring', k: 30, task: 'both',
         Pon: 'B', al: 0, tie: true, beta: 30, muG: 0.3, how: 'push', thC: 0, thM: 0, tip: false, b: 1, h: 1.2 },
+      rd: { wBy: 'force', m: 30, W: 300, R: 3, wall: 'right', muF: 0.25, muW: 0.25, task: 'P', rP: 1, thP: -90, psi: 0, P: 300 },
+      br: { rW: 0.25, mu: 0.4, task: 'P', M: 800, P: 100, a: 0.2, b: 0.4, e: 0.05, rev: false },
       bt: { known: 'high', T: 500, drums: [{ beta: 135, turns: 0, mu: 0.25, alpha: 0 }, { beta: 135, turns: 0, mu: 0.25, alpha: 0 }], wheel: false, task: 'T', rW: 0.15, M: 50, P: 30, lever: false, aL: 0.4, dT: 0, dS: 0.2 },
     };
   }
@@ -62,6 +68,8 @@
     if (st.mode === 'vehicle') return vehicle(st.vh, c);
     if (st.mode === 'bearing') return bearing(st.be, c);
     if (st.mode === 'two') return two(st.tw, c);
+    if (st.mode === 'round') return round(st.rd, c);
+    if (st.mode === 'brake') return brake(st.br, c);
     return block(st.bk, c);
   }
 
@@ -394,10 +402,153 @@
     return res(task === 'T' ? (P !== null ? `P = ${fmt(P)} ${F}` : `T₂ = ${fmt(T2)} ${F}`) : `M = ${fmt(M)} ${FL}`, 'ok', out, S, { kind: 'belt', c, Ts: [T1, T2], drums: [d], hi: false, wheel: { r, M, T1, T2, lever, a, dT, dS, P } }, warn);
   }
 
+
+  /* ------------------------------------------------------------------ */
+  /* Round body on a floor and against a wall (spool, hoop, disk)       */
+  /* ------------------------------------------------------------------ */
+  /**
+   * Centre O at the origin, radius R. The floor touches at (0, −R) and pushes up; the wall touches at (sR, 0)
+   * (s = +1 right, −1 left) and pushes toward O. P acts at (rP cos θP, rP sin θP) in the direction ψ.
+   * Turning in place with sense ω (+1 counterclockwise) makes the rim slide over both surfaces, so the
+   * friction at each rough contact is μN against that sliding:
+   *   ΣFx:  P cos ψ − ω μF N_F − s N_W = 0
+   *   ΣFy:  P sin ψ + N_F − ω s μW N_W = W
+   *   ΣMO:  P m − ω R (μF N_F + μW N_W) = 0,   m = xP sin ψ − yP cos ψ (moment arm of P about O, + ccw)
+   */
+  function roundCrit(W, R, s, muF, muW, m, cps, sps) {
+    const om = Math.sign(m);
+    const { x } = Core.linSolve([[cps, -om * muF, -s], [sps, 1, -om * s * muW], [m, -om * R * muF, -om * R * muW]], [0, W, 0]);
+    return x ? { P: x[0], NF: x[1], NW: x[2], om } : null;
+  }
+  function round(q, c) {
+    const { F, Lu, U } = c, err = [];
+    const w = weight(q, U, F), W = w.W, R = +q.R, rP = +q.rP, th = (+q.thP || 0) * DEG, psi = (+q.psi || 0) * DEG, s = q.wall === 'left' ? -1 : 1;
+    const task = q.task || 'P';
+    let muF = +q.muF, muW = +q.muW;
+    if (!(W > 0)) err.push('The weight must be greater than zero.');
+    if (!(R > 0)) err.push('Enter the radius of the body.');
+    if (!(rP >= 0) || rP > R * 1.0000001) err.push('The point where P acts must lie on or inside the rim (0 ≤ r_P ≤ R).');
+    if (task !== 'mu' && (!(muF >= 0) || !(muW >= 0))) err.push('The friction coefficients must be zero or more.');
+    if (task !== 'P' && !(+q.P > 0)) err.push('Enter the force P.');
+    if (err.length) return fail(err);
+    const xP = rP * Math.cos(th), yP = rP * Math.sin(th), cps = Math.cos(psi), sps = Math.sin(psi), m = xP * sps - yP * cps;
+    if (Math.abs(m) < 1e-9 * R) return fail('P passes through the centre O, so it cannot turn the body in place. Move its point or change its direction.');
+    const om = Math.sign(m), sense = om > 0 ? 'counterclockwise' : 'clockwise', wallTxt = s > 0 ? 'right' : 'left';
+    const S = Steps(), out = [];
+    S.add({ t: 'Free-body diagram', n: `The body touches the floor at B (0, −R) and the wall on the ${wallTxt} at A. P acts at (${fmt(xP)}, ${fmt(yP)}) ${Lu} from the centre O, at ${fmt(+q.psi || 0)}° from the +x axis. Its moment about O turns the body ${sense}, so the rim slides over both surfaces and friction at each rough contact opposes that sliding.`, s: w.how });
+    S.add({ t: 'Moment arm of P about O', f: 'm = x_P sin ψ − y_P cos ψ', s: `m = ${fmt(xP)} sin ${fmt(+q.psi || 0)}° − (${fmt(yP)}) cos ${fmt(+q.psi || 0)}°`, r: `m = ${fmt(m)} ${Lu} (${sense})` });
+    const eqTxt = (mf, mw) => `+→ ΣFx: P cos ψ ${om > 0 ? '−' : '+'} ${fmt(mf)} N_B ${s > 0 ? '−' : '+'} N_A = 0;  +↑ ΣFy: P sin ψ + N_B ${om * s > 0 ? '−' : '+'} ${fmt(mw)} N_A − ${fmt(W)} = 0;  ↺+ ΣM_O: ${fmt(m)} P ${om > 0 ? '−' : '+'} ${fmt(R)}(${fmt(mf)} N_B + ${fmt(mw)} N_A) = 0`;
+    const verdictOf = (x) => (x.NF < -1e-9 * W ? 'floor' : x.NW < -1e-9 * W ? 'wall' : x.P <= 0 ? 'P' : '');
+    const lostMsg = { floor: 'the body would have to be held down onto the floor (N_B < 0): it lifts off before it can turn in place', wall: 'the body would have to be pulled onto the wall (N_A < 0): it moves away from the wall before it can turn in place', P: 'no positive P turns it: friction at the contacts locks it for any P in this direction (self-locking)' };
+    const geo = (x, P, verdict) => ({ kind: 'round', c, W, R, s, xP, yP, psi: +q.psi || 0, P, NF: x.NF, NW: x.NW, FF: x.FF, FW: x.FW, om, verdict, muF, muW });
+    // friction forces on the body from the normal forces (at their limit while turning)
+    const lim = (x) => Object.assign(x, { FF: -om * muF * x.NF, FW: -om * s * muW * x.NW });
+    if (task === 'mu') {
+      const P = +q.P, crit = (mu) => roundCrit(W, R, s, mu, mu, m, cps, sps);
+      const f = (mu) => { const x = crit(mu); return x ? x.P - P : NaN; };
+      S.add({ t: 'Same μs at A and B', n: 'Find the μs at which the given P just turns the body in place: the force that turns it, P(μs), grows with μs.', f: eqTxt(0, 0).replace(/0 N_/g, 'μs N_') });
+      if (!(f(0) < 0)) return fail('Even on smooth surfaces this P does not turn the body: with μs = 0 the body is held only by normal forces, and P would have to be larger. Check its point and direction.');
+      let hi = 0.05; while (hi < 50 && (Number.isNaN(f(hi)) || f(hi) < 0 || verdictOf(crit(hi)))) hi *= 1.6;
+      if (!(hi < 50) || !(f(hi) >= 0)) return fail('No μs makes this P just turn the body in place (it would lift off a surface first).');
+      const mu = bisect(f, 0, hi, 200); muF = muW = mu;
+      const x = lim(crit(mu));
+      S.add({ t: 'Solve', s: eqTxt(mu, mu), r: `μs = ${fmt(mu)};  N_B = ${fmt(x.NF)} ${F}, N_A = ${fmt(x.NW)} ${F}` });
+      out.push({ k: 'μs at which it just turns', v: mu, u: '', hl: true }, { k: 'N_B (floor)', v: x.NF, u: F }, { k: 'F_B (floor)', v: Math.abs(x.FF), u: F }, { k: 'N_A (wall)', v: x.NW, u: F }, { k: 'F_A (wall)', v: Math.abs(x.FW), u: F });
+      return res(`μs = ${fmt(mu)}`, 'ok', out, S, geo(x, P, ''));
+    }
+    if (!(muF > 0) && !(muW > 0)) return fail('Both surfaces are smooth: any force with a moment about O turns the body, since nothing resists it. Enter μs for at least one contact.');
+    const x = roundCrit(W, R, s, muF, muW, m, cps, sps);
+    if (!x) return fail('The equations have no unique solution for this layout.');
+    lim(x);
+    const lost = verdictOf(x);
+    S.add({ t: 'Turning in place is about to happen', n: 'Slipping impends at both contacts at once: F_B = μs N_B on the floor and F_A = μs N_A on the wall (zero where a surface is smooth).', f: `F_B = ${fmt(muF)} N_B,  F_A = ${fmt(muW)} N_A`, s: eqTxt(muF, muW), r: lost ? `No: ${lostMsg[lost]}.` : `P = ${fmt(x.P)} ${F};  N_B = ${fmt(x.NF)} ${F}, F_B = ${fmt(Math.abs(x.FF))} ${F};  N_A = ${fmt(x.NW)} ${F}, F_A = ${fmt(Math.abs(x.FW))} ${F}` });
+    if (task === 'P') {
+      if (lost) return fail(`P cannot turn the body in place: ${lostMsg[lost]}.`);
+      out.push({ k: 'Force P to turn it', v: x.P, u: F, hl: true }, { k: 'N_B (floor)', v: x.NF, u: F }, { k: 'F_B (floor)', v: Math.abs(x.FF), u: F }, { k: 'N_A (wall)', v: x.NW, u: F }, { k: 'F_A (wall)', v: Math.abs(x.FW), u: F });
+      return res(`P = ${fmt(x.P)} ${F} turns it ${sense}`, 'ok', out, S, geo(x, x.P, 'turns'));
+    }
+    // a given P: compare with the force that turns it; with at most one rough contact the reactions follow from statics
+    const P = +q.P, turns = !lost && P >= x.P * (1 - 1e-9);
+    const nRough = (muF > 0 ? 1 : 0) + (muW > 0 ? 1 : 0);
+    let y = null;
+    if (nRough === 1) {
+      // unknowns N_B, N_A and the friction at the rough contact (along x on the floor, along y on the wall)
+      const fl = muF > 0, z = Core.linSolve([[0, -s, fl ? 1 : 0], [1, 0, fl ? 0 : 1], [0, 0, fl ? R : s * R]], [-P * cps, W - P * sps, -P * m]).x;
+      if (z) y = { NF: z[0], NW: z[1], FF: fl ? z[2] : 0, FW: fl ? 0 : z[2] };
+    }
+    if (y && !turns) {
+      const rough = muF > 0 ? ['B', y.FF, y.NF, muF] : ['A', y.FW, y.NW, muW];
+      S.add({ t: 'Equilibrium with the given P (one rough contact)', n: 'With one surface smooth there are three unknowns, N_A, N_B and the friction at the rough contact, so the three equations of equilibrium give them.', r: `N_B = ${fmt(y.NF)} ${F}, N_A = ${fmt(y.NW)} ${F}, F_${rough[0]} = ${fmt(Math.abs(rough[1]))} ${F}` });
+      S.add({ t: 'Check the friction', f: `F_${rough[0]} ≤ μs N_${rough[0]}`, s: `${fmt(Math.abs(rough[1]))} ≤ ${fmt(rough[3])}(${fmt(rough[2])}) = ${fmt(rough[3] * rough[2])}`, r: 'The body stays at rest.' });
+      out.push({ k: 'N_B (floor)', v: y.NF, u: F, hl: true }, { k: 'F_B (floor)', v: Math.abs(y.FF), u: F }, { k: 'N_A (wall)', v: y.NW, u: F, hl: true }, { k: 'F_A (wall)', v: Math.abs(y.FW), u: F });
+      if (!lost) out.push({ k: 'Force P to turn it', v: x.P, u: F });
+      return res(`Stays at rest (P to turn it: ${lost ? 'none' : `${fmt(x.P)} ${F}`})`, 'ok', out, S, geo(y, P, 'rest'));
+    }
+    S.add({ t: 'Compare', f: 'P < P_turn: at rest;  P ≥ P_turn: it turns', s: lost ? `It cannot turn in place: ${lostMsg[lost]}.` : `P = ${fmt(P)} ${F} ${turns ? '≥' : '<'} P_turn = ${fmt(x.P)} ${F}`, r: turns ? `It turns ${sense}.` : 'It stays at rest.' });
+    if (!turns && nRough === 2) S.add({ t: 'Reactions', n: 'With both surfaces rough and slipping not about to happen, the four contact forces are statically indeterminate: three equations of equilibrium cannot split the friction between A and B.' });
+    if (!lost) out.push({ k: 'Force P to turn it', v: x.P, u: F, hl: true });
+    out.push({ k: 'Given P', v: P, u: F });
+    if (turns) out.push({ k: 'N_B (floor)', v: x.NF, u: F }, { k: 'N_A (wall)', v: x.NW, u: F });
+    return res(turns ? `P = ${fmt(P)} ${F} turns it ${sense}` : `Stays at rest (P to turn it: ${lost ? 'none' : `${fmt(x.P)} ${F}`})`, turns ? 'bad' : 'ok', out, S, geo(turns ? x : { NF: NaN, NW: NaN, FF: NaN, FW: NaN }, P, turns ? 'turns' : 'rest'));
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Block brake and pawl                                               */
+  /* ------------------------------------------------------------------ */
+  /**
+   * A shoe on a lever pivoted at O presses on a wheel of radius r that carries a torque M (Probs. 8-22, 8-29).
+   * At slipping F = μN and M = F r. Moments about the lever pivot: P a = N b + F e, with a, b and e the
+   * moment arms of P, N and F, each positive where that force turns the lever against P. Turning the wheel the
+   * other way reverses F, so e changes sign. P ≤ 0 means the lever locks by itself (self-locking, a pawl).
+   */
+  function brake(q, c) {
+    const { F, FL, Lu } = c, err = [], r = +q.rW, mu = +q.mu, a = +q.a, b = +q.b, e = (+q.e || 0) * (q.rev ? -1 : 1), task = q.task || 'P';
+    if (!(r > 0)) err.push('Enter the radius of the wheel.');
+    if (!(mu > 0)) err.push('μs must be greater than zero.');
+    if (!(a > 0) && task !== 'lock') err.push('Enter the moment arm a of P about the pivot.');
+    if (!(Math.abs(b) > 0)) err.push('Enter the moment arm b of the normal force about the pivot.');
+    if (task === 'P' && !(+q.M > 0)) err.push('Enter the torque M on the wheel.');
+    if (task === 'M' && !(+q.P > 0)) err.push('Enter the force P on the lever.');
+    if (err.length) return fail(err);
+    const S = Steps(), out = [], k = b + mu * e, lock = k <= 1e-12 * Math.abs(b);
+    S.add({ t: 'Free-body diagrams', n: `Wheel: the shoe presses with N and, as the wheel is about to slip, rubs with F = μs N. Lever: moments about the pivot with arms a = ${fmt(a)}, b = ${fmt(b)} and e = ${fmt(e)} ${Lu}${q.rev ? ' (e reversed: the wheel turns the other way)' : ''}.` });
+    const geo = (N, M, P) => ({ kind: 'brake', c, task, r, mu, a, b, e, N, Ff: mu * N, M, P, lock, rev: !!q.rev });
+    let N, M, P;
+    if (task === 'lock') {
+      const muL = e < 0 ? b / -e : Infinity;
+      S.add({ t: 'Self-locking', n: 'With P = 0 the lever stays pressed on the wheel for any M when the moment of F about the pivot outweighs that of N.', f: 'b + μs e ≤ 0', s: `${fmt(b)} + ${fmt(mu)}(${fmt(e)}) = ${fmt(k)}`, r: lock ? 'Self-locking: it holds the wheel for any torque in this sense.' : 'Not self-locking: a force P is needed.' });
+      if (Number.isFinite(muL)) S.add({ t: 'Smallest μs for self-locking', f: 'μs ≥ b / (−e)', r: `μs ≥ ${fmt(muL)}` });
+      const ang = Math.atan(mu) / DEG;
+      S.add({ t: 'Pawl (two-force member)', n: 'A pawl with no weight is a two-force member, so the contact force acts along the pawl. It binds when that line leans from the normal by no more than the friction angle.', f: 'angle between the pawl and the normal ≤ φs = tan⁻¹ μs', r: `φs = ${fmt(ang)}°` });
+      out.push({ k: 'Self-locking', v: lock ? 'yes' : 'no', u: '', hl: true }, { k: 'Smallest μs for self-locking', v: Number.isFinite(muL) ? muL : 'none (e ≥ 0)', u: '' }, { k: 'Friction angle φs (largest pawl angle)', v: ang, u: '°' });
+      return res(lock ? 'Self-locking' : 'Not self-locking', lock ? 'ok' : 'warn', out, S, geo(1, NaN, 0));
+    }
+    if (task === 'P') {
+      M = +q.M; N = M / (mu * r);
+      S.add({ t: 'Wheel', f: 'ΣM = 0:  M = F r = μs N r', s: `N = ${fmt(M)} / (${fmt(mu)} · ${fmt(r)})`, r: `N = ${fmt(N)} ${F}, F = ${fmt(mu * N)} ${F}` });
+      P = (N * k) / a;
+      S.add({ t: 'Lever', f: 'P a = N b + F e', s: `P(${fmt(a)}) = ${fmt(N)}(${fmt(b)}) + ${fmt(mu * N)}(${fmt(e)})`, r: lock ? `P = ${fmt(P)} ${F} ≤ 0: the brake locks by itself.` : `P = ${fmt(P)} ${F}` });
+      out.push({ k: 'Force on the lever P', v: Math.max(P, 0), u: F, hl: true }, { k: 'Normal force N', v: N, u: F }, { k: 'Friction force F', v: mu * N, u: F });
+      if (lock) return res('Self-locking: no force is needed', 'ok', out, S, geo(N, M, 0), ['With these arms the brake is self-locking for this sense of turning; turning the wheel the other way would need a force.']);
+      return res(`P = ${fmt(P)} ${F}`, 'ok', out, S, geo(N, M, P));
+    }
+    P = +q.P;
+    if (lock) {
+      S.add({ t: 'Self-locking', f: 'b + μs e ≤ 0', s: `${fmt(b)} + ${fmt(mu)}(${fmt(e)}) = ${fmt(k)}`, r: 'Once it touches, the brake holds any torque in this sense.' });
+      out.push({ k: 'Torque it resists M', v: 'any', u: '', hl: true });
+      return res('Self-locking: it holds any torque', 'ok', out, S, geo(1, NaN, P));
+    }
+    N = (P * a) / k; M = mu * N * r;
+    S.add({ t: 'Lever', f: 'P a = N b + μs N e', s: `N = ${fmt(P)}(${fmt(a)}) / (${fmt(b)} + ${fmt(mu)}(${fmt(e)}))`, r: `N = ${fmt(N)} ${F}` });
+    S.add({ t: 'Wheel', f: 'M = μs N r', s: `M = ${fmt(mu)}(${fmt(N)})(${fmt(r)})`, r: `M = ${fmt(M)} ${FL}` });
+    out.push({ k: 'Torque it resists M', v: M, u: FL, hl: true }, { k: 'Normal force N', v: N, u: F }, { k: 'Friction force F', v: mu * N, u: F });
+    return res(`M = ${fmt(M)} ${FL}`, 'ok', out, S, geo(N, M, P));
+  }
+
   /* ------------------------------------------------------------------ */
   /* Units                                                              */
   /* ------------------------------------------------------------------ */
-  const LEN = new Set(['rW', 'aL', 'dT', 'dS', 'b', 'H', 'hP', 'L', 's', 'a', 'xW', 'd', 'acc', 'h', 'xP', 'yP', 'R1', 'R2', 'rw', 'aB', 'rs']), SML = new Set(['r', 'l']), FOR = new Set(['W', 'P', 'Wp', 'T', 'WA', 'WB']), MAS = new Set(['m', 'mp', 'mA', 'mB']), MOM = new Set(['M']);
+  const LEN = new Set(['rW', 'aL', 'dT', 'dS', 'R', 'rP', 'e', 'b', 'H', 'hP', 'L', 's', 'a', 'xW', 'd', 'acc', 'h', 'xP', 'yP', 'R1', 'R2', 'rw', 'aB', 'rs']), SML = new Set(['r', 'l']), FOR = new Set(['W', 'P', 'Wp', 'T', 'WA', 'WB']), MAS = new Set(['m', 'mp', 'mA', 'mB']), MOM = new Set(['M']);
 
 
   /* ------------------------------------------------------------------ */
@@ -687,11 +838,11 @@
     const { convert, twin, UNITS } = Core;
     const kL = convert(1, UNITS[from].len, UNITS[to].len), kS = convert(1, UNITS[from].lenS, UNITS[to].lenS), f1 = twin(st.fu, to), kF = convert(1, st.fu, f1), kM = convert(1, from === 'SI' ? 'kg' : 'slug', to === 'SI' ? 'kg' : 'slug');
     const kML = kF * kL;
-    ['bk', 'ic', 'ld', 'wd', 'sc', 'bt', 'vh', 'be', 'tw'].forEach((g) => {
+    ['bk', 'ic', 'ld', 'wd', 'sc', 'bt', 'vh', 'be', 'tw', 'rd', 'br'].forEach((g) => {
       const o = st[g]; if (!o) return;
       Object.keys(o).forEach((k) => {
         const v = o[k]; if (typeof v !== 'number') return;
-        if (LEN.has(k)) o[k] = tidy(v * kL, 9); else if (SML.has(k)) o[k] = tidy(v * kS, 9); else if (FOR.has(k)) o[k] = tidy(v * kF, 9); else if (MAS.has(k)) o[k] = tidy(v * kM, 9); else if (g === 'be' && MOM.has(k)) o[k] = tidy(v * kML, 9);
+        if (LEN.has(k)) o[k] = tidy(v * kL, 9); else if (SML.has(k)) o[k] = tidy(v * kS, 9); else if (FOR.has(k)) o[k] = tidy(v * kF, 9); else if (MAS.has(k)) o[k] = tidy(v * kM, 9); else if ((g === 'be' || g === 'br') && MOM.has(k)) o[k] = tidy(v * kML, 9);
       });
     });
     if (st.tw) st.tw.k = tidy(+st.tw.k * kF / kL, 9);

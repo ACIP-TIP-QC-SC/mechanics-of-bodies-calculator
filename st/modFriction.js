@@ -28,7 +28,7 @@
   M.controls = function (c, C) {
     const st = S(), U = Core.UNITS[M.units], Lu = U.len, Ls = U.lenS, F = st.fu;
     let sec = C.section(c, 'Problem');
-    C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [['block', 'Block on a floor or slope: slip or tip'], ['incline', 'Block sliding on an incline'], ['ladder', 'Ladder against a wall'], ['wedge', 'Wedge'], ['screw', 'Square-threaded screw'], ['belt', 'Belt, rope or V-belt over drums; band brakes'], ['vehicle', 'Vehicle on wheels (car, truck, cart)'], ['bearing', 'Bearings and rolling resistance'], ['two', 'Two bodies: joined or stacked blocks, person and crate']] });
+    C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [['block', 'Block on a floor or slope: slip or tip'], ['incline', 'Block sliding on an incline'], ['ladder', 'Ladder against a wall'], ['wedge', 'Wedge'], ['screw', 'Square-threaded screw'], ['belt', 'Belt, rope or V-belt over drums; band brakes'], ['vehicle', 'Vehicle on wheels (car, truck, cart)'], ['bearing', 'Bearings and rolling resistance'], ['two', 'Two bodies: joined or stacked blocks, person and crate'], ['round', 'Spool, hoop or disk against a floor and a wall'], ['brake', 'Block brake or pawl on a wheel']] });
     C.seg(sec, { label: 'Force unit', get: () => st.fu, set: (v) => (st.fu = v), options: U.forces.map((f) => [f, f]) });
     if (st.mode === 'block') {
       const q = st.bk;
@@ -117,6 +117,38 @@
         if (q.task === 'mu') C.num(sec, { label: 'Moment that turns it M', get: () => q.M, set: (v) => (q.M = v), unit: FL });
         else C.num(sec, { label: q.kind === 'journal' ? 'Kinetic friction μk' : 'Static friction μs', get: () => q.mu, set: (v) => (q.mu = v), unit: '' });
       }
+    } else if (st.mode === 'round') {
+      const q = st.rd;
+      C.seg(sec, { label: 'Find', get: () => q.task, set: (v) => (q.task = v), options: [['P', 'P that turns it'], ['check', 'Does P turn it?'], ['mu', 'μs at which P turns it']] });
+      sec = C.section(c, 'Body');
+      weightIn(sec, C, q, F, 'Body');
+      C.num(sec, { label: 'Outer radius R (where it touches)', get: () => q.R, set: (v) => (q.R = v), unit: Lu });
+      sec = C.section(c, 'Contacts');
+      C.seg(sec, { label: 'The wall is on the', get: () => q.wall, set: (v) => (q.wall = v), options: [['left', 'Left (A)'], ['right', 'Right (A)']] });
+      if (q.task !== 'mu') {
+        C.num(sec, { label: 'μs on the floor at B (0 = smooth)', get: () => q.muF, set: (v) => (q.muF = v), unit: '' });
+        C.num(sec, { label: 'μs on the wall at A (0 = smooth)', get: () => q.muW, set: (v) => (q.muW = v), unit: '' });
+      } else C.note(sec, 'The same μs is found for the floor and the wall.');
+      sec = C.section(c, 'Force P');
+      if (q.task !== 'P') C.num(sec, { label: 'P', get: () => q.P, set: (v) => (q.P = v), unit: F });
+      C.num(sec, { label: 'Point of P: distance from the centre r_P', get: () => q.rP, set: (v) => (q.rP = v), unit: Lu });
+      C.num(sec, { label: 'Point of P: angle from +x, counterclockwise', get: () => q.thP, set: (v) => (q.thP = v), unit: '°' });
+      C.num(sec, { label: 'Direction of P, counterclockwise from +x', get: () => q.psi, set: (v) => (q.psi = v), unit: '°' });
+      C.note(sec, 'A wire pulled off the hub of a spool: r_P = hub radius, angle −90° (leaves at the bottom) or 90° (top). A push on the top of a hoop: r_P = R, angle 90°.');
+    } else if (st.mode === 'brake') {
+      const q = st.br, FLu = `${F}·${Lu}`;
+      C.seg(sec, { label: 'Find', get: () => q.task, set: (v) => (q.task = v), options: [['P', 'Lever force for M'], ['M', 'Torque a force resists'], ['lock', 'Self-locking (pawl)']] });
+      sec = C.section(c, 'Wheel');
+      C.num(sec, { label: 'Radius of the wheel r', get: () => q.rW, set: (v) => (q.rW = v), unit: Lu });
+      C.num(sec, { label: 'μs between the shoe and the wheel', get: () => q.mu, set: (v) => (q.mu = v), unit: '' });
+      if (q.task === 'P') C.num(sec, { label: 'Torque on the wheel M', get: () => q.M, set: (v) => (q.M = v), unit: FLu });
+      C.toggle(sec, { label: 'The wheel turns the other way (reverses F)', get: () => !!q.rev, set: (v) => (q.rev = v) });
+      sec = C.section(c, 'Lever (moments about its pivot O)');
+      if (q.task === 'M') C.num(sec, { label: 'Force on the lever P (or spring force)', get: () => q.P, set: (v) => (q.P = v), unit: F });
+      if (q.task !== 'lock') C.num(sec, { label: 'Moment arm of P, a', get: () => q.a, set: (v) => (q.a = v), unit: Lu });
+      C.num(sec, { label: 'Moment arm of the normal force N, b', get: () => q.b, set: (v) => (q.b = v), unit: Lu });
+      C.num(sec, { label: 'Moment arm of the friction force F, e', get: () => q.e, set: (v) => (q.e = v), unit: Lu });
+      C.note(sec, 'Each arm is positive when that force on the lever turns it against P, negative when it helps P. e is the offset of the pivot from the line of the friction force. P a = N b + F e; when b + μs e ≤ 0 the lever locks by itself.');
     } else if (st.mode === 'two') {
       const q = st.tw, push = q.arr === 'push', nA = push ? 'Crate' : 'Block A', nB = push ? 'Person' : 'Block B';
       C.select(sec, { label: 'Arrangement', get: () => q.arr, set: (v) => (q.arr = v), options: [['inc', 'Two blocks on an incline, joined by a spring or cord'], ['stack', 'Block A on top of block B'], ['push', 'Person pushing or pulling a crate']] });
@@ -210,7 +242,7 @@
   M.compute = (U) => Friction.solve(S(), U);
   M.onUnits = (from, to) => Friction.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => ({ block: 'Free-body diagram and friction cone', incline: 'Block on the incline', ladder: 'Free-body diagram of the ladder', wedge: 'Free-body diagram of the wedge and load', screw: 'Screw and the unwrapped thread', belt: 'Belt on the drums', vehicle: 'Free-body diagram of the vehicle', bearing: 'Bearing', two: 'Free-body diagrams of both bodies' }[mode()]);
+  M.cap2D = () => ({ block: 'Free-body diagram and friction cone', incline: 'Block on the incline', ladder: 'Free-body diagram of the ladder', wedge: 'Free-body diagram of the wedge and load', screw: 'Screw and the unwrapped thread', belt: 'Belt on the drums', vehicle: 'Free-body diagram of the vehicle', bearing: 'Bearing', two: 'Free-body diagrams of both bodies', round: 'Free-body diagram of the round body', brake: 'Wheel and brake lever' }[mode()]);
   M.cap3D = '3D view';
   M.hint = () => ({
     block: 'Green: the normal force N at its position x and the friction force F. Orange dashed: the friction cone at ±φs = tan⁻¹ μs; while the resultant of N and F stays inside it, the block does not slip, and while N stays within the base, it does not tip.',
@@ -221,6 +253,8 @@
     belt: 'The tension grows by e^(μβ) over each drum, toward the side the belt is about to slip to. A V-belt wedged in a groove of angle α grips harder: μ is replaced by μ / sin(α/2). On a wheel carrying a torque M, (T₂ − T₁) r = M.',
     bearing: 'Collar and disk bearings: the axial force is spread uniformly over the ring, and friction on each ring dA acts at its radius. Journal bearings: the resultant R is tangent to the friction circle r_f = r sin φk. Rolling: the ground reaction acts a distance a ahead of the lowest point.',
     two: 'Green: normal forces. Purple: friction at its limit μs N wherever slipping is about to happen. On a joined pair the spring or cord pulls the two blocks toward each other when it is in tension.',
+    round: 'Turning in place makes the rim slide over the floor and the wall at once, so friction at each rough contact is μs N against the sliding. The curved arrow shows the sense in which P turns the body.',
+    brake: 'Schematic lever: the pivot O, the shoe pressing on the wheel with N, the friction F = μs N dragged along by the wheel, and P. Distances on the lever follow the moment arms you enter.',
     vehicle: 'Green: the normal forces at the two axles. Purple: friction, which acts only at braked or driven wheels; freely rolling wheels carry none. A wheel marked with a cross is locked by its brake. For tipping sideways on a road tilted across it, enter half the track width as the distances from G to A and B.',
   }[mode()]);
   M.legend = () => [[LCOL, 'Loads'], [RCOL, 'Normal forces'], [FCOL, 'Friction']].concat(mode() === 'block' ? [[CONE, 'Friction cone', 'ln']] : mode() === 'incline' ? [[CONE, 'Angle of repose', 'ln']] : []);
@@ -284,6 +318,8 @@
     if (g.kind === 'vehicle') return drawVehicle(svg, g, opt);
     if (g.kind === 'bearing') return drawBearing(svg, g, opt);
     if (g.kind === 'two') return drawTwo(svg, g, opt);
+    if (g.kind === 'round') return drawRound(svg, g, opt);
+    if (g.kind === 'brake') return drawBrake(svg, g, opt);
     return drawBelt(svg, g, opt);
   };
 
@@ -670,6 +706,88 @@
     lbl(g0, 14, 22, vt, { color: g.verdict === 'none' || (g.task !== 'park' && g.verdict !== 'tip') ? '#1e7a45' : '#a3281f', size: 13, weight: 800 });
   }
 
+  /* -------- round body on a floor and against a wall -------- */
+  function drawRound(svg, g, opt) {
+    const { F } = g.c, R = g.R, sw = g.s, pad = R * 0.9;
+    const D = UI.Draw2D(svg, { xmin: -R - pad, xmax: R + pad, ymin: -R - R * 0.5, ymax: R + pad * 0.8 }, { pad: 46 }); hatch(svg);
+    const g0 = D.root, P = (x, y) => [D.X(x), D.Y(y)], o = P(0, 0), rpx = D.X(R) - D.X(0), yF = D.Y(-R), xW = D.X(sw * R);
+    // floor and wall with hatching on the solid side
+    poly(g0, [[D.X(-R - pad), yF], [D.X(R + pad), yF], [D.X(R + pad), yF + 12], [D.X(-R - pad), yF + 12]], { fill: 'url(#hatchF)' });
+    poly(g0, [[xW, yF], [xW, D.Y(R + pad * 0.6)], [xW + sw * 14, D.Y(R + pad * 0.6)], [xW + sw * 14, yF]], { fill: 'url(#hatchF)' });
+    s('line', { x1: D.X(-R - pad), y1: yF, x2: D.X(R + pad), y2: yF, stroke: '#4a5661', 'stroke-width': 2 }, g0);
+    s('line', { x1: xW, y1: yF, x2: xW, y2: D.Y(R + pad * 0.6), stroke: '#4a5661', 'stroke-width': 2 }, g0);
+    s('circle', { cx: o[0], cy: o[1], r: rpx, fill: '#e6d3b3', stroke: '#8a6a3f', 'stroke-width': 2 }, g0);
+    const rp = Math.hypot(g.xP, g.yP);
+    if (rp > 1e-9 && rp < R * 0.995) s('circle', { cx: o[0], cy: o[1], r: rp * rpx / R, fill: '#d2b48a', stroke: '#8a6a3f', 'stroke-width': 1.4, 'stroke-dasharray': '5 3' }, g0);
+    s('circle', { cx: o[0], cy: o[1], r: 4, fill: '#1d2733' }, g0);
+    lbl(g0, o[0] + 8, o[1] - 7, 'O', { color: '#1d2733', size: 12.5, weight: 800 });
+    // sense of turning, drawn in the upper part away from W, P at the hub and the contacts
+    const ra = rpx * 0.66, a0 = g.om > 0 ? 100 : 165, a1 = g.om > 0 ? 165 : 100;
+    arcPx(g0, o[0], o[1], ra, a0, a1, '#5a6b75', 1.8);
+    { const ae = a1 * DEG, hx = o[0] + ra * Math.cos(ae), hy = o[1] - ra * Math.sin(ae), tx = -Math.sin(ae) * g.om, ty = -Math.cos(ae) * g.om; arrowPx(g0, hx - tx * 9, hy - ty * 9, hx, hy, '#5a6b75', 1.8, 9); }
+    // contacts
+    const B = [o[0], yF], A = [xW, o[1]], v = (x) => opt.showP && Number.isFinite(x);
+    lbl(g0, B[0] - 10, B[1] + 26, 'B', { anchor: 'end', color: '#1d2733', size: 12.5, weight: 800 });
+    lbl(g0, A[0] + sw * 20, A[1] + 22, 'A', { anchor: 'middle', color: '#1d2733', size: 12.5, weight: 800 });
+    force(g0, B[0], B[1], 0, -1, 46, RCOL, v(g.NF) ? `N_B = ${fmt(g.NF)} ${F}` : 'N_B', false, 0);
+    force(g0, A[0], A[1], -sw, 0, 46, RCOL, v(g.NW) ? `N_A = ${fmt(g.NW)} ${F}` : 'N_A', false, 0);
+    // friction: along the floor just above it, and along the wall just inside the body, labelled away from the surface
+    if (Math.abs(g.FF) > 1e-9 * g.W || (!Number.isFinite(g.FF) && g.muF > 0)) {
+      const d = Number.isFinite(g.FF) ? Math.sign(g.FF) : -g.om, y0 = B[1] - 9;
+      arrowPx(g0, B[0] + d * 6, y0, B[0] + d * 54, y0, FCOL, 2.4, 10);
+      lbl(g0, B[0] + d * 58, y0 - 6, v(g.FF) ? `F_B = ${fmt(Math.abs(g.FF))} ${F}` : 'F_B', { anchor: d > 0 ? 'start' : 'end', color: FCOL });
+    }
+    if (Math.abs(g.FW) > 1e-9 * g.W || (!Number.isFinite(g.FW) && g.muW > 0)) {
+      const d = Number.isFinite(g.FW) ? Math.sign(g.FW) : -g.om * sw, x0 = A[0] - sw * 9;
+      arrowPx(g0, x0, A[1] - d * 6, x0, A[1] - d * 54, FCOL, 2.4, 10);
+      lbl(g0, x0 - sw * 6, d > 0 ? A[1] + 18 : A[1] - 10, v(g.FW) ? `F_A = ${fmt(Math.abs(g.FW))} ${F}` : 'F_A', { anchor: sw > 0 ? 'end' : 'start', color: FCOL });
+    }
+    // weight at the centre
+    arrowPx(g0, o[0], o[1] + 5, o[0], o[1] + 42, LCOL, 2.4, 10);
+    lbl(g0, o[0] - 7, o[1] + 34, opt.showP ? `W = ${fmt(g.W)} ${F}` : 'W', { anchor: 'end', color: LCOL });
+    const pp = P(g.xP, g.yP), ux = Math.cos(g.psi * DEG), uy = -Math.sin(g.psi * DEG);
+    s('circle', { cx: pp[0], cy: pp[1], r: 4, fill: LCOL }, g0);
+    // P pulls away from its point (a wire) unless that would cross the body's centre region; then it pushes on it
+    force(g0, pp[0], pp[1], ux, uy, 56, LCOL, opt.showP && g.P > 0 ? `P = ${fmt(g.P)} ${F}` : 'P', true, 0);
+    const vt = g.verdict === 'turns' ? `Turns ${g.om > 0 ? 'counterclockwise' : 'clockwise'} in place` : g.verdict === 'rest' ? 'Stays at rest' : `Turns ${g.om > 0 ? 'counterclockwise' : 'clockwise'} when P is reached`;
+    lbl(g0, 14, 22, vt, { color: g.verdict === 'turns' ? '#a3281f' : '#1e7a45', size: 13, weight: 800 });
+  }
+
+  /* -------- block brake or pawl -------- */
+  function drawBrake(svg, g, opt) {
+    // friction on the shoe points along +x (wheel about to turn clockwise) or −x when reversed. Its moment about O
+    // opposes P (e > 0) when the pivot sits above the contact line, so O is drawn e above it (e as entered).
+    const { F } = g.c, r = g.r, sg = g.rev ? -1 : 1, xO = -g.b, yO = r + g.e * sg, xP = xO + (g.a || r);
+    const yBar = r * 1.12, xs = [-r * 1.2, r * 1.2, xO, xP], ys = [-r * 1.15, yBar, yO];
+    const D = UI.Draw2D(svg, { xmin: Math.min(...xs) - r * 0.35, xmax: Math.max(...xs) + r * 0.35, ymin: Math.min(...ys) - r * 0.1, ymax: Math.max(...ys) + r * 0.75 }, { pad: 48 }); hatch(svg);
+    const g0 = D.root, P = (x, y) => [D.X(x), D.Y(y)], o = P(0, 0), rpx = D.X(r) - D.X(0);
+    s('circle', { cx: o[0], cy: o[1], r: rpx, fill: '#dfe5ea', stroke: '#4a5661', 'stroke-width': 2 }, g0);
+    s('circle', { cx: o[0], cy: o[1], r: 4, fill: '#4a5661' }, g0);
+    // torque M on the wheel: it would turn the wheel so that its top drags the shoe along F
+    const ra = rpx * 0.5, aS = sg > 0 ? 140 : 40, aE = sg > 0 ? 40 : 140;
+    arcPx(g0, o[0], o[1], ra, aS, aE, '#1d2733', 2);
+    { const ae = aE * DEG, hx = o[0] + ra * Math.cos(ae), hy = o[1] - ra * Math.sin(ae), tx = Math.sin(ae) * sg, ty = Math.cos(ae) * sg; arrowPx(g0, hx - tx * 10, hy - ty * 10, hx, hy, '#1d2733', 2, 10); }
+    lbl(g0, o[0], o[1] - ra - 6, opt.showP && Number.isFinite(g.M) ? `M = ${fmt(g.M)} ${g.c.FL}` : 'M', { anchor: 'middle', color: '#1d2733', size: 11.5 });
+    // shoe, lever bar and pivot
+    const c = P(0, r), sh = Math.max(8, (D.Y(r) - D.Y(yBar)));
+    s('rect', { x: c[0] - 22, y: c[1] - sh, width: 44, height: sh, fill: '#a07a4a', stroke: '#6b5530', 'stroke-width': 1.4 }, g0);
+    const b0 = P(Math.min(xO, 0, xP) - r * 0.08, yBar), b1 = P(Math.max(xO, 0, xP) + r * 0.08, yBar);
+    s('rect', { x: b0[0], y: b0[1] - 10, width: b1[0] - b0[0], height: 10, rx: 4, fill: '#c9b48f', stroke: '#6b5530', 'stroke-width': 1.4 }, g0);
+    const pO = P(xO, yO), pB = P(xO, yBar);
+    if (Math.abs(yO - yBar) > 1e-9) s('line', { x1: pO[0], y1: pO[1], x2: pB[0], y2: pB[1] - 5, stroke: '#6b5530', 'stroke-width': 6, 'stroke-linecap': 'round' }, g0);
+    const ts = yO < yBar - 1e-9 ? 1 : -1; // the support triangle points away from the lever bar
+    poly(g0, [[pO[0], pO[1]], [pO[0] - 11, pO[1] + ts * 18], [pO[0] + 11, pO[1] + ts * 18]], { fill: '#dfe4e8', stroke: '#4a5661', 'stroke-width': 1.4 });
+    s('line', { x1: pO[0] - 16, y1: pO[1] + ts * 18, x2: pO[0] + 16, y2: pO[1] + ts * 18, stroke: '#4a5661', 'stroke-width': 2 }, g0);
+    s('circle', { cx: pO[0], cy: pO[1], r: 4.5, fill: '#fff', stroke: '#1d2733', 'stroke-width': 1.6 }, g0);
+    lbl(g0, pO[0] - 14, pO[1] + 4, 'O', { anchor: 'end', color: '#1d2733', size: 12.5, weight: 800 });
+    // forces on the lever: N up through the shoe, F along the contact, P down at its arm
+    const vN = opt.showP && g.task !== 'lock' && Number.isFinite(g.N);
+    force(g0, c[0] + 30, c[1] + 2, 0, -1, 42, RCOL, vN ? `N = ${fmt(g.N)} ${F}` : 'N', true, 0);
+    force(g0, c[0], c[1] + 6, sg, 0, 46, FCOL, vN ? `F = ${fmt(g.Ff)} ${F}` : 'F = μs N', true, 26);
+    if (g.a > 0 && g.task !== 'lock') { const pp = P(xP, yBar); force(g0, pp[0], pp[1] - 10, 0, 1, 50, LCOL, opt.showP && g.P > 0 ? `P = ${fmt(g.P)} ${F}` : 'P', false, 0); }
+    lbl(g0, 14, 22, g.lock ? 'Self-locking for this sense of turning' : `a = ${fmt(g.a)}, b = ${fmt(g.b)}, e = ${fmt(g.e)} ${g.c.Lu}`, { color: g.lock ? '#1e7a45' : '#5a6b75', size: 12, weight: 700 });
+  }
+
   /* -------- belt -------- */
   function drawBelt(svg, g, opt) {
     const { W, H } = Charts.clear(svg), { F } = g.c, n = g.drums.length, gg = s('g', {}, svg), wh = g.wheel;
@@ -916,6 +1034,35 @@
       if (g.useP && g.P > 0) { const at = R(g.xP, g.yP), d = R(Math.cos(g.psi * DEG), Math.sin(g.psi * DEG)); arrow3(v, [at[0], at[1], 0], [at[0] + d[0] * L * 0.4, at[1] + d[1] * L * 0.4, 0], LCOL, 2.6); v.label([at[0] + d[0] * L * 0.44, at[1] + d[1] * L * 0.44, 0], val('P', `${fmt(g.P)} ${F}`), LCOL); }
       v.autoBounds(); return;
     }
+    if (g.kind === 'round') {
+      const R = g.R, sw = g.s, zt = R * 0.45, ring = (rr) => { const p = []; for (let k = 0; k < 48; k++) { const t = (k / 48) * 2 * Math.PI; p.push([rr * Math.cos(t), rr * Math.sin(t)]); } return p; };
+      v._hs = R * 0.1;
+      v.box(-R * 2, -R - R * 0.08, -R * 1.1, R * 2, -R, R * 1.1, GROUND, 1, GEDGE, { layer: rest([0, 1, 0], 2) });
+      v.box(sw > 0 ? R : -R - R * 0.08, -R, -R * 1.1, sw > 0 ? R + R * 0.08 : -R, R * 1.4, R * 1.1, '#cfd8de', 0.55, GEDGE, { layer: rest([-sw, 0, 0], 2) });
+      v.extrude(ring(R), -zt, -zt * 0.6, WOOD, 1, WEDGE); v.extrude(ring(R), zt * 0.6, zt, WOOD, 1, WEDGE);
+      const rp = Math.hypot(g.xP, g.yP); v.extrude(ring(Math.max(rp, R * 0.3)), -zt * 0.6, zt * 0.6, '#c9a978', 1, WEDGE);
+      const zf = zt + R * 0.02, L = R * 0.6;
+      arrow3(v, [0, 0, zf], [0, -R * 0.5, zf], LCOL); v.label([-R * 0.3, -R * 0.35, zf], val('W', `${fmt(g.W)} ${F}`), LCOL);
+      arrow3(v, [0, -R - L, zf], [0, -R, zf], RCOL); v.label([0, -R - L - R * 0.1, zf], val('N_B', `${fmt(g.NF)} ${F}`), RCOL);
+      arrow3(v, [sw * (R + L), 0, zf], [sw * R, 0, zf], RCOL); v.label([sw * (R + L * 1.15), R * 0.15, zf], val('N_A', `${fmt(g.NW)} ${F}`), RCOL);
+      if (Number.isFinite(g.FF) && Math.abs(g.FF) > 1e-9 * g.W) { const d = Math.sign(g.FF); arrow3(v, [0, -R, zf], [d * L, -R, zf], FCOL); v.label([d * L * 1.2, -R, zf], val('F_B', `${fmt(Math.abs(g.FF))} ${F}`), FCOL); }
+      if (Number.isFinite(g.FW) && Math.abs(g.FW) > 1e-9 * g.W) { const d = Math.sign(g.FW); arrow3(v, [sw * R, 0, zf], [sw * R, d * L, zf], FCOL); v.label([sw * R, d * L * 1.2, zf], val('F_A', `${fmt(Math.abs(g.FW))} ${F}`), FCOL); }
+      const u = [Math.cos(g.psi * DEG), Math.sin(g.psi * DEG)];
+      arrow3(v, [g.xP, g.yP, 0], [g.xP + u[0] * L * 1.2, g.yP + u[1] * L * 1.2, 0], LCOL, 2.6); v.label([g.xP + u[0] * L * 1.35, g.yP + u[1] * L * 1.35, 0], val('P', `${fmt(g.P)} ${F}`), LCOL);
+      v.autoBounds(); return;
+    }
+    if (g.kind === 'brake') {
+      const r = g.r, sg = g.rev ? -1 : 1, xO = -g.b, yO = r + g.e * sg, xP = xO + (g.a || r), yBar = r * 1.12, zt = r * 0.3, ring = []; for (let k = 0; k < 48; k++) { const t = (k / 48) * 2 * Math.PI; ring.push([r * Math.cos(t), r * Math.sin(t)]); }
+      v._hs = r * 0.08;
+      v.extrude(ring, -zt, zt, STEEL, 1, GEDGE);
+      v.box(-r * 0.2, r, -zt * 0.9, r * 0.2, yBar, zt * 0.9, '#a07a4a', 1, WEDGE);
+      v.box(Math.min(xO, 0, xP) - r * 0.05, yBar, -zt * 0.4, Math.max(xO, 0, xP) + r * 0.05, yBar + r * 0.08, zt * 0.4, '#c9b48f', 1, WEDGE);
+      if (Math.abs(yO - yBar) > 1e-9) v.box(xO - r * 0.03, Math.min(yO, yBar), -zt * 0.4, xO + r * 0.03, Math.max(yO, yBar), zt * 0.4, '#c9b48f', 1, WEDGE);
+      v.line([[xO, yO, -zt], [xO, yO, zt]], '#1d2733', 4); v.label([xO - r * 0.15, yO, zt], 'O', '#1d2733');
+      if (g.a > 0 && g.task !== 'lock') { arrow3(v, [xP, yBar + r * 0.7, 0], [xP, yBar + r * 0.08, 0], LCOL, 2.6); v.label([xP, yBar + r * 0.8, 0], val('P', `${fmt(g.P)} ${F}`), LCOL); }
+      arrow3(v, [0, r, zt + 0.01], [sg * r * 0.6, r, zt + 0.01], FCOL); v.label([sg * r * 0.75, r, zt], g.task === 'lock' ? 'F' : val('F', `${fmt(g.Ff)} ${F}`), FCOL);
+      v.autoBounds(); return;
+    }
     // belt: each drum with the belt wrapped over its contact angle and the tensions on the two free ends
     const R = 1, rb = 1.04, zb = 0.28;
     v._hs = 0.16;
@@ -980,6 +1127,19 @@
     { name: 'Test: Prob. 8-99, band brake: lever force to hold M = 50 N·m', units: 'SI', state: { mode: 'belt', fu: 'N', bt: { known: 'high', T: 100, drums: [{ beta: 270, turns: 0, mu: 0.3, alpha: 0 }], wheel: true, task: 'T', rW: 0.15, M: 50, P: 30, lever: true, aL: 0.4, dT: 0, dS: 0.2 } },
       expect: [{ k: 'Slack-side tension T₁', v: 107.14 }, { k: 'Force on the lever P', v: 53.57 }] },
     { name: 'Rope with two turns around a capstan', units: 'US', state: { mode: 'belt', fu: 'lb', bt: { known: 'low', T: 20, drums: [{ beta: 0, turns: 2, mu: 0.3 }] } } },
+    { name: 'Test: Prob. 8-18, spool against a wall: force to pull the wire off', units: 'US', state: { mode: 'round', fu: 'lb', rd: { wBy: 'force', W: 300, R: 3, wall: 'right', muF: 0.25, muW: 0.25, task: 'P', rP: 1, thP: -90, psi: 0, P: 300 } },
+      expect: [{ k: 'Force P to turn it', v: 1350 }, { k: 'N_B (floor)', v: 600 }, { k: 'N_A (wall)', v: 1200 }] },
+    { name: 'Test: Prob. 8-19, spool with a smooth wall and P = 300 lb', units: 'US', state: { mode: 'round', fu: 'lb', rd: { wBy: 'force', W: 300, R: 3, wall: 'right', muF: 0.35, muW: 0, task: 'check', rP: 1, thP: -90, psi: 0, P: 300 } },
+      expect: [{ k: 'N_A (wall)', v: 200 }, { k: 'N_B (floor)', v: 300 }, { k: 'F_B (floor)', v: 100 }] },
+    { name: 'Test: Prob. 8-35, largest push on a 30 lb hoop before it turns', units: 'US', state: { mode: 'round', fu: 'lb', rd: { wBy: 'force', W: 30, R: 0.9843, wall: 'right', muF: 0.2, muW: 0.2, task: 'P', rP: 0.9843, thP: 90, psi: 0, P: 10 } },
+      expect: [{ k: 'Force P to turn it', v: 8.182 }, { k: 'N_B (floor)', v: 27.27 }, { k: 'N_A (wall)', v: 13.64 }] },
+    { name: 'Test: Prob. 8-34, μs at which the hoop turns under P = 0.2727 W', units: 'US', state: { mode: 'round', fu: 'lb', rd: { wBy: 'force', W: 30, R: 1, wall: 'right', muF: 0.2, muW: 0.2, task: 'mu', rP: 1, thP: 90, psi: 0, P: 8.1818 } },
+      expect: [{ k: 'μs at which it just turns', v: 0.2 }] },
+    { name: 'Test: Prob. 8-22, brake with a spring: force to resist 800 N·m', units: 'SI', state: { mode: 'brake', fu: 'N', br: { rW: 0.25, mu: 0.4, task: 'P', M: 800, P: 100, a: 0.2, b: 0.4, e: 0.05, rev: false } },
+      expect: [{ k: 'Force on the lever P', v: 16800 }, { k: 'Normal force N', v: 8000 }] },
+    { name: 'Test: Prob. 8-29, pawl: largest angle from the normal that binds (μs = 0.6)', units: 'SI', state: { mode: 'brake', fu: 'N', br: { rW: 0.25, mu: 0.6, task: 'lock', M: 800, P: 100, a: 0.2, b: 0.3, e: -0.6, rev: false } },
+      expect: [{ k: 'Friction angle φs (largest pawl angle)', v: 30.96 }, { k: 'Smallest μs for self-locking', v: 0.5 }] },
+    { name: 'Block brake turned the other way: self-energizing loses its help', units: 'SI', state: { mode: 'brake', fu: 'N', br: { rW: 0.25, mu: 0.4, task: 'M', M: 800, P: 16800, a: 0.2, b: 0.4, e: 0.05, rev: true } } },
     { name: 'Test: car parked on a 12° incline with the rear wheels locked (Ellis\'s Problem 14)', units: 'SI', state: { mode: 'vehicle', fu: 'N', vh: { wBy: 'mass', m: 1500, a: 1.5, b: 3, h: 1.1, phi: 12, rise: 'A', mu: 0.6, axA: 'locked', axB: 'free', task: 'park', front: 'B', hasP: false } },
       expect: [{ k: 'Normal force at A, N_A', v: 8847.8 }, { k: 'Normal force at B, N_B', v: 5545.7 }, { k: 'Friction at A, F_A', v: -3059.4 }] },
     { name: 'Test: Prob. 8-3, mine car with both brakes locked and a 10 kN push (does it move?)', units: 'SI', state: { mode: 'vehicle', fu: 'kN', vh: { wBy: 'mass', m: 6000, a: 0.9, b: 0.6, h: 0.15, phi: 0, rise: 'B', mu: 0.4, axA: 'locked', axB: 'locked', task: 'park', front: 'B', hasP: true, P: 10, xP: 0, yP: 1.05, psi: 0 } },
