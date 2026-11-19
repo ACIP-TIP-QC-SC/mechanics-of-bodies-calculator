@@ -4,6 +4,7 @@
 (function (root) {
   'use strict';
   const { Core, UI, Charts, Pkin, DY, DYUI, Stack } = root;
+  const text = (sec, C, label, get, set) => C.text(sec, { label, get, set });
   const { fmt } = Core;
   const K = DYUI.K, CA = '#2f7fc1', CB = '#d4612a', SPR = '#2c3e50', D2R = Math.PI / 180;
 
@@ -20,7 +21,7 @@
     const ml = u.us ? 'Weight W' : 'Mass m';
     let sec = C.section(c, 'Scene');
     C.select(sec, { label: 'Scene', get: () => st.scene, set: (v) => (st.scene = v), options: [
-      ['block', 'Block on a floor or incline'], ['pulley', 'Two blocks joined by a cord'], ['spring', 'Block and spring'], ['curve', 'Car on a flat or banked curve'], ['circle', 'Particle on a vertical circle'], ['stack', 'Stacked blocks and plates']] });
+      ['block', 'Block on a floor or incline'], ['pulley', 'Two blocks joined by a cord'], ['spring', 'Block and spring'], ['curve', 'Car on a flat or banked curve'], ['circle', 'Particle on a vertical circle'], ['stack', 'Stacked blocks and plates'], ['cyl', 'Particle in cylindrical coordinates (r, θ, z)'], ['power', 'Vehicle or hoist driven by a motor (power)']] });
     if (st.scene === 'block') {
       C.seg(sec, { label: 'Method', get: () => st.method, set: (v) => (st.method = v), options: [['force', 'ΣF = ma'], ['impulse', 'Impulse'], ['work', 'Work and energy'], ['stop', 'Stopping distance']] });
       sec = C.section(c, 'Block and surface');
@@ -76,6 +77,42 @@
       C.select(sec, { label: 'P acts on', get: () => String(Math.min(+st.kon, st.blocks.length - 1)), set: (v) => (st.kon = +v), options: st.blocks.map((b, i) => [String(i), `Block ${bn(b, i)}`]) });
       if (st.blocks.length >= 2) C.toggle(sec, { label: `A cord over a pulley at the ${+st.kth > 0 ? 'top' : 'right end'} ties the top block to the bottom one`, get: () => !!st.ktie, set: (v) => (st.ktie = v) });
       if (st.ktask === 'motion') { sec = C.section(c, 'Also find'); num(sec, 'kd', 'Time for the top block to slide this far on the one below (0 to skip)', u.L); }
+    } else if (st.scene === 'cyl') {
+      const vert = st.qplane === 'vertical';
+      C.seg(sec, { label: 'Plane of motion', get: () => st.qplane, set: (v) => (st.qplane = v), options: [['horizontal', 'Horizontal (z up)'], ['vertical', 'Vertical (θ from the horizontal)']] });
+      C.seg(sec, { label: 'Find', get: () => st.qfind, set: (v) => (st.qfind = v), options: [['comp', 'F_r, F_θ' + (vert ? '' : ', F_z')], ['path', 'Push along a smooth guide'], ['arm', 'Rotating arm and smooth path']] });
+      sec = C.section(c, 'Path');
+      C.seg(sec, { label: 'Given as', get: () => st.qgiven, set: (v) => (st.qgiven = v), options: [['theta', 'r = f(θ) at an angle'], ['time', 'r(t), θ(t), z(t)']] });
+      if (st.qgiven === 'time') {
+        text(sec, C, `r(t) (${u.L})`, () => st.qrt, (v) => (st.qrt = v));
+        text(sec, C, 'θ(t) (rad)', () => st.qtt, (v) => (st.qtt = v));
+        if (!vert) text(sec, C, `z(t) (${u.L}, 0 if level)`, () => st.qzt, (v) => (st.qzt = v));
+        num(sec, 'qt', 'At time t', 's');
+      } else {
+        text(sec, C, `r = f(θ) (${u.L}, θ in rad)`, () => st.qr, (v) => (st.qr = v));
+        if (!vert) text(sec, C, `z = h(θ) (${u.L}, 0 if level)`, () => st.qz, (v) => (st.qz = v));
+        num(sec, 'qth', 'At the angle θ', '°');
+        C.seg(sec, { label: 'Rate given as', get: () => st.qrate, set: (v) => (st.qrate = v), options: [['rate', 'θ̇ and θ̈'], ['speed', 'Speed v and v̇']] });
+        if (st.qrate === 'speed') { num(sec, 'qv', 'Speed v', u.V); num(sec, 'qvd', 'Rate of change of speed v̇', u.A); }
+        else { num(sec, 'qw', 'Angular rate θ̇', 'rad/s'); num(sec, 'qa', 'Angular acceleration θ̈', 'rad/s²'); }
+      }
+      C.note(sec, 'Formulas may use + − × ÷ ^, brackets, sin cos tan sqrt exp ln and π, for example 0.2 cos θ + 0.3 or 2θ.');
+      sec = C.section(c, 'Particle');
+      num(sec, 'qm', ml, u.M);
+      C.toggle(sec, { label: 'A spring from O along r', get: () => !!st.qspr, set: (v) => (st.qspr = v) });
+      if (st.qspr) { num(sec, 'qk', 'Spring stiffness k', u.K); num(sec, 'qL0', 'Unstretched length L₀', u.L); }
+    } else if (st.scene === 'power') {
+      C.seg(sec, { label: 'Find', get: () => st.pfind, set: (v) => (st.pfind = v), options: [['power', 'Power needed'], ['angle', 'Steepest incline'], ['speed', 'Top speed'], ['accel', 'Acceleration']] });
+      sec = C.section(c, 'Vehicle or hoist');
+      num(sec, 'pm', ml, u.M);
+      if (st.pfind !== 'angle') num(sec, 'pth', 'Incline angle θ (90 for a lift)', '°');
+      if (st.pfind !== 'speed') num(sec, 'pv', 'Speed v', u.V);
+      if (st.pfind !== 'accel') num(sec, 'pa', 'Acceleration a (0 for constant speed)', u.A);
+      num(sec, 'pR', 'Constant resistance R (0 for none)', u.F); num(sec, 'pc', `Drag F_D = c v²: c (${u.F}·s²/${u.L}²)`, '');
+      num(sec, 'pmc', `Counterweight on a cable over the top pulley: ${ml.toLowerCase()} (0 for none)`, u.M);
+      sec = C.section(c, 'Motor');
+      num(sec, 'peff', 'Efficiency ε', '');
+      if (st.pfind !== 'power') num(sec, 'pP', 'Power supplied P_in', u.PW);
     } else {
       C.seg(sec, { label: 'Moving', get: () => st.kind, set: (v) => (st.kind = v), options: [['inside', 'Inside a track'], ['cord', 'On a cord'], ['outside', 'Over a dome']] });
       sec = C.section(c, 'Particle and circle');
@@ -86,7 +123,7 @@
   };
   M.diagram = function (c, C) {
     const st = S();
-    C.toggle(c, { label: st.scene === 'pulley' ? 'Free-body diagrams of A and B' : st.scene === 'stack' ? 'Free-body diagrams of the blocks' : 'Free-body and kinetic diagrams', get: () => dopt('fbd', true), set: (v) => (st.fbd = v), rebuild: false });
+    C.toggle(c, { label: st.scene === 'pulley' ? 'Free-body diagrams of A and B' : st.scene === 'stack' ? 'Free-body diagrams of the blocks' : st.scene === 'cyl' ? 'Forces on the particle' : st.scene === 'power' ? 'Forces on the vehicle' : 'Free-body and kinetic diagrams', get: () => dopt('fbd', true), set: (v) => (st.fbd = v), rebuild: false });
     if (st.scene !== 'curve') C.toggle(c, { label: 'Velocity and acceleration arrows', get: () => dopt('showV', true), set: (v) => (st.showV = v), rebuild: false });
     if (st.scene === 'stack' && st.blocks.length > 3) C.select(c, { label: 'Free-body diagrams of', get: () => dopt('fbdOf', 'ends'), set: (v) => (st.fbdOf = v), rebuild: false, options: [['ends', 'The bottom and top blocks']].concat(st.blocks.map((b, i) => [String(i), `Block ${String(b.name || '').trim() || Stack.NAMES[i]}`])) });
     if (st.scene === 'curve') C.toggle(c, { label: 'Top view of the curve', get: () => dopt('top', true), set: (v) => (st.top = v), rebuild: false });
@@ -95,9 +132,9 @@
   M.compute = (U) => Pkin.solve(S(), U);
   M.onUnits = (from, to) => Pkin.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => ({ block: 'Block, free-body and kinetic diagrams', pulley: 'Blocks, cord and pulleys', spring: 'Block and spring', curve: 'Section through the road', circle: 'Particle on a vertical circle', stack: 'Stacked blocks and their free-body diagrams' }[S().scene]);
+  M.cap2D = () => ({ block: 'Block, free-body and kinetic diagrams', pulley: 'Blocks, cord and pulleys', spring: 'Block and spring', curve: 'Section through the road', circle: 'Particle on a vertical circle', stack: 'Stacked blocks and their free-body diagrams', cyl: S().qplane === 'vertical' ? 'Path in the vertical plane' : 'Top view of the path', power: 'Vehicle and the force that drives it' }[S().scene]);
   M.cap3D = () => '3D view';
-  M.plotCaption = () => ({ curve: 'Friction needed against speed', circle: 'Speed and normal force around the circle', stack: 'Velocity of each block against time' }[S().scene] || 'Work and kinetic energy');
+  M.plotCaption = () => ({ curve: 'Friction needed against speed', circle: 'Speed and normal force around the circle', stack: 'Velocity of each block against time', cyl: 'Forces along the path (same rates)', power: 'Power input against speed' }[S().scene] || 'Work and kinetic energy');
   M.hint = () => 'Press Play to watch the motion. Forces are in red on the free-body diagram; the kinetic diagram shows ma.';
   M.legend = () => [[K.force, 'Force'], [K.vel, 'Velocity'], [K.acc, 'Acceleration or ma'], [K.ink, 'Cord, track or support', 'ln']];
   const motion = DYUI.motion(S, () => (root.App && root.App.res && root.App.res.geo ? root.App.res.geo.span : [0, 1]), { idle: 'starting position' });
@@ -146,7 +183,7 @@
   /* ------------------------------------------------------------------ */
   M.draw2D = function (svg, res, U, opt) {
     const g = res.geo;
-    return ({ block: block2D, pulley: pulley2D, spring: spring2D, curve: curve2D, circle: circle2D, stack: stack2D })[g.scene](svg, g, opt);
+    return ({ block: block2D, pulley: pulley2D, spring: spring2D, curve: curve2D, circle: circle2D, stack: stack2D, cyl: cyl2D, power: power2D })[g.scene](svg, g, opt);
   };
   const tNow = (g) => (uNow() === undefined ? (g.scene === 'block' || g.scene === 'pulley' || g.scene === 'stack' ? g.span[1] : 0) : g.span[0] + (g.span[1] - g.span[0]) * uNow());
 
@@ -344,6 +381,118 @@
     });
   }
 
+  /* ---------------- Cylindrical coordinates ---------------- */
+  /** Path points in the plane over the drawn range, split where it jumps or cannot be evaluated. */
+  function cylPath(g) {
+    const segs = [[]], n = 240, [x0, x1] = g.xs;
+    let prev = null;
+    for (let i = 0; i <= n; i++) {
+      const k = g.series(x0 + ((x1 - x0) * i) / n)[0], p = [k.r * Math.cos(k.th), k.r * Math.sin(k.th)];
+      if (!p.every(isFinite)) { if (segs[segs.length - 1].length) segs.push([]); prev = null; continue; }
+      if (prev && Math.hypot(p[0] - prev[0], p[1] - prev[1]) > 0.25 * Math.max(Math.abs(k.r), 1e-9) + 1e-9 && i > 0 && Math.hypot(p[0] - prev[0], p[1] - prev[1]) > 0.5) segs.push([]);
+      segs[segs.length - 1].push(p); prev = p;
+    }
+    return segs.filter((s) => s.length > 1);
+  }
+  const cylX = (g) => (uNow() === undefined ? g.x0 : g.xs[0] + (g.xs[1] - g.xs[0]) * uNow());
+  /** The forces drawn at a point: [{d (unit, x–y), v (signed), name, color}] */
+  function cylForces(g, k, f) {
+    const c = Math.cos(k.th), s = Math.sin(k.th), ur = [c, s], ut = [-s, c], vec2 = (a, b) => [a * ur[0] + b * ut[0], a * ur[1] + b * ut[1]];
+    const list = [];
+    if (g.find === 'comp') { list.push({ d: ur, v: f.Rr, name: 'F_r' }, { d: ut, v: f.Rth, name: 'F_θ' }); }
+    else if (g.find === 'path') { list.push({ d: vec2(f.tr, f.tth), v: f.P, name: 'P' }, { d: vec2(f.nr, f.nth), v: f.N, name: 'N' }); }
+    else { list.push({ d: ut, v: f.F, name: 'F' }, { d: vec2(f.nr, f.nth), v: f.N, name: 'N' }); }
+    if (g.vert) list.push({ d: [0, -1], v: Math.hypot(f.Gr, f.Gth), name: 'W' });
+    if (g.spr && Math.abs(f.Fs) > 0) list.push({ d: ur, v: -f.Fs, name: 'F_s' });
+    return list;
+  }
+  function cyl2D(svg, g, opt) {
+    const u = g.u, x = cylX(g), [k, f] = g.series(x), segs = cylPath(g);
+    const all = segs.flat().concat([[0, 0]]);
+    let xmin = Math.min(...all.map((p) => p[0])), xmax = Math.max(...all.map((p) => p[0])), ymin = Math.min(...all.map((p) => p[1])), ymax = Math.max(...all.map((p) => p[1]));
+    const span = Math.max(xmax - xmin, ymax - ymin, 1e-6), pad = 0.18 * span;
+    const D = UI.Draw2D(svg, { xmin: xmin - pad, xmax: xmax + pad, ymin: ymin - pad, ymax: ymax + pad }, { pad: 30 });
+    segs.forEach((sg) => D.pline(sg, { stroke: g.find === 'comp' ? K.ink : '#7f8c8d', sw: g.find === 'comp' ? 1.6 : 5, dash: g.find === 'comp' ? '6 4' : null }));
+    const P = [k.r * Math.cos(k.th), k.r * Math.sin(k.th)];
+    if (!P.every(isFinite)) return false;
+    // O, axes and the radial line or arm
+    DYUI.axes(D, [xmin - pad * 0.7, ymin - pad * 0.7], 34 / D.sc, ['x', g.vert ? 'y (up)' : 'y']);
+    D.circle([0, 0], 4 / D.sc, { fill: K.ink });
+    D.text([0, 0], 'O', { dx: -10, dy: 14, color: K.ink, size: 12, weight: 700 });
+    if (g.find === 'arm') {
+      const L = Math.max(Math.abs(k.r) * 1.25, span * 0.3), e = [Math.cos(k.th) * Math.sign(k.r || 1), Math.sin(k.th) * Math.sign(k.r || 1)], nn = [-e[1] * 0.04 * span, e[0] * 0.04 * span];
+      D.poly([[nn[0], nn[1]], [e[0] * L + nn[0], e[1] * L + nn[1]], [e[0] * L - nn[0], e[1] * L - nn[1]], [-nn[0], -nn[1]]], { fill: '#d5dbe1', stroke: K.edge, sw: 1.4, op: 0.9 });
+    } else if (g.spr) DYUI.spring(D, [0, 0], P, { n: 10, w: 0.03 * span });
+    else D.line([0, 0], P, { stroke: K.ink, sw: 1, dash: '4 3' });
+    if (g.spr && g.find === 'arm') DYUI.spring(D, [0, 0], P, { n: 10, w: 0.025 * span, color: SPR });
+    // θ arc
+    if (Math.abs(k.r) > 1e-9 && Math.abs(Math.sin(k.th)) + Math.abs(1 - Math.cos(k.th)) > 0.02) D.arc([0, 0], 30, 0, ((k.th / D2R) % 360 + 360) % 360, `θ = ${fmt(k.th / D2R)}°`, { color: K.ink });
+    // particle
+    D.circle(P, 7 / D.sc, { fill: CA, stroke: '#fff', sw: 1.6 });
+    // velocity, drawn beside the path on the side away from O so it clears the forces
+    const c = Math.cos(k.th), s = Math.sin(k.th);
+    if (dopt('showV', true) && f.v > 1e-12 && g.find !== 'path') {
+      const vin = Math.hypot(k.rd, k.r * k.w);
+      if (vin > 1e-12) {
+        const nO = [f.nr * c - f.nth * s, f.nr * s + f.nth * c], off = [P[0] + (nO[0] * 30) / D.sc, P[1] + (nO[1] * 30) / D.sc];
+        DYUI.vec(D, off, [(k.rd * c - k.r * k.w * s) / vin, (k.rd * s + k.r * k.w * c) / vin], 34, { color: K.vel, label: 'v', size: 11 });
+      }
+    }
+    if (dopt('fbd', true)) {
+      const list = cylForces(g, k, f).filter((a) => Math.abs(a.v) > 1e-12), mx = Math.max(1e-12, ...list.map((a) => Math.abs(a.v)));
+      list.forEach((a, i) => {
+        const d = [a.d[0] * Math.sign(a.v), a.d[1] * Math.sign(a.v)], L = 30 + 46 * Math.abs(a.v) / mx;
+        const tail = [P[0] + (d[0] * 9) / D.sc, P[1] + (d[1] * 9) / D.sc];
+        DYUI.vec(D, tail, d, L, { color: K.force, label: lbl(opt, `${a.name} = ${fmt(Math.abs(a.v))} ${u.F}`, a.name), size: 11, w: 2.2 });
+        void i;
+      });
+    }
+    DYUI.title(D, 12, 20, `${g.by === 't' ? `t = ${fmt(x)} s` : `θ = ${fmt(x / D2R)}°`}, r = ${fmt(k.r)} ${u.L}, v = ${fmt(f.v)} ${u.V}`);
+    if (!g.vert) D.text([D.W - 12, 20], 'z points out of the page', { px: true, anchor: 'end', color: K.ink, size: 11 });
+    return true;
+  }
+
+  /* ---------------- Vehicle or hoist driven by a motor ---------------- */
+  function power2D(svg, g, opt) {
+    const u = g.u, th = Math.min(90, Math.max(-90, g.th)) * D2R, lift = Math.abs(g.th) > 80, e = [Math.cos(th), Math.sin(th)], nr = [-Math.sin(th), Math.cos(th)], Ls = 8;
+    const top = [Ls * e[0], Ls * e[1]], pr = 0.35;
+    const D = UI.Draw2D(svg, { xmin: Math.min(0, top[0]) - 1.6, xmax: Math.max(0, top[0]) + (g.mc > 0 || lift ? 2.6 : 1.4), ymin: Math.min(0, top[1] - (g.mc > 0 ? 3.4 : 0)) - 1.2, ymax: Math.max(0, top[1]) + (lift ? 2.4 : 1.8) }, { pad: 26 });
+    const uu = uNow() === undefined ? 0.6 : uNow(), s = 1.4 + uu * (Ls - 3.6);
+    if (lift) {
+      D.line([-0.9, 0], [-0.9, top[1] + 0.2], { stroke: K.edge, sw: 3 }); D.line([0.9, 0], [0.9, top[1] + 0.2], { stroke: K.edge, sw: 3 });
+      DYUI.ground(D, [-1.6, 0], [1.6, 0]);
+    } else if (th > 0) D.poly([[0, 0], top, [top[0], 0]], { fill: '#e3e8ec', stroke: K.edge, sw: 1.4 });
+    else DYUI.ground(D, [-0.4, 0], [Ls + 0.4, 0]);
+    const w = lift ? 1.4 : 1.6, h = lift ? 1.2 : 0.8, base = lift ? [0, s] : [s * e[0] + nr[0] * 0.22, s * e[1] + nr[1] * 0.22];
+    DYUI.block(D, base, w, h, lift ? 0 : th, { label: lift ? 'E' : '', fill: '#cfe0f0' });
+    if (!lift) [-0.32, 0.32].forEach((o) => DYUI.wheel(D, [base[0] + o * w * e[0] - nr[0] * 0.02, base[1] + o * w * e[1] - nr[1] * 0.02], 0.2, 0, { spokes: 0 }));
+    // cable to the top pulley and the counterweight
+    if (g.mc > 0 || lift) {
+      const pc = lift ? [0, top[1] + 0.8] : [top[0] + e[0] * 0.3 + nr[0] * (h / 2 - pr), top[1] + e[1] * 0.3 + nr[1] * (h / 2 - pr)];
+      const att = lift ? [0, s + h] : [base[0] + e[0] * w / 2 + nr[0] * h / 2, base[1] + e[1] * w / 2 + nr[1] * h / 2];
+      if (!lift) D.line(top, [pc[0], pc[1]], { stroke: K.edge, sw: 2.4 });
+      DYUI.wheel(D, pc, pr, 0, { spokes: 0 });
+      D.line(att, lift ? pc : [pc[0] + nr[0] * pr, pc[1] + nr[1] * pr], { stroke: K.ink, sw: 1.6 });
+      if (g.mc > 0) {
+        const xc = pc[0] + pr + (lift ? 0.25 : 0), yc = pc[1] - 1.3 - uu * 1.6;
+        D.line([xc, pc[1]], [xc, yc + 0.7], { stroke: K.ink, sw: 1.6 });
+        DYUI.block(D, [xc, yc], 0.7, 0.7, 0, { label: 'C', fill: '#f6d5c4', size: 11 });
+      }
+      if (lift) { D.poly([[pc[0] - 0.9, pc[1] + 0.4], [pc[0] + 0.9, pc[1] + 0.4], [pc[0] + 0.9, pc[1] + 1.0], [pc[0] - 0.9, pc[1] + 1.0]], { fill: '#d5dbe1', stroke: K.edge, sw: 1.4 }); D.text([pc[0], pc[1] + 0.7], 'M', { anchor: 'middle', base: 'middle', color: K.ink, size: 12, weight: 700 }); }
+    }
+    const ctr = lift ? [0, s + h / 2] : [base[0] + nr[0] * h / 2, base[1] + nr[1] * h / 2];
+    const dir = lift ? [0, 1] : e;
+    if (dopt('fbd', true)) {
+      const fT = lift ? [ctr[0] + w / 2 + 0.15, ctr[1]] : [ctr[0] + e[0] * (w / 2 + 0.1), ctr[1] + e[1] * (w / 2 + 0.1)];
+      DYUI.vec(D, fT, dir, 52, { color: K.force, label: lbl(opt, `F = ${fmt(g.F)} ${u.F}`, 'F'), size: 11.5 });
+      DYUI.vec(D, ctr, [0, -1], 26, { color: K.force, label: lbl(opt, `W = ${fmt(g.m * u.g)} ${u.F}`, 'W'), size: 11.5, anchor: 'end', ldx: -6 });
+    }
+    if (dopt('showV', true) && g.v > 0) { const p = lift ? [ctr[0] - w / 2 - 0.2, ctr[1]] : [ctr[0] + nr[0] * (h / 2 + 0.35), ctr[1] + nr[1] * (h / 2 + 0.35)]; DYUI.vec(D, p, dir, 44, { color: K.vel, label: lbl(opt, `v = ${fmt(g.v)} ${u.V}`, 'v'), size: 11.5, anchor: lift ? 'end' : 'start', ldx: lift ? -4 : 0 }); }
+    if (!lift && Math.abs(g.th) > 0.01) D.arc([0.9 * Math.sign(th || 1), 0], 34, 0, g.th, `θ = ${fmt(g.th)}°`, { color: K.ink });
+    DYUI.title(D, 12, 20, `P_in = F v/ε = ${fmt(g.Pin ? DY.fromBase(g.Pin(g.v), 'PW', u) : 0)} ${u.PW}`);
+    return true;
+  }
+
   function spring2D(svg, g, opt) {
     const u = g.u, th = g.th * D2R, e = [Math.cos(th), Math.sin(th)], n = [-Math.sin(th), Math.cos(th)], fb = dopt('fbd', true), wB = 1.2, hB = 0.9;
     const Ls = 10, L0 = 4;
@@ -473,6 +622,18 @@
       const cur = uNow() === undefined ? g.f1 / D2R : (g.f0 + (g.f1 - g.f0) * uNow()) / D2R;
       return DYUI.stack(svg, [{ label: `v (${u.V})`, color: K.vel, pts: vp, at: (x) => Math.sqrt(Math.max(0, g.v2(x * D2R))) }, { label: `${g.kind === 'cord' ? 'T' : 'N'} (${u.F})`, color: K.force, pts: np, at: (x) => g.Nf(x * D2R) }], { xlabel: `${g.kind === 'outside' ? 'ψ' : 'φ'} (°)`, cursor: cur, xmin: lo / D2R, xmax: hi / D2R });
     }
+    if (g.scene === 'cyl') {
+      const [x0, x1] = g.xs, deg = g.by === 'θ', X = (x) => (deg ? x / D2R : x), names = g.find === 'comp' ? [['Rr', 'F_r'], ['Rth', 'F_θ']].concat(g.vert ? [] : [['Rz', 'F_z']]) : g.find === 'path' ? [['P', 'P'], ['N', 'N']] : [['F', 'F (arm)'], ['N', 'N (path)']];
+      const pts = names.map(() => []);
+      for (let i = 0; i <= 200; i++) { const x = x0 + ((x1 - x0) * i) / 200, f = g.series(x)[1]; names.forEach(([key], j) => { const v = f[key]; if (isFinite(v)) pts[j].push([X(x), v]); }); }
+      const cur = X(cylX(g)), cols = [K.force, '#8e44ad', SPR];
+      return DYUI.stack(svg, names.map(([key, lab], j) => ({ label: `${lab} (${u.F})`, color: cols[j], pts: pts[j], at: (xx) => g.series(deg ? xx * D2R : xx)[1][key] })), { xlabel: deg ? 'θ (°)' : 't (s)', cursor: cur, xmin: X(x0), xmax: X(x1) });
+    }
+    if (g.scene === 'power') {
+      const vmax = Math.max(g.v * 1.6, 1), pts = [];
+      for (let i = 0; i <= 200; i++) { const v = (vmax * i) / 200; pts.push([v, DY.fromBase(g.Pin(v), 'PW', u)]); }
+      return DYUI.stack(svg, [{ label: `P_in (${u.PW})`, color: K.force, pts, marks: [{ x: g.v, y: DY.fromBase(g.Pin(g.v), 'PW', u), label: `v = ${fmt(g.v)} ${u.V}`, color: K.vel }] }], { xlabel: `v (${u.V})`, xmin: 0, xmax: vmax });
+    }
     if (g.scene === 'stack') {
       const T = g.span[1], NM = g.names, cols = [CA, CB, '#27ae60', '#8e44ad', '#7f8c8d'];
       const line = (j) => { const p = []; for (let i = 0; i <= 50; i++) { const t = (T * i) / 50; p.push([t, g.a[j] * t]); } return p; };
@@ -549,6 +710,27 @@
       }
       return;
     }
+    if (g.scene === 'cyl') {
+      // book z up → view y up; the plane of motion is x–(−z) for a horizontal path, x–y for a vertical one
+      const W3 = (k) => (g.vert ? [k.r * Math.cos(k.th), k.r * Math.sin(k.th), 0] : [k.r * Math.cos(k.th), k.z, -k.r * Math.sin(k.th)]);
+      const pts = [], n = 240; let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+      for (let i = 0; i <= n; i++) { const k = g.series(g.xs[0] + ((g.xs[1] - g.xs[0]) * i) / n)[0], p = W3(k); if (p.every(isFinite)) { pts.push(p); lo = lo.map((a, j) => Math.min(a, p[j])); hi = hi.map((a, j) => Math.max(a, p[j])); } }
+      if (pts.length > 1) v.line(pts, K.ink, 3);
+      const k = g.series(cylX(g))[0], p = W3(k), sc = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], 1e-6);
+      if (!g.vert) { DYUI.floor3(v, Math.min(lo[0], 0) - 0.1 * sc, Math.max(hi[0], 0) + 0.1 * sc, Math.min(lo[1], 0) - 0.1 * sc, Math.max(Math.abs(lo[2]), Math.abs(hi[2]), 0.1 * sc) + 0.1 * sc); v.line([[0, Math.min(lo[1], 0) - 0.1 * sc, 0], [0, Math.max(hi[1], 0) + 0.2 * sc, 0]], K.ink, 1.4, [4, 3]); v.line([[0, p[1], 0], p], g.find === 'arm' ? '#7f8c8d' : K.ink, g.find === 'arm' ? 5 : 1.2); }
+      else v.line([[0, 0, 0], p], g.find === 'arm' ? '#7f8c8d' : K.ink, g.find === 'arm' ? 5 : 1.2);
+      DYUI.sphere(v, p, 0.05 * sc, CA);
+      v.setBounds([Math.min(lo[0], 0) - 0.1 * sc, Math.min(lo[1], 0) - 0.1 * sc, Math.min(lo[2], 0) - 0.1 * sc], [Math.max(hi[0], 0) + 0.1 * sc, Math.max(hi[1], 0) + 0.2 * sc, Math.max(hi[2], 0) + 0.1 * sc]);
+      return;
+    }
+    if (g.scene === 'power') {
+      const th = Math.min(90, Math.max(0, g.th)) * D2R, lift = g.th > 80, Ls = 8, e = [Math.cos(th), Math.sin(th)], uu = u0 === null ? 0.6 : u0, s = 1.4 + uu * (Ls - 3.6);
+      if (lift) { [-0.9, 0.9].forEach((x) => v.box(x - 0.08, 0, -0.9, x + 0.08, Ls + 0.4, 0.9, '#c3cbd3', 1, K.edge)); DYUI.floor3(v, -2, 2, 0, 1.2); v.box(-0.7, s, -0.7, 0.7, s + 1.2, 0.7, CA, 1, K.edge); v.line([[0, s + 1.2, 0], [0, Ls + 0.8, 0]], K.ink, 1.6); v.box(-0.9, Ls + 1.2, -0.6, 0.9, Ls + 1.8, 0.6, '#d5dbe1', 1, K.edge); v.setBounds([-2, -0.3, -1.2], [2, Ls + 2, 1.2]); return; }
+      if (th > 1e-9) v.extrude([[0, 0], [Ls * e[0], Ls * e[1]], [Ls * e[0], 0]], -1.2, 1.2, '#d5dbe1', 1, K.edge); else DYUI.floor3(v, -0.5, Ls + 0.5, 0, 1.2);
+      DYUI.block3(v, [s * e[0], s * e[1]], 1.6, 0.8, 1.4, th, CA);
+      v.setBounds([-1, -0.3, -1.4], [Ls * e[0] + 1, Ls * e[1] + 1.5, 1.4]);
+      return;
+    }
     if (g.scene === 'stack') {
       const t = u0 === null ? g.span[1] : g.span[1] * u0, L = stackLayout(g, t), { th, e, Ls, P } = L;
       if (th > 1e-9) v.extrude([[0, 0], [Ls * e[0], Ls * e[1]], [Ls * e[0], 0]], -1.6, 1.6, '#d5dbe1', 1, K.edge); else DYUI.floor3(v, -0.5, Ls + 0.5, 0, 1.6);
@@ -620,6 +802,28 @@
     { name: 'Test: Problem 13–27, 20 kg A on a 60 kg plate B on a 30° incline, tied over pulley C (T = 147.1 N, t = 0.815 s for 0.5 m)', units: 'SI', state: P0({ scene: 'stack', ktask: 'motion', blocks: [{ name: 'B', m: 60, mus: 0.1, muk: 0.1 }, { name: 'A', m: 20, mus: 0.2, muk: 0.2 }], kth: 30, kP: 0, kal: 0, kon: 0, ktie: true, kd: 0.5 }),
       expect: [{ k: 'Acceleration of A', v: 0.7534 }, { k: 'Acceleration of B', v: -0.7534 }, { k: 'Cord tension T', v: 147.1 }, { k: 'Time for A to slide 0.5 m on block B', v: 0.8147 }] },
     { name: 'Two blocks: P = 700 N on the bottom one, the top block slides back on it', units: 'SI', state: P0({ scene: 'stack', ktask: 'motion', blocks: [{ m: 30, mus: 0.35, muk: 0.35 }, { m: 60, mus: 0.3, muk: 0.3 }], kth: 0, kP: 700, kal: 0, kon: 0, ktie: false, kd: 1 }) },
+    { name: 'Test: Problem 13–106, 2 kg roller on the cam r = 0.2 cos θ + 0.3 m, forked rod at 4 rad/s, spring 30 N/m, θ = 30° (N = 0.328 N, F = 10.5 N)', units: 'SI', state: P0({ scene: 'cyl', qgiven: 'theta', qr: '0.2 cos θ + 0.3', qz: '0', qth: 30, qrate: 'rate', qw: 4, qa: 0, qm: 2, qplane: 'vertical', qspr: true, qk: 30, qL0: 0.1, qfind: 'arm' }),
+      expect: [{ k: 'Force of the path N (+ away from O)', v: 0.3281 }, { k: 'Force of the arm F (+ along θ̂)', v: 10.52 }, { k: 'Radial acceleration a_r', v: -10.34 }] },
+    { name: 'Test: Problem 13–110, collars on rod OA and the circle r = 1.6 cos θ m in a vertical plane, θ̇ = 4 rad/s at 45° (N = 20.7 N toward O, F_OA = 0)', units: 'SI', state: P0({ scene: 'cyl', qgiven: 'theta', qr: '1.6 cos θ', qz: '0', qth: 45, qrate: 'rate', qw: 4, qa: 0, qm: 0.5, qplane: 'vertical', qspr: false, qfind: 'arm' }),
+      expect: [{ k: 'Force of the path N (+ away from O)', v: -20.7 }, { k: 'Force of the arm F (+ along θ̂)', v: 0 }] },
+    { name: 'Test: Problem 13–98, 2 lb spool on the horizontal spiral rod r = 2θ ft, θ̇ = 4 rad/s at 90° (P = 1.68 lb, N = 4.77 lb)', units: 'US', state: P0({ scene: 'cyl', qgiven: 'theta', qr: '2θ', qz: '0', qth: 90, qrate: 'rate', qw: 4, qa: 0, qm: 2, qplane: 'horizontal', qspr: false, qfind: 'path' }),
+      expect: [{ k: 'Push along the path P', v: 1.677 }, { k: 'Normal force of the guide N (+ away from O)', v: -4.768 }, { k: 'Angle ψ from r to the tangent', v: 57.52 }] },
+    { name: 'Test: Problem 13–103, 20 kg boy on the ride r = 3 sin θ + 5, z = 3 cos θ, θ̇ = 0.8 rad/s at 120° (F_r = −131 N, F_θ = −38.4 N, F_z = 215 N)', units: 'SI', state: P0({ scene: 'cyl', qgiven: 'theta', qr: '3 sin θ + 5', qz: '3 cos θ', qth: 120, qrate: 'rate', qw: 0.8, qa: 0, qm: 20, qplane: 'horizontal', qspr: false, qfind: 'comp' }),
+      expect: [{ k: 'F_r', v: -130.5 }, { k: 'F_θ', v: -38.4 }, { k: 'F_z', v: 215.4 }] },
+    { name: 'Test: Problem 13–89, 40 kg boy on a spiral slide, r = 1.5 m, θ = 0.7t, z = −0.5t, at t = 2 s (F_r = −29.4 N, F_z = 392 N)', units: 'SI', state: P0({ scene: 'cyl', qgiven: 'time', qrt: '1.5', qtt: '0.7 t', qzt: '-0.5 t', qt: 2, qm: 40, qplane: 'horizontal', qspr: false, qfind: 'comp' }),
+      expect: [{ k: 'F_r', v: -29.4 }, { k: 'F_θ', v: 0 }, { k: 'F_z', v: 392.4 }] },
+    { name: 'Test: Problem 13–100, 250 kg car on a spiral track r = 10 m at 8 m/s, falling 12 m a turn (F_r = −1.54 kN, F_z = 2.45 kN)', units: 'SI', state: P0({ scene: 'cyl', qgiven: 'theta', qr: '10', qz: '-12/(2π) θ', qth: 0, qrate: 'speed', qv: 8, qvd: 0, qm: 250, qplane: 'horizontal', qspr: false, qfind: 'comp' }),
+      expect: [{ k: 'F_r', v: -1544 }, { k: 'F_z', v: 2452 }] },
+    { name: 'Test: Problem 14–44, 2 Mg car up a 7° slope at 100 km/h, ε = 0.65 (P_in = 102 kW)', units: 'SI', state: P0({ scene: 'power', pfind: 'power', pm: 2000, pth: 7, pv: 27.7778, pa: 0, pR: 0, pc: 0, pmc: 0, peff: 0.65 }),
+      expect: [{ k: 'Power input P_in', v: 102183 }] },
+    { name: 'Test: Problem 14–42, 2500 lb jeep with 100 hp at 30 ft/s, steepest incline (θ = 47.2°)', units: 'US', state: P0({ scene: 'power', pfind: 'angle', pm: 2500, pv: 30, pa: 0, pR: 0, pc: 0, pmc: 0, peff: 1, pP: 100 }),
+      expect: [{ k: 'Largest incline θ', v: 47.17 }] },
+    { name: 'Test: Problem 14–55, 400 kg elevator with a 60 kg counterweight at 4 m/s, ε = 0.6 (P_in = 22.2 kW)', units: 'SI', state: P0({ scene: 'power', pfind: 'power', pm: 400, pth: 90, pv: 4, pa: 0, pR: 0, pc: 0, pmc: 60, peff: 0.6 }),
+      expect: [{ k: 'Power input P_in', v: 22236 }] },
+    { name: 'Test: Problem 14–53, 2.3 Mg car at 28 m/s speeding up at 5 m/s², drag 0.3v², ε = 0.68 (P_out = 329 kW; the manual prints P_in = 438 kW, but 328.6/0.68 = 483 kW)', units: 'SI', state: P0({ scene: 'power', pfind: 'power', pm: 2300, pth: 0, pv: 28, pa: 5, pR: 0, pc: 0.3, pmc: 0, peff: 0.68 }),
+      expect: [{ k: 'Power output P_out', v: 328586 }, { k: 'Power input P_in', v: 483214 }] },
+    { name: 'Test: Problem 14–49, 92 kg rider with 1500 W up a 20° slope, top speed (v = 4.86 m/s)', units: 'SI', state: P0({ scene: 'power', pfind: 'speed', pm: 92, pth: 20, pa: 0, pR: 0, pc: 0, pmc: 0, peff: 1, pP: 1500 }),
+      expect: [{ k: 'Speed v', v: 4.859 }] },
     { name: 'Block on a table pulled by a hanging block, μ_k = 0.2', units: 'SI', state: P0({ scene: 'pulley', onA: 'table', mA: 10, mB: 5, nA: 1, nB: 1, mus: 0.3, muk: 0.2, find: 'time', t: 2 }) },
     { name: 'Edge: P lifts the block off the floor (fails on purpose)', units: 'SI', fails: true, state: P0({ scene: 'block', method: 'force', m: 5, th: 0, P: 100, al: 80, t: 2 }) },
   ];

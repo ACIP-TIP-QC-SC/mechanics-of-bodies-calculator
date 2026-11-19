@@ -1073,6 +1073,27 @@ group('dynamics: stacked blocks', () => {
   truthy('lifting P fails', !run({ ktask: 'motion', blocks: [B('A', 1, 0.3)], kP: 100, kal: 80, kon: 0 }, 'SI').ok);
 });
 
+group('dynamics: cylindrical components and motor power', () => {
+  const run = (o, sys) => Pkin.solve(Object.assign(Pkin.defaults(), o), U[sys]);
+  let r = run({ scene: 'cyl', qfind: 'arm' }, 'SI');
+  close('13-106 N', out(r, 'Force of the path N (+ away from O)'), 0.3281, 1e-3); close('13-106 F', out(r, 'Force of the arm F (+ along θ̂)'), 10.52, 1e-3);
+  r = run({ scene: 'cyl', qr: '1.6 cos θ', qth: 45, qw: 4, qa: 0, qm: 0.5, qplane: 'horizontal', qspr: false, qfind: 'arm' }, 'SI');
+  close('13-109 N', out(r, 'Force of the path N (+ away from O)'), -25.6, 1e-3); close('13-109 F = 0', out(r, 'Force of the arm F (+ along θ̂)'), 0, 1e-9);
+  r = run({ scene: 'cyl', qr: '2θ', qth: 90, qw: 4, qa: 0, qm: 2, qplane: 'horizontal', qspr: false, qfind: 'path' }, 'US');
+  close('13-98 P', out(r, 'Push along the path P'), 1.6766, 1e-3); close('13-98 ψ', out(r, 'Angle ψ from r to the tangent'), 57.52, 1e-3);
+  r = run({ scene: 'cyl', qgiven: 'time', qrt: '1.5', qtt: '0.7 t', qzt: '-0.5 t', qt: 2, qm: 40, qplane: 'horizontal', qspr: false, qfind: 'comp' }, 'SI');
+  close('13-89 F_r', out(r, 'F_r'), -29.4, 1e-4); close('13-89 F_z', out(r, 'F_z'), 392.4, 1e-4);
+  r = run({ scene: 'cyl', qr: '10', qz: '-12/(2π) θ', qth: 0, qrate: 'speed', qv: 8, qvd: 0, qm: 250, qplane: 'horizontal', qspr: false, qfind: 'comp' }, 'SI');
+  close('13-100 F_r', out(r, 'F_r'), -1543.7, 1e-3);
+  truthy('bad formula fails', !run({ scene: 'cyl', qr: '2 θ +' }, 'SI').ok);
+  { const st = Object.assign(Pkin.defaults(), { scene: 'cyl', qfind: 'arm' }); const a = out(Pkin.solve(st, U.SI), 'Force of the arm F (+ along θ̂)'); Pkin.convertState(st, 'SI', 'US'); close('cyl units', out(Pkin.solve(st, U.US), 'Force of the arm F (+ along θ̂)') * 4.4482216, a, 1e-4); }
+  r = run({ scene: 'power', pfind: 'angle', pm: 2500, pv: 30, pa: 0, peff: 1, pP: 100 }, 'US'); close('14-42 θ', out(r, 'Largest incline θ'), 47.17, 1e-3);
+  r = run({ scene: 'power', pfind: 'power', pm: 400, pth: 90, pv: 4, pa: 0, pmc: 60, peff: 0.6 }, 'SI'); close('14-55 P_in', out(r, 'Power input P_in'), 22236, 1e-4);
+  r = run({ scene: 'power', pfind: 'speed', pm: 92, pth: 20, pa: 0, peff: 1, pP: 1500 }, 'SI'); close('14-49 v', out(r, 'Speed v'), 4.859, 1e-3);
+  r = run({ scene: 'power', pfind: 'accel', pm: 2300, pth: 0, pv: 28, pc: 0.3, peff: 0.68, pP: 483214 }, 'SI'); close('14-53 back to a', out(r, 'Acceleration a'), 5, 1e-4);
+  { const st = Object.assign(Pkin.defaults(), { scene: 'power', pc: 0.3, pa: 1 }); const a = out(Pkin.solve(st, U.SI), 'Power input P_in'); Pkin.convertState(st, 'SI', 'US'); close('power units', out(Pkin.solve(st, U.US), 'Power input P_in') * 745.69987, a, 1e-3); }
+});
+
 group('dynamics: planar kinematics of rigid bodies', () => {
   const run = (o, sys) => RbMotion.solve(Object.assign(RbMotion.defaults(), o), U[sys]);
   { const r = run({ mode: 'slider', r: 0.25, l: 0.75, th: 45, beta: 90, e: 0, wAB: -10, aAB: -20 }, 'US'); [{ k: 'Velocity of the slider v_C', v: 2.197 }, { k: 'Angular velocity of BC, ω_BC', v: 2.425 }, { k: 'Angular acceleration of BC, α_BC', v: 27.68 }, { k: 'Acceleration of the slider a_C', v: -13.54 }].forEach((e) => close('Book Examples 16.12 and 16.17, crank 0.25 ft at 10 rad/s cw : ' + e.k, out(r, e.k), e.v)); }
