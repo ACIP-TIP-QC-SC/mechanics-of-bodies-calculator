@@ -368,6 +368,30 @@ group('statics: cords, springs, rings and pulleys', () => {
   { const st = E.defaults(); st.mode = 'net'; const a = out(E.solve(st, SI), 'F_AB'); E.convertState(st, 'SI', 'US'); E.convertState(st, 'US', 'SI'); close('net units round trip', out(E.solve(st, SI), 'F_AB'), a, 1e-6); }
 });
 
+group('statics: centroids and moments of inertia by integration', () => {
+  R('st/vwork.js'); const I = R('st/integ.js'), SM = R('st/section.js');
+  const run = (o, u, lu) => I.solve(Object.assign(I.defaults(), o), { Lu: lu || 'm', U: U[u || 'SI'] });
+  let r = run({ f: '4', g: '4 - x^2/16', a: 0, b: 8 });
+  close('9-13 x̄', out(r, 'x̄'), 6); close('9-14 ȳ', out(r, 'ȳ'), 2.8);
+  r = run({ f: '3', g: '0', a: 0, b: 2 }); close('rectangle I_x = bh³/3', out(r, 'I_x'), 18); close('rectangle I_y', out(r, 'I_y'), 8); close('rectangle I_xy', out(r, 'I_xy'), 9);
+  r = run({ var: 'y', f: '2', g: '0', a: 0, b: 3 }); close('horizontal strips give the same I_x', out(r, 'I_x'), 18);
+  close('9-1 rod x̄', out(run({ kind: 'line', f: '2x^2', a: 0, b: 1 }, 'US', 'ft'), 'x̄'), 0.61954);
+  close('9-45 bell', out(run({ kind: 'volume', f: 'x^2', a: 0, b: 1, axis: 'x' }, 'US', 'ft'), 'Centroid of the volume x̄'), 5 / 6);
+  r = run({ kind: 'volume', f: 'x/3', a: 0, b: 4, axis: 'x', rho: 'x' }); close('9-37 cone', out(r, 'Centroid of the volume x̄'), 3); close('9-38 cone ρ ∝ x', out(r, 'Centre of mass x_G'), 3.2);
+  close('cone volume πr²h/3', out(r, 'Volume V'), (Math.PI * (4 / 3) ** 2 * 4) / 3);
+  close('hemisphere 3r/8', out(run({ kind: 'volume', f: 'sqrt(1 - x^2)', a: 0, b: 1, axis: 'y' }), 'Centroid of the volume ȳ'), 0.375, 1e-4);
+  r = run({ kind: 'fluid', var: 'y', f: '2', g: '0', a: 0, b: 4, d0: 4, theta: 90, gam: 9810 });
+  close('9-121 F_A', out(r, 'Resultant force F_R'), 156960); close('9-121 y_P = h/3', out(r, 'y_P (centre of pressure)'), 4 / 3);
+  // the same wall in mm gives the same force
+  close('fluid in mm', out(run({ kind: 'fluid', var: 'y', f: '2000', g: '0', a: 0, b: 4000, d0: 4000, theta: 90, gam: 9810 }, 'SI', 'mm'), 'Resultant force F_R'), 156960);
+  truthy('crossing curves fail', !run({ f: 'x', g: '1', a: 0, b: 2 }).ok);
+  truthy('undefined curve fails', !run({ f: 'sqrt(x)', a: -1, b: 1 }).ok);
+  truthy('region across the axis fails', !run({ kind: 'volume', f: '1', g: '-1', a: 0, b: 1, axis: 'x' }).ok);
+  { const st = SM.defaults(); st.mode = 'integ'; st.lu = 'm'; Object.assign(st.ig, { f: 'sqrt(x)', a: 0, b: 4 }); const a = out(SM.solve(st, U.SI), 'I_x');
+    SM.convertState(st, 'SI', 'US'); const mid = out(SM.solve(st, U.US), 'I_x'); SM.convertState(st, 'US', 'SI');
+    close('integration units round trip', out(SM.solve(st, U.SI), 'I_x'), a, 1e-6); close('I_x in ft⁴', mid, a / 0.3048 ** 4, 1e-6); }
+});
+
 group('friction module', () => {
   const mk = (o) => Core.deepMerge(Friction.defaults(), o), SI = U.SI, US = U.US;
   // Example 8.1: crate 20 kg, P = 80 N at 30° downward, 0.2 m above the floor

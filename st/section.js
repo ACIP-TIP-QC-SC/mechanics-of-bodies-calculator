@@ -6,6 +6,7 @@
  *   - composite body: centre of mass / centre of gravity
  *   - theorems of Pappus and Guldinus
  *   - moments of inertia about inclined axes and Mohr's circle
+ *   - by integration: areas, rods, solids of revolution and fluid pressure on plates (see integ.js)
  * Lengths are in the chosen length unit `lu`.
  * ===================================================================== */
 (function (root) {
@@ -14,6 +15,7 @@
   const Section = root.Section || require('../shared/section.js');
   const Mohr = root.Mohr || require('../shared/mohr.js');
   const { fmt, fail, Steps, sumStr } = Core;
+  const IG = () => root.Integ || require('./integ.js'); // loaded after this file in the browser
   const PI = Math.PI, DEG = PI / 180;
   const LUS = { SI: ['mm', 'm'], US: ['in.', 'ft'] };
   const VKIND = [['cyl', 'Cylinder'], ['cone', 'Cone'], ['hemi', 'Hemisphere'], ['block', 'Rectangular block']];
@@ -31,11 +33,13 @@
       vol: { useRho: true, parts: [{ kind: 'cyl', x: 0, y: 0, z: 0, r: 40, h: 100, a: 80, b: 80, dir: 'up', rho: 7.85, hole: false }, { kind: 'cone', x: 0, y: 0, z: 100, r: 40, h: 60, a: 80, b: 80, dir: 'up', rho: 7.85, hole: false }] },
       pap: { kind: 'polygon', angle: 360, pts: [{ r: 20, z: 0 }, { r: 50, z: 0 }, { r: 50, z: 30 }, { r: 20, z: 60 }], R: 60, a: 20 },
       inc: { Ix: 2.9e9, Iy: 5.6e9, Ixy: -3e9, theta: 30 },
+      ig: IG().defaults(),
     };
   }
   const areaParts = (st) => (st.area.shape === 'custom' ? { parts: st.area.parts, err: [] } : Section.template(st.area.shape, st.area.dims));
 
   function solve(st, U) {
+    if (st.mode === 'integ') return IG().solve(st.ig, { Lu: st.lu, U });
     if (st.mode === 'line') return line(st, U);
     if (st.mode === 'volume') return volume(st, U);
     if (st.mode === 'pappus') return pappus(st, U);
@@ -259,6 +263,7 @@
     st.vol.parts.forEach((p) => { ['x', 'y', 'z', 'r', 'h', 'a', 'b'].forEach((k) => { if (typeof p[k] === 'number') p[k] = T(p[k]); }); p.rho = Core.tidy(p.rho * rf, 8); });
     st.pap.pts.forEach((p) => { p.r = T(p.r); p.z = T(p.z); }); st.pap.R = T(st.pap.R); st.pap.a = T(st.pap.a);
     const f4 = f ** 4; ['Ix', 'Iy', 'Ixy'].forEach((k) => (st.inc[k] = Core.tidy(st.inc[k] * f4, 9)));
+    if (st.ig) IG().convertState(st.ig, f, from, to);
   }
 
   const SecMod = { defaults, solve, convertState, LUS, VKIND, areaParts };

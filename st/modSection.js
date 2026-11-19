@@ -6,7 +6,8 @@
   'use strict';
   const { Core, UI, Charts, Section, SecMod } = root;
   const { fmt, tidy } = Core;
-  const { COL } = UI;
+  const { COL, svgEl: s } = UI;
+  const T = Charts.text;
   const DEG = Math.PI / 180;
   const PCOL = '#8e44ad', UCOL = COL.accent, CCOL = '#c0392b', FILL = '#c9d3dc', EDGE = '#4a5661';
 
@@ -32,8 +33,9 @@
     let sec = C.section(c, 'Problem');
     C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => { st.mode = v; delete st._k; }, options: [
       ['area', 'Composite area: centroid and moments of inertia'], ['inclined', "Inclined axes and Mohr's circle (I_x, I_y, I_xy known)"],
-      ['line', 'Composite wire: centroid'], ['volume', 'Composite body: centre of mass'], ['pappus', 'Pappus and Guldinus: surface and volume of revolution']] });
+      ['line', 'Composite wire: centroid'], ['volume', 'Composite body: centre of mass'], ['pappus', 'Pappus and Guldinus: surface and volume of revolution'], ['integ', 'By integration: area under curves, rod, solid of revolution, fluid pressure']] });
     C.seg(sec, { label: 'Length unit', get: () => st.lu, set: (v) => (st.lu = v), options: SecMod.LUS[M.units].map((u) => [u, u]) });
+    if (st.mode === 'integ') return integControls(c, C, st);
 
     if (st.mode === 'area') {
       const a = st.area;
@@ -114,10 +116,39 @@
     }
   };
 
+  function integControls(c, C, st) {
+    const q = st.ig, Lu = st.lu, byX = q.var !== 'y', v = byX ? 'x' : 'y';
+    let sec = C.section(c, 'What to find');
+    C.select(sec, { label: 'Find', get: () => q.kind, set: (val) => (q.kind = val), options: [['area', 'Area: centroid and moments of inertia'], ['line', 'Rod along a curve: centroid'], ['volume', 'Solid of revolution: centroid or centre of mass'], ['fluid', 'Plate under a liquid: resultant pressure force']] });
+    if (q.kind !== 'line') C.seg(sec, { label: 'Strips', get: () => q.var, set: (val) => (q.var = val), options: [['x', 'Vertical (curves in x)'], ['y', 'Horizontal (curves in y)']] });
+    else C.seg(sec, { label: 'The curve is written as', get: () => q.var, set: (val) => (q.var = val), options: [['x', 'y = f(x)'], ['y', 'x = f(y)']] });
+    sec = C.section(c, q.kind === 'line' ? 'Curve' : 'Region');
+    C.text(sec, { label: q.kind === 'line' ? (byX ? 'y = f(x)' : 'x = f(y)') : byX ? 'Top curve y = f(x)' : 'Right curve x = f(y)', get: () => q.f, set: (val) => (q.f = val) });
+    if (q.kind !== 'line') C.text(sec, { label: byX ? 'Bottom curve y = g(x)' : 'Left curve x = g(y)', get: () => q.g, set: (val) => (q.g = val) });
+    C.num(sec, { label: `From ${v} = a`, get: () => q.a, set: (val) => (q.a = val), unit: Lu });
+    C.num(sec, { label: `To ${v} = b`, get: () => q.b, set: (val) => (q.b = val), unit: Lu });
+    C.note(sec, 'Formulas use + − * / ^, brackets, sqrt, sin, cos, tan, exp, ln and pi; 2x means 2*x. Lengths are in ' + Lu + '.');
+    if (q.kind === 'line') { sec = C.section(c, 'Weight'); C.num(sec, { label: 'Weight per unit length w (0 to skip)', get: () => q.w, set: (val) => (q.w = val), unit: `per ${Lu}` }); }
+    if (q.kind === 'volume') {
+      sec = C.section(c, 'Revolution');
+      C.seg(sec, { label: 'Revolve the region about the', get: () => q.axis, set: (val) => (q.axis = val), options: [['x', 'x axis'], ['y', 'y axis']] });
+      C.text(sec, { label: 'Density ρ(x, y) (1 if uniform)', get: () => q.rho, set: (val) => (q.rho = val) });
+      C.note(sec, 'x and y in the density are the coordinates in the plane of the region; for a density that grows with the distance from the origin use sqrt(x^2 + y^2).');
+    }
+    if (q.kind === 'fluid') {
+      const US = M.units === 'US';
+      sec = C.section(c, 'Liquid');
+      C.num(sec, { label: 'Depth of the plate\'s line y = 0, d₀', get: () => q.d0, set: (val) => (q.d0 = val), unit: Lu });
+      C.num(sec, { label: 'Angle of the plate to the free surface θ (90° = vertical)', get: () => q.theta, set: (val) => (q.theta = val), unit: '°' });
+      C.num(sec, { label: 'Specific weight γ = ρ g', get: () => q.gam, set: (val) => (q.gam = val), unit: US ? 'lb/ft³' : 'N/m³' });
+      C.num(sec, { label: 'Pressure at the surface p₀ (gauge, usually 0)', get: () => q.p0, set: (val) => (q.p0 = val), unit: US ? 'lb/ft²' : 'Pa' });
+      C.note(sec, 'The plate\'s y axis runs up the plate toward the surface. Water: γ = 9810 N/m³ or 62.4 lb/ft³.');
+    }
+  }
   M.compute = (U) => SecMod.solve(S(), U);
   M.onUnits = (from, to) => SecMod.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => ({ area: 'Area and axes', inclined: "Mohr's circle", line: 'Wire, x–y view', volume: 'Body, side view', pappus: 'Generating shape' }[mode()]);
+  M.cap2D = () => ({ area: 'Area and axes', inclined: "Mohr's circle", line: 'Wire, x–y view', volume: 'Body, side view', pappus: 'Generating shape', integ: ({ area: 'Region and a typical strip', line: 'Rod along the curve', volume: 'Region revolved about the axis', fluid: 'Plate and the pressure on it' })[S().ig.kind] }[mode()]);
   M.cap3D = '3D view';
   M.plotCaption = "Mohr's circle for the moments of inertia";
   M.hint = () => ({
@@ -126,6 +157,7 @@
     line: 'The 2D diagram looks down the z axis. Use the 3D view to see segments that leave the x–y plane.',
     volume: 'The 2D diagram is the side view in the x–z plane. Holes are drawn dashed.',
     pappus: 'Press Play in the 3D view to watch the shape revolve about the z axis.',
+    integ: 'The shaded strip is the differential element used in the integrals; C marks the centroid. Integrals are evaluated numerically, so formulas of any shape work.',
   }[mode()]);
   M.legend = () => ({
     area: [[FILL, 'Area', 'sq'], [CCOL, 'Centroid C'], [PCOL, 'Principal axes', 'ln'], [UCOL, 'u and v axes', 'ln']],
@@ -133,6 +165,7 @@
     line: [[COL.cable, 'Wire', 'ln'], ['#2f7fc1', 'Centroid of each segment'], [CCOL, 'Centroid C']],
     volume: [[FILL, 'Solid', 'sq'], ['#2f7fc1', 'Centroid of each part'], [CCOL, 'Centre G']],
     pappus: [[FILL, 'Generating area', 'sq'], [COL.cable, 'Axis of revolution', 'ln'], [CCOL, 'Centroid C']],
+    integ: [[FILL, 'Region', 'sq'], [UCOL, 'Typical strip', 'sq'], [CCOL, 'Centroid or centre of pressure']],
   }[mode()]);
 
   /* Play turns the u axis through half a turn, or revolves the generating shape. */
@@ -294,6 +327,7 @@
     else if (k === 'inclined') { Charts.clear(svg); drawMohr(svg, res.geo, opt); }
     else if (k === 'line') drawLine2D(svg, res, U, opt);
     else if (k === 'volume') drawVolume2D(svg, res, U, opt);
+    else if (k === 'integ') drawInteg2D(svg, res, U, opt);
     else drawPappus2D(svg, res, U, opt);
   };
 
@@ -393,9 +427,85 @@
     if (opt.showP) v.label(P(g.rbarA, zc, ang), `C travels θ r̄ = ${fmt(ang * g.rbarA)} ${g.Lu}`, CCOL);
     v.setBounds([-rmax, z0 - hh * 0.25, -rmax], [rmax, z1 + hh * 0.4, rmax]);
   }
+  /* -------- by integration -------- */
+  /** Boundary of the region (or the rod) in x–y, from the sampled curves. */
+  function integOutline(g) {
+    const P = (t, s) => (g.byX ? [t, s] : [s, t]);
+    if (g.sub === 'line') return g.samp.map((p) => P(p[0], p[1]));
+    return g.samp.map((p) => P(p[0], p[1])).concat(g.samp.slice().reverse().map((p) => P(p[0], p[2])));
+  }
+  function drawInteg2D(svg, res, U, opt) {
+    const g = res.geo, Lu = g.c.Lu, out = integOutline(g), P = (t, s) => (g.byX ? [t, s] : [s, t]);
+    const pts = out.concat([[0, 0]]);
+    if (g.sub === 'volume') out.forEach((p) => pts.push(g.axis === 'x' ? [p[0], -p[1]] : [-p[0], p[1]]));
+    if (g.sub === 'fluid' && g.surfY != null) pts.push([out[0][0], g.surfY]);
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]), e = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1e-9);
+    const D = UI.Draw2D(svg, { xmin: Math.min(...xs) - e * 0.08, xmax: Math.max(...xs) + e * 0.08, ymin: Math.min(...ys) - e * 0.08, ymax: Math.max(...ys) + e * 0.12 }, { pad: 52 });
+    // axes through the origin
+    const X0 = D.X(0), Y0 = D.Y(0);
+    s('line', { x1: 8, y1: Y0, x2: D.W - 8, y2: Y0, stroke: '#111', 'stroke-width': 1 }, D.root); s('line', { x1: X0, y1: 8, x2: X0, y2: D.H - 8, stroke: '#111', 'stroke-width': 1 }, D.root);
+    T(D.root, D.W - 10, Y0 - 6, 'x', { anchor: 'end', color: '#111', size: 12 }); T(D.root, X0 + 6, 16, 'y', { color: '#111', size: 12 });
+    if (g.sub === 'fluid' && g.surfY != null) {
+      const ys0 = D.Y(g.surfY);
+      s('rect', { x: 8, y: Math.max(8, ys0), width: D.W - 16, height: Math.max(0, D.H - 8 - Math.max(8, ys0)), fill: '#d6eaf8', opacity: 0.55 }, D.root);
+      s('line', { x1: 8, y1: ys0, x2: D.W - 8, y2: ys0, stroke: '#2f7fc1', 'stroke-width': 2 }, D.root);
+      T(D.root, 12, ys0 - 6, `free surface (y = ${fmt(g.surfY)} ${Lu} on the plate)`, { color: '#2f7fc1', size: 11.5, weight: 700 });
+    }
+    const path = (ps) => ps.map((p) => `${D.X(p[0]).toFixed(1)},${D.Y(p[1]).toFixed(1)}`).join(' ');
+    if (g.sub === 'volume') {
+      const mir = out.map((p) => (g.axis === 'x' ? [p[0], -p[1]] : [-p[0], p[1]]));
+      s('polygon', { points: path(mir), fill: 'none', stroke: EDGE, 'stroke-width': 1.3, 'stroke-dasharray': '6 4' }, D.root);
+      const ax = g.axis === 'x' ? [[Math.min(...xs) - e * 0.05, 0], [Math.max(...xs) + e * 0.05, 0]] : [[0, Math.min(...ys) - e * 0.05], [0, Math.max(...ys) + e * 0.05]];
+      s('line', { x1: D.X(ax[0][0]), y1: D.Y(ax[0][1]), x2: D.X(ax[1][0]), y2: D.Y(ax[1][1]), stroke: COL.cable, 'stroke-width': 2, 'stroke-dasharray': '10 4 2 4' }, D.root);
+    }
+    if (g.sub === 'line') s('polyline', { points: path(out), fill: 'none', stroke: COL.cable, 'stroke-width': 4, 'stroke-linecap': 'round' }, D.root);
+    else s('polygon', { points: path(out), fill: FILL, stroke: EDGE, 'stroke-width': 1.8 }, D.root);
+    // a typical strip (or a short piece of the rod) a little past the middle
+    const k = Math.round(g.samp.length * 0.62), p = g.samp[k], p2 = g.samp[Math.min(g.samp.length - 1, k + 6)];
+    if (g.sub === 'line') s('polyline', { points: path(g.samp.slice(k, k + 7).map((q) => P(q[0], q[1]))), fill: 'none', stroke: UCOL, 'stroke-width': 6 }, D.root);
+    else s('polygon', { points: path([P(p[0], p[2]), P(p[0], p[1]), P(p2[0], p2[1]), P(p2[0], p2[2])]), fill: UCOL, opacity: 0.55, stroke: UCOL, 'stroke-width': 1.2 }, D.root);
+    const mid = P((p[0] + p2[0]) / 2, g.sub === 'line' ? p[1] : (p[1] + p[2]) / 2), lab = g.sub === 'line' ? 'ds' : `d${g.v}`;
+    if (g.sub === 'line') T(D.root, D.X(mid[0]) - 12, D.Y(mid[1]) + 4, lab, { anchor: 'end', color: UCOL, size: 12, weight: 800 });
+    else T(D.root, D.X(mid[0]) + (g.byX ? 0 : 10), D.Y(mid[1]) + (g.byX ? -6 : 4) - (g.byX ? Math.abs(D.Y(p[1]) - D.Y(p[2])) / 2 + 6 : 0), lab, { anchor: g.byX ? 'middle' : 'start', color: UCOL, size: 12, weight: 800 });
+    // centroid, centre of mass or centre of pressure
+    let C = null, name = 'C';
+    if (g.sub === 'area' || g.sub === 'line') C = [g.xc, g.yc];
+    else if (g.sub === 'volume') { const c0 = g.cM != null ? g.cM : g.cV; C = g.axis === 'x' ? [c0, 0] : [0, c0]; name = g.cM != null ? 'G' : 'C'; }
+    else { C = [g.xP, g.yP]; name = 'P'; }
+    const cx = D.X(C[0]), cy = D.Y(C[1]);
+    s('circle', { cx, cy, r: 6, fill: '#fff', stroke: CCOL, 'stroke-width': 2.4 }, D.root); s('circle', { cx, cy, r: 2.2, fill: CCOL }, D.root);
+    if (g.sub === 'fluid') { const fh = 60; s('line', { x1: cx - fh, y1: cy - fh * 0.0, x2: cx - 9, y2: cy, stroke: CCOL, 'stroke-width': 2.6 }, D.root); s('polygon', { points: `${cx - 7},${cy} ${cx - 18},${cy - 5} ${cx - 18},${cy + 5}`, fill: CCOL }, D.root); }
+    const txt = g.sub === 'fluid' ? (opt.showP ? `F_R = ${fmt(g.F)} ${g.Fu} at (${fmt(C[0])}, ${fmt(C[1])})` : 'F_R') : opt.showP ? `${name} (${fmt(C[0])}, ${fmt(C[1])}) ${Lu}` : name;
+    T(D.root, cx + 10, cy - 10, txt, { color: CCOL, size: 12, weight: 800 });
+  }
+  function drawInteg3D(v, res) {
+    const g = res.geo, out = integOutline(g), xs = out.map((p) => p[0]), ys = out.map((p) => p[1]);
+    const e = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1e-9);
+    v._hs = e * 0.05;
+    if (g.sub === 'volume') {
+      // revolve about the view's vertical axis: the axis coordinate goes up, the distance from the axis goes out
+      const prof = out.map((p) => (g.axis === 'x' ? [Math.abs(p[1]), p[0]] : [Math.abs(p[0]), p[1]]));
+      v.lathe(prof, FILL, 1, null, 48);
+      const c0 = g.cM != null ? g.cM : g.cV, lo = Math.min(...prof.map((p) => p[1])), hi = Math.max(...prof.map((p) => p[1]));
+      v.line([[0, lo - e * 0.15, 0], [0, hi + e * 0.15, 0]], COL.cable, 2);
+      v.label([e * 0.05, c0, 0], g.cM != null ? 'G' : 'C', CCOL);
+    } else if (g.sub === 'line') {
+      // the rod as a thin bar: the curve offset to both sides, extruded a little
+      const t = e * 0.012, nrm = out.map((p, i) => { const a = out[Math.max(0, i - 1)], b = out[Math.min(out.length - 1, i + 1)], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [-(b[1] - a[1]) / L, (b[0] - a[0]) / L]; });
+      v.extrude(out.map((p, i) => [p[0] + nrm[i][0] * t, p[1] + nrm[i][1] * t]).concat(out.map((p, i) => [p[0] - nrm[i][0] * t, p[1] - nrm[i][1] * t]).reverse()), -t, t, '#8d98a3', 1, null);
+      v.label([g.xc, g.yc, 0], 'C', CCOL);
+    } else {
+      v.extrude(out, -e * 0.02, e * 0.02, FILL, 1, EDGE);
+      const C = g.sub === 'fluid' ? [g.xP, g.yP] : [g.xc, g.yc];
+      if (g.sub === 'fluid') { const z = e * 0.4; v.line([[C[0], C[1], z], [C[0], C[1], e * 0.025]], CCOL, 3); v.label([C[0], C[1], z], 'F_R', CCOL); }
+      else v.label([C[0], C[1], e * 0.03], 'C', CCOL);
+    }
+    v.autoBounds();
+  }
+
   M.draw3D = function (v, res, U, opt) {
     const k = res.geo.kind;
-    (k === 'area' ? drawArea3D : k === 'inclined' ? drawInclined3D : k === 'line' ? drawLine3D : k === 'volume' ? drawVolume3D : drawPappus3D)(v, res, U, opt);
+    (k === 'integ' ? drawInteg3D : k === 'area' ? drawArea3D : k === 'inclined' ? drawInclined3D : k === 'line' ? drawLine3D : k === 'volume' ? drawVolume3D : drawPappus3D)(v, res, U, opt);
   };
 
   /* ------------------------------------------------------------------ */
@@ -404,7 +514,23 @@
   const R = (x, y, b, h, hole) => ({ kind: 'rect', x, y, b, h, rot: 0, hole: !!hole });
   const ZSEC = [R(-300, 50, 100, 300), R(-300, -50, 600, 100), R(200, -350, 100, 300)];
   const kIx = 'Ī_x about the centroidal x′ axis', kIy = 'Ī_y about the centroidal y′ axis', kMax = 'Maximum principal moment of inertia I_max', kMin = 'Minimum principal moment of inertia I_min';
+  const IGS = (lu, o) => ({ mode: 'integ', lu, ig: Object.assign({ kind: 'area', var: 'x', f: 'x', g: '0', a: 0, b: 1, axis: 'x', rho: '1', w: 0, d0: 2, theta: 90, gam: 9810, p0: 0 }, o) });
   M.presets = [
+    { name: 'Test: Prob. 9-13 and 9-14, area above y = 4 − x²/16 under y = 4: x̄ = 6 m, ȳ = 2.8 m', units: 'SI', state: IGS('m', { f: '4', g: '4 - x^2/16', a: 0, b: 8 }),
+      expect: [{ k: 'x̄', v: 6 }, { k: 'ȳ', v: 2.8 }, { k: 'Area A', v: 10.667 }] },
+    { name: 'Test: closed form, 3 × 2 rectangle by integration: I_x = b h³/3 = 18, I_y = h b³/3 = 8', units: 'SI', state: IGS('m', { f: '3', g: '0', a: 0, b: 2 }),
+      expect: [{ k: 'I_x', v: 18 }, { k: 'I_y', v: 8 }, { k: 'Ī_x (centroidal)', v: 4.5 }] },
+    { name: 'Test: Prob. 9-1, rod bent as y = 2x², x̄ = 0.620 ft', units: 'US', state: IGS('ft', { kind: 'line', f: '2x^2', a: 0, b: 1, w: 0.5 }),
+      expect: [{ k: 'x̄', v: 0.6195 }] },
+    { name: 'Test: Prob. 9-45, bell-shaped volume z = y² revolved: ȳ = 0.833 ft', units: 'US', state: IGS('ft', { kind: 'volume', f: 'x^2', a: 0, b: 1, axis: 'x' }),
+      expect: [{ k: 'Centroid of the volume x̄', v: 0.8333 }] },
+    { name: 'Test: Probs. 9-37 and 9-38, cone: centroid 3h/4, centre of mass 4h/5 with ρ growing from the tip', units: 'SI', state: IGS('m', { kind: 'volume', f: 'x/3', a: 0, b: 4, axis: 'x', rho: 'x' }),
+      expect: [{ k: 'Centroid of the volume x̄', v: 3 }, { k: 'Centre of mass x_G', v: 3.2 }] },
+    { name: 'Test: closed form, hemisphere of radius 1 revolved about y: ȳ = 3r/8', units: 'SI', state: IGS('m', { kind: 'volume', var: 'x', f: 'sqrt(1 - x^2)', a: 0, b: 1, axis: 'y' }),
+      expect: [{ k: 'Centroid of the volume ȳ', v: 0.375 }] },
+    { name: 'Test: Prob. 9-121, side A of a tank: water 4 m deep on a 2 m wide wall, F_R = 157 kN', units: 'SI', state: IGS('m', { kind: 'fluid', var: 'y', f: '2', g: '0', a: 0, b: 4, d0: 4, theta: 90, gam: 9810 }),
+      expect: [{ k: 'Resultant force F_R', v: 156960 }, { k: 'y_P (centre of pressure)', v: 1.3333 }] },
+    { name: 'Trapezoidal gate inclined at 60°, water above its top edge', units: 'US', state: IGS('ft', { kind: 'fluid', var: 'y', f: '2 + y/4', g: '-2 - y/4', a: 0, b: 4, d0: 6, theta: 60, gam: 62.4 }) },
     { name: 'Test: Z section, Ī_x = 2.90(10⁹) mm⁴, I_max = 7.54(10⁹) mm⁴ at 57.1°', units: 'SI',
       state: { mode: 'area', lu: 'mm', area: { shape: 'custom', theta: 30, parts: ZSEC } },
       expect: [{ k: kIx, v: 2.90e9 }, { k: kIy, v: 5.60e9 }, { k: 'Product of inertia Ī_xy (centroidal)', v: -3.00e9 }, { k: kMax, v: 7.54e9 }, { k: kMin, v: 0.960e9 }, { k: 'Angle to the I_max axis θ_p1 (↺ from x)', v: 57.1 }] },
