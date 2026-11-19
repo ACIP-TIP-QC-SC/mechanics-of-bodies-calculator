@@ -3,7 +3,7 @@
  * ===================================================================== */
 (function (root) {
   'use strict';
-  const { Core, UI, Charts, Pkin, DY, DYUI, Stack } = root;
+  const { Core, UI, Charts, Pkin, DY, DYUI, Stack, DWedgeUI: XW } = root;
   const text = (sec, C, label, get, set) => C.text(sec, { label, get, set });
   const { fmt } = Core;
   const K = DYUI.K, CA = '#2f7fc1', CB = '#d4612a', SPR = '#2c3e50', D2R = Math.PI / 180;
@@ -21,7 +21,8 @@
     const ml = u.us ? 'Weight W' : 'Mass m';
     let sec = C.section(c, 'Scene');
     C.select(sec, { label: 'Scene', get: () => st.scene, set: (v) => (st.scene = v), options: [
-      ['block', 'Block on a floor or incline'], ['pulley', 'Two blocks joined by a cord'], ['spring', 'Block and spring'], ['curve', 'Car on a flat or banked curve'], ['circle', 'Particle on a vertical circle'], ['stack', 'Stacked blocks and plates'], ['cyl', 'Particle in cylindrical coordinates (r, θ, z)'], ['power', 'Vehicle or hoist driven by a motor (power)'], ['orbit', 'Satellite or rocket in orbit (central force)']] });
+      ['block', 'Block on a floor or incline'], ['pulley', 'Two blocks joined by a cord'], ['spring', 'Block and spring'], ['curve', 'Car on a flat or banked curve'], ['circle', 'Particle on a vertical circle'], ['stack', 'Stacked blocks and plates'], ['wedge', 'Block on a wedge pushed along a floor'], ['cyl', 'Particle in cylindrical coordinates (r, θ, z)'], ['power', 'Vehicle or hoist driven by a motor (power)'], ['orbit', 'Satellite or rocket in orbit (central force)']] });
+    if (XW.SCENES.includes(st.scene)) return XW.controls(c, C, st, u);
     if (st.scene === 'block') {
       C.seg(sec, { label: 'Method', get: () => st.method, set: (v) => (st.method = v), options: [['force', 'ΣF = ma'], ['impulse', 'Impulse'], ['work', 'Work and energy'], ['stop', 'Stopping distance']] });
       sec = C.section(c, 'Block and surface');
@@ -144,6 +145,7 @@
   };
   M.diagram = function (c, C) {
     const st = S();
+    if (XW.SCENES.includes(st.scene)) return XW.diagram(c, C, st);
     C.toggle(c, { label: st.scene === 'pulley' ? 'Free-body diagrams of A and B' : st.scene === 'stack' ? 'Free-body diagrams of the blocks' : st.scene === 'cyl' ? 'Forces on the particle' : st.scene === 'power' ? 'Forces on the vehicle' : st.scene === 'orbit' ? 'Distances on the orbit' : 'Free-body and kinetic diagrams', get: () => dopt('fbd', true), set: (v) => (st.fbd = v), rebuild: false });
     if (st.scene !== 'curve') C.toggle(c, { label: 'Velocity and acceleration arrows', get: () => dopt('showV', true), set: (v) => (st.showV = v), rebuild: false });
     if (st.scene === 'stack' && st.blocks.length > 3) C.select(c, { label: 'Free-body diagrams of', get: () => dopt('fbdOf', 'ends'), set: (v) => (st.fbdOf = v), rebuild: false, options: [['ends', 'The bottom and top blocks']].concat(st.blocks.map((b, i) => [String(i), `Block ${String(b.name || '').trim() || Stack.NAMES[i]}`])) });
@@ -153,11 +155,11 @@
   M.compute = (U) => Pkin.solve(S(), U);
   M.onUnits = (from, to) => Pkin.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => ({ block: 'Block, free-body and kinetic diagrams', pulley: 'Blocks, cord and pulleys', spring: 'Block and spring', curve: 'Section through the road', circle: 'Particle on a vertical circle', stack: 'Stacked blocks and their free-body diagrams', cyl: S().qplane === 'vertical' ? 'Path in the vertical plane' : 'Top view of the path', power: 'Vehicle and the force that drives it', orbit: 'Orbit in its plane' }[S().scene]);
+  M.cap2D = () => (XW.SCENES.includes(S().scene) ? XW.cap2D(S()) : { block: 'Block, free-body and kinetic diagrams', pulley: 'Blocks, cord and pulleys', spring: 'Block and spring', curve: 'Section through the road', circle: 'Particle on a vertical circle', stack: 'Stacked blocks and their free-body diagrams', cyl: S().qplane === 'vertical' ? 'Path in the vertical plane' : 'Top view of the path', power: 'Vehicle and the force that drives it', orbit: 'Orbit in its plane' }[S().scene]);
   M.cap3D = () => '3D view';
-  M.plotCaption = () => ({ curve: 'Friction needed against speed', circle: 'Speed and normal force around the circle', stack: 'Velocity of each block against time', cyl: 'Forces along the path (same rates)', power: 'Power input against speed', orbit: 'Distance and speed around the orbit' }[S().scene] || 'Work and kinetic energy');
-  M.hint = () => 'Press Play to watch the motion. Forces are in red on the free-body diagram; the kinetic diagram shows ma.';
-  M.legend = () => [[K.force, 'Force'], [K.vel, 'Velocity'], [K.acc, 'Acceleration or ma'], [K.ink, 'Cord, track or support', 'ln']];
+  M.plotCaption = () => (XW.SCENES.includes(S().scene) ? XW.plotCaption(S()) : { curve: 'Friction needed against speed', circle: 'Speed and normal force around the circle', stack: 'Velocity of each block against time', cyl: 'Forces along the path (same rates)', power: 'Power input against speed', orbit: 'Distance and speed around the orbit' }[S().scene] || 'Work and kinetic energy');
+  M.hint = () => XW.SCENES.includes(S().scene) ? XW.hint(S()) : 'Press Play to watch the motion. Forces are in red on the free-body diagram; the kinetic diagram shows ma.';
+  M.legend = () => XW.SCENES.includes(S().scene) ? XW.legend(S()) : [[K.force, 'Force'], [K.vel, 'Velocity'], [K.acc, 'Acceleration or ma'], [K.ink, 'Cord, track or support', 'ln']];
   const motion = DYUI.motion(S, () => (root.App && root.App.res && root.App.res.geo ? root.App.res.geo.span : [0, 1]), { idle: 'starting position' });
   M.anim = () => motion;
   const uNow = () => S()._u;
@@ -204,6 +206,7 @@
   /* ------------------------------------------------------------------ */
   M.draw2D = function (svg, res, U, opt) {
     const g = res.geo;
+    if (XW.SCENES.includes(g.scene)) return XW.draw2D(svg, g, opt, uNow(), S());
     return ({ block: block2D, pulley: pulley2D, spring: spring2D, curve: curve2D, circle: circle2D, stack: stack2D, cyl: cyl2D, power: power2D, orbit: orbit2D })[g.scene](svg, g, opt);
   };
   const tNow = (g) => (uNow() === undefined ? (g.scene === 'block' || g.scene === 'pulley' || g.scene === 'stack' ? g.span[1] : 0) : g.span[0] + (g.span[1] - g.span[0]) * uNow());
@@ -689,6 +692,7 @@
   /* ------------------------------------------------------------------ */
   M.plot = function (svg, res) {
     const g = res.geo, u = g.u;
+    if (XW.SCENES.includes(g.scene)) return XW.plot(svg, g, uNow());
     if (g.scene === 'curve') {
       const vmax = Math.max(g.v * 1.6, isFinite(g.vMax) ? g.vMax * 1.3 : 0, g.vNo * 1.6, 1), pts = [], up = [], dn = [];
       for (let i = 0; i <= 200; i++) { const v = (vmax * i) / 200, th = g.th * D2R, N = g.m * (u.g * Math.cos(th) + (v * v / g.r) * Math.sin(th)), F = g.m * ((v * v / g.r) * Math.cos(th) - u.g * Math.sin(th)); pts.push([v, F / N]); up.push([v, g.mu]); dn.push([v, -g.mu]); }
@@ -746,6 +750,7 @@
   }
   M.draw3D = function (v, res, U, opt) {
     const g = res.geo, u0 = uNow() === undefined ? null : uNow();
+    if (XW.SCENES.includes(g.scene)) return XW.draw3D(v, g, uNow());
     if (g.scene === 'block' || g.scene === 'spring') {
       const th = g.th * D2R, e = [Math.cos(th), Math.sin(th), 0], Ls = 10, wB = g.scene === 'block' ? 1.6 : 1.2, hB = g.scene === 'block' ? 1.1 : 0.9;
       if (th > 1e-9 && g.th < 89.999) v.extrude([[0, 0], [Ls * e[0], Ls * e[1]], [Ls * e[0], 0]], -1.2, 1.2, '#d5dbe1', 1, K.edge);
@@ -942,7 +947,7 @@
       state: P0({ scene: 'cyl', qgiven: 'central', qrt: '1.2 - 0.2 t', qt: 3, qr0: 1.2, qw0: 2, qm: 0.3, qplane: 'horizontal', qspr: false, qfind: 'cable', qhc: 0 }) },
     { name: 'Bead pushed along a spiral tube in a vertical plane, with a spring from O', units: 'SI',
       state: P0({ scene: 'cyl', qgiven: 'theta', qr: '0.3 + 0.05 θ', qz: '0', qth: 60, qrate: 'force', qPt: 4, qv: 1.5, qm: 0.4, qplane: 'vertical', qspr: true, qk: 20, qL0: 0.2, qfind: 'path' }) },
-  ];
+  ].concat(XW.presets(P0));
 
   root.DPkin = M;
 })(window);

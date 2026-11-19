@@ -1073,6 +1073,51 @@ group('dynamics: stacked blocks', () => {
   truthy('lifting P fails', !run({ ktask: 'motion', blocks: [B('A', 1, 0.3)], kP: 100, kal: 80, kon: 0 }, 'SI').ok);
 });
 
+group('dynamics: block on a wedge pushed along a floor', () => {
+  const run = (o, sys) => Pkin.solve(Object.assign(Pkin.defaults(), { scene: 'wedge' }, o), U[sys]);
+  const smooth = { wmA: 10, wmB: 10, wth: 30, wmus: 0, wmuk: 0, wmuf: 0 };
+  let r = run(Object.assign({ wtask: 'range' }, smooth), 'SI');
+  close('13-46 P = 2mg tan θ (10 kg, 30°)', out(r, 'Largest P with A at rest on B'), 2 * 10 * 9.81 * Math.tan(Math.PI / 6), 1e-9);
+  close('13-46 a = g tan θ', out(r, 'Acceleration at the largest P'), 9.81 * Math.tan(Math.PI / 6), 1e-9);
+  close('13-46 smooth: one P only', out(r, 'Smallest P with A at rest on B'), out(r, 'Largest P with A at rest on B'), 1e-9);
+  close('13-46 N = mg/cos θ', out(r, 'Normal force between A and B at the largest P'), 98.1 / Math.cos(Math.PI / 6), 1e-9);
+  r = run({ wtask: 'range', wmA: 20, wmB: 20, wth: 40, wmus: 0, wmuf: 0 }, 'US');
+  close('13-46 in U.S. units: 20 lb each at 40°, P = 2W tan θ', out(r, 'Largest P with A at rest on B'), 40 * Math.tan(40 * Math.PI / 180), 1e-9);
+  // Hand check (not from the book), μ_s = 0.3 on the face, μ = 0.2 on the floor, 10 kg each, θ = 30°:
+  // a_max = 9.81(0.5 + 0.3·0.8660)/(0.8660 − 0.3·0.5) = 9.81(0.75981)/(0.71603) = 10.410 m/s²; N = 98.1/0.71603 = 137.01 N
+  // P_max = 20(10.410 + 0.2·9.81) = 247.44 N
+  // a_min = 9.81(0.5 − 0.25981)/(0.8660 + 0.15) = 9.81(0.24019)/(1.01603) = 2.3191 m/s²; P_min = 20(2.3191 + 1.962) = 85.62 N
+  r = run({ wtask: 'range', wmA: 10, wmB: 10, wth: 30, wmus: 0.3, wmuf: 0.2 }, 'SI');
+  close('rough wedge P_max', out(r, 'Largest P with A at rest on B'), 247.44, 1e-4); close('rough wedge N at P_max', out(r, 'Normal force between A and B at the largest P'), 137.01, 1e-4);
+  close('rough wedge P_min', out(r, 'Smallest P with A at rest on B'), 85.62, 2e-4); close('rough wedge a_min', out(r, 'Acceleration at the smallest P'), 2.3191, 1e-4);
+  truthy('one highlighted result', r.out.filter((o) => o.hl).length === 1);
+  r = run({ wtask: 'range', wth: 60, wmus: 0.6 }, 'SI'); truthy('μ_s ≥ cot θ: no upper limit', r.ok && out(r, 'Largest P with A at rest on B') === 'no upper limit');
+  r = run({ wtask: 'range', wth: 15, wmus: 0.5 }, 'SI'); close('μ_s ≥ tan θ: A holds with no push', out(r, 'Smallest P with A at rest on B'), 0, 1e-12);
+  // Hand check, smooth, P = 50 N: A slips down the face. With a_rel up the face,
+  //   A_y: 10(0.5)a_rel = 0.8660N − 98.1;  B_x: 10a_B = 50 − 0.5N;  A_x: 10(a_B − 0.8660 a_rel) = 0.5N
+  //   → 5 − 0.05N − 0.866(0.1732N − 19.62) = 0.05N → N = 21.991/0.25 = 87.96 N, a_B = 0.602 m/s², a_rel = −4.385 m/s².
+  r = run(Object.assign({ wtask: 'given', wP: 50 }, smooth), 'SI');
+  close('smooth push N', out(r, 'Normal force between A and B, N'), 87.96, 2e-4); close('smooth push a_B', out(r, 'Acceleration of B, a_B (+ along P)'), 0.6017, 5e-4);
+  close('smooth push a_A/B', out(r, 'Acceleration of A relative to B, a_A/B (+ up the face)'), -4.385, 5e-4);
+  close('smooth push floor N_f = W_B + N cos θ', out(r, 'Floor normal force N_f'), 98.1 + 87.96 * Math.cos(Math.PI / 6), 2e-4);
+  // inside the range the pair moves together: P = 150 N gives a = 150/20 − 0.2(9.81) = 5.538 m/s²
+  r = run({ wtask: 'given', wmA: 10, wmB: 10, wth: 30, wmus: 0.3, wmuk: 0.25, wmuf: 0.2, wP: 150 }, 'SI');
+  close('inside the range: a_B', out(r, 'Acceleration of B, a_B (+ along P)'), 5.538, 1e-9); close('inside the range: no slip', out(r, 'Acceleration of A relative to B, a_A/B (+ up the face)'), 0, 1e-12);
+  // the floor holds B (μ = 0.5) and A slides down a fixed incline: a_rel = −g(sin θ − μ_k cos θ) = −2.356 m/s²
+  r = run({ wtask: 'given', wmA: 10, wmB: 10, wth: 30, wmus: 0.3, wmuk: 0.3, wmuf: 0.5, wP: 0 }, 'SI');
+  close('floor holds: a_B', out(r, 'Acceleration of B, a_B (+ along P)'), 0, 1e-12); close('floor holds: A slides', out(r, 'Acceleration of A relative to B, a_A/B (+ up the face)'), -9.81 * (0.5 - 0.3 * Math.cos(Math.PI / 6)), 1e-9);
+  // units round trip
+  const st = Object.assign(Pkin.defaults(), { scene: 'wedge', wtask: 'given', wmA: 10, wmB: 10, wth: 30, wmus: 0.3, wmuk: 0.25, wmuf: 0.2, wP: 300 }), a = Pkin.solve(st, U.SI);
+  Pkin.convertState(st, 'SI', 'US'); const b = Pkin.solve(st, U.US); Pkin.convertState(st, 'US', 'SI'); const c = Pkin.solve(st, U.SI);
+  close('units: a_B in ft/s²', out(b, 'Acceleration of B, a_B (+ along P)'), out(a, 'Acceleration of B, a_B (+ along P)') / 0.3048, 2e-3);
+  close('units: round trip N', out(c, 'Normal force between A and B, N'), out(a, 'Normal force between A and B, N'), 1e-4);
+  // validation
+  r = run({ wth: 90 }, 'SI'); truthy('θ = 90° fails', !r.ok && /between 0° and 90°/.test(r.err[0]));
+  r = run({ wmA: 0 }, 'SI'); truthy('zero mass fails', !r.ok && /block A and of wedge B/.test(r.err[0]));
+  r = run({ wmuf: -0.1 }, 'SI'); truthy('negative μ fails', !r.ok && /cannot be negative/.test(r.err[0]));
+  r = run({ wtask: 'given', wP: '' }, 'SI'); truthy('missing P fails', !r.ok && /push P/.test(r.err[0]));
+});
+
 group('dynamics: cylindrical components and motor power', () => {
   const run = (o, sys) => Pkin.solve(Object.assign(Pkin.defaults(), o), U[sys]);
   let r = run({ scene: 'cyl', qfind: 'arm' }, 'SI');

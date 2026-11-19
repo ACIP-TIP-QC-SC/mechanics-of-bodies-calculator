@@ -8,7 +8,8 @@
  * Scenes: a block on a floor or incline pushed or pulled by a force, two blocks joined by a cord
  * over pulleys, a block launched by (or landing on) a spring, a car on a flat or banked curve,
  * a particle moving on a vertical circle (inside a track, on a cord, or over a dome), and blocks
- * stacked on one another (dy/stack.js), forces in cylindrical coordinates (dy/cylkin.js), and the power
+ * stacked on one another (dy/stack.js), a block on a wedge pushed along a floor (dy/wedge.js),
+ * forces in cylindrical coordinates (dy/cylkin.js), and the power
  * of a motor driving a vehicle or hoist (dy/motor.js), and satellites and rockets in orbit (dy/orbit.js).
  * Static friction is always checked before motion is assumed.
  * ===================================================================== */
@@ -17,6 +18,7 @@
   const Core = root.Core || require('../shared/core.js');
   const DY = root.DY || require('./dycore.js');
   const Stack = root.Stack || require('./stack.js');
+  const Wedge = root.WedgePair || require('./wedge.js');
   const CylKin = root.CylKin || require('./cylkin.js');
   const Motor = root.Motor || require('./motor.js');
   const Orbit = root.Orbit || require('./orbit.js');
@@ -39,6 +41,8 @@
       kind: 'inside', R: 4, cm: 60, phi0: 90, cv0: 0, phi: 30,
       // stacked blocks (dy/stack.js)
       ...Stack.defaults(),
+      // block on a wedge (dy/wedge.js)
+      ...Wedge.defaults(),
       // cylindrical coordinates (dy/cylkin.js) and motor power (dy/motor.js)
       ...CylKin.defaults(),
       ...Motor.defaults(),
@@ -47,7 +51,7 @@
     };
   }
   const KINDS = { m: 'M', P: 'F', k: 'K', s1: 'L', v0: 'V', d: 'L', mA: 'M', mB: 'M', dB: 'L', vB: 'V', d1: 'L', d2: 'L', y0: 'L', sk: 'K', sm: 'M', sv0: 'V', hdrop: 'L', r: 'L', cv: 'V', R: 'L', cm: 'M', cv0: 'V' };
-  function convertState(st, from, to) { DY.convertObj(st, KINDS, from, to); Stack.convert(st, from, to); CylKin.convert(st, from, to); Motor.convert(st, from, to); Orbit.convert(st, from, to); return st; }
+  function convertState(st, from, to) { DY.convertObj(st, KINDS, from, to); Stack.convert(st, from, to); Wedge.convert(st, from, to); CylKin.convert(st, from, to); Motor.convert(st, from, to); Orbit.convert(st, from, to); return st; }
   const sgnTxt = (x, pos, neg) => (Math.abs(x) < 1e-12 ? 'at rest' : x > 0 ? pos : neg);
 
   function solve(st, U) {
@@ -58,6 +62,7 @@
       case 'curve': return curve(st, u);
       case 'circle': return circle(st, u);
       case 'stack': return Stack.solve(st, u);
+      case 'wedge': return Wedge.solve(st, u);
       case 'cyl': return CylKin.solve(st, u);
       case 'power': return Motor.solve(st, u);
       case 'orbit': return Orbit.solve(st, u);
