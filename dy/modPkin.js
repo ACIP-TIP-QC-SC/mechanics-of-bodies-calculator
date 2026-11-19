@@ -80,10 +80,16 @@
     } else if (st.scene === 'cyl') {
       const vert = st.qplane === 'vertical';
       C.seg(sec, { label: 'Plane of motion', get: () => st.qplane, set: (v) => (st.qplane = v), options: [['horizontal', 'Horizontal (z up)'], ['vertical', 'Vertical (θ from the horizontal)']] });
-      C.seg(sec, { label: 'Find', get: () => st.qfind, set: (v) => (st.qfind = v), options: [['comp', 'F_r, F_θ' + (vert ? '' : ', F_z')], ['path', 'Push along a smooth guide'], ['arm', 'Rotating arm and smooth path']] });
+      C.seg(sec, { label: 'Find', get: () => st.qfind, set: (v) => (st.qfind = v), options: [['comp', 'F_r, F_θ' + (vert ? '' : ', F_z')], ['path', 'Push along a smooth guide'], ['arm', 'Rotating arm and smooth path']].concat(vert ? [] : [['cable', 'Cable from a point above O']]) });
+      if (st.qfind === 'cable') num(sec, 'qhc', 'Height of the fixed end of the cable above O, h', u.L);
       sec = C.section(c, 'Path');
-      C.seg(sec, { label: 'Given as', get: () => st.qgiven, set: (v) => (st.qgiven = v), options: [['theta', 'r = f(θ) at an angle'], ['time', 'r(t), θ(t), z(t)']] });
-      if (st.qgiven === 'time') {
+      C.seg(sec, { label: 'Given as', get: () => st.qgiven, set: (v) => (st.qgiven = v), options: [['theta', 'r = f(θ) at an angle'], ['time', 'r(t), θ(t), z(t)'], ['central', 'r(t) with r²θ̇ constant']] });
+      if (st.qgiven === 'central') {
+        text(sec, C, `r(t) (${u.L})`, () => st.qrt, (v) => (st.qrt = v));
+        C.note(sec, 'For ṙ constant write r(t) = r₀ + ṙ t, for example 3 − 0.5 t. No force acts along θ̂, so r²θ̇ = r₀²θ̇₀ throughout.');
+        num(sec, 'qr0', 'Starting radius r₀ (at t = 0)', u.L); num(sec, 'qw0', 'Starting angular rate θ̇₀', 'rad/s');
+        num(sec, 'qt', 'At time t', 's');
+      } else if (st.qgiven === 'time') {
         text(sec, C, `r(t) (${u.L})`, () => st.qrt, (v) => (st.qrt = v));
         text(sec, C, 'θ(t) (rad)', () => st.qtt, (v) => (st.qtt = v));
         if (!vert) text(sec, C, `z(t) (${u.L}, 0 if level)`, () => st.qzt, (v) => (st.qzt = v));
@@ -92,8 +98,9 @@
         text(sec, C, `r = f(θ) (${u.L}, θ in rad)`, () => st.qr, (v) => (st.qr = v));
         if (!vert) text(sec, C, `z = h(θ) (${u.L}, 0 if level)`, () => st.qz, (v) => (st.qz = v));
         num(sec, 'qth', 'At the angle θ', '°');
-        C.seg(sec, { label: 'Rate given as', get: () => st.qrate, set: (v) => (st.qrate = v), options: [['rate', 'θ̇ and θ̈'], ['speed', 'Speed v and v̇']] });
+        C.seg(sec, { label: 'Rate given as', get: () => st.qrate, set: (v) => (st.qrate = v), options: [['rate', 'θ̇ and θ̈'], ['speed', 'Speed v and v̇'], ['force', 'Force along the path and v']] });
         if (st.qrate === 'speed') { num(sec, 'qv', 'Speed v', u.V); num(sec, 'qvd', 'Rate of change of speed v̇', u.A); }
+        else if (st.qrate === 'force') { num(sec, 'qPt', 'Force along the path P_t (+ toward increasing θ)', u.F); num(sec, 'qv', 'Speed v (0 if starting from rest)', u.V); }
         else { num(sec, 'qw', 'Angular rate θ̇', 'rad/s'); num(sec, 'qa', 'Angular acceleration θ̈', 'rad/s²'); }
       }
       C.note(sec, 'Formulas may use + − × ÷ ^, brackets, sin cos tan sqrt exp ln and π, for example 0.2 cos θ + 0.3 or 2θ.');
@@ -415,6 +422,7 @@
     const list = [];
     if (g.find === 'comp') { list.push({ d: ur, v: f.Rr, name: 'F_r' }, { d: ut, v: f.Rth, name: 'F_θ' }); }
     else if (g.find === 'path') { list.push({ d: vec2(f.tr, f.tth), v: f.P, name: 'P' }, { d: vec2(f.nr, f.nth), v: f.N, name: 'N' }); }
+    else if (g.find === 'cable') { list.push({ d: ur, v: -f.T * Math.cos(f.phi), name: 'T cos φ' }); if (Math.abs(f.Rth) > 1e-9 * Math.abs(f.T)) list.push({ d: ut, v: f.Rth, name: 'R_θ' }); }
     else { list.push({ d: ut, v: f.F, name: 'F' }, { d: vec2(f.nr, f.nth), v: f.N, name: 'N' }); }
     if (g.vert) list.push({ d: [0, -1], v: Math.hypot(f.Gr, f.Gth), name: 'W' });
     if (g.spr && Math.abs(f.Fs) > 0) list.push({ d: ur, v: -f.Fs, name: 'F_s' });
@@ -433,7 +441,8 @@
     DYUI.axes(D, [xmin - pad * 0.7, ymin - pad * 0.7], 34 / D.sc, ['x', g.vert ? 'y (up)' : 'y']);
     D.circle([0, 0], 4 / D.sc, { fill: K.ink });
     D.text([0, 0], 'O', { dx: -10, dy: 14, color: K.ink, size: 12, weight: 700 });
-    if (g.find === 'arm') {
+    if (g.find === 'cable') D.line([0, 0], P, { stroke: K.ink, sw: 2 });
+    else if (g.find === 'arm') {
       const L = Math.max(Math.abs(k.r) * 1.25, span * 0.3), e = [Math.cos(k.th) * Math.sign(k.r || 1), Math.sin(k.th) * Math.sign(k.r || 1)], nn = [-e[1] * 0.04 * span, e[0] * 0.04 * span];
       D.poly([[nn[0], nn[1]], [e[0] * L + nn[0], e[1] * L + nn[1]], [e[0] * L - nn[0], e[1] * L - nn[1]], [-nn[0], -nn[1]]], { fill: '#d5dbe1', stroke: K.edge, sw: 1.4, op: 0.9 });
     } else if (g.spr) DYUI.spring(D, [0, 0], P, { n: 10, w: 0.03 * span });
@@ -699,7 +708,7 @@
       return DYUI.stack(svg, [{ label: `r (${g.Lu})`, color: K.ink, pts: rp, at: (x) => o.r(x * D2R) / g.toBase }, { label: `v (${u.V})`, color: K.vel, pts: vp, at: (x) => { const r = o.r(x * D2R); return Math.sqrt(Math.max(0, o.GM * (2 / r - (o.a ? 1 / o.a : 0)))); } }], { xlabel: 'θ from the launch point (°)', cursor: cur / D2R, xmin: -lim / D2R, xmax: lim / D2R });
     }
     if (g.scene === 'cyl') {
-      const [x0, x1] = g.xs, deg = g.by === 'θ', X = (x) => (deg ? x / D2R : x), names = g.find === 'comp' ? [['Rr', 'F_r'], ['Rth', 'F_θ']].concat(g.vert ? [] : [['Rz', 'F_z']]) : g.find === 'path' ? [['P', 'P'], ['N', 'N']] : [['F', 'F (arm)'], ['N', 'N (path)']];
+      const [x0, x1] = g.xs, deg = g.by === 'θ', X = (x) => (deg ? x / D2R : x), names = g.find === 'comp' ? [['Rr', 'F_r'], ['Rth', 'F_θ']].concat(g.vert ? [] : [['Rz', 'F_z']]) : g.find === 'path' ? [['P', 'P'], ['N', 'N']] : g.find === 'cable' ? [['T', 'T (cable)'], ['N', 'N (surface)']] : [['F', 'F (arm)'], ['N', 'N (path)']];
       const pts = names.map(() => []);
       for (let i = 0; i <= 200; i++) { const x = x0 + ((x1 - x0) * i) / 200, f = g.series(x)[1]; names.forEach(([key], j) => { const v = f[key]; if (isFinite(v)) pts[j].push([X(x), v]); }); }
       const cur = X(cylX(g)), cols = [K.force, '#8e44ad', SPR];
@@ -806,6 +815,7 @@
       const k = g.series(cylX(g))[0], p = W3(k), sc = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], 1e-6);
       if (!g.vert) { DYUI.floor3(v, Math.min(lo[0], 0) - 0.1 * sc, Math.max(hi[0], 0) + 0.1 * sc, Math.min(lo[1], 0) - 0.1 * sc, Math.max(Math.abs(lo[2]), Math.abs(hi[2]), 0.1 * sc) + 0.1 * sc); v.line([[0, Math.min(lo[1], 0) - 0.1 * sc, 0], [0, Math.max(hi[1], 0) + 0.2 * sc, 0]], K.ink, 1.4, [4, 3]); v.line([[0, p[1], 0], p], g.find === 'arm' ? '#7f8c8d' : K.ink, g.find === 'arm' ? 5 : 1.2); }
       else v.line([[0, 0, 0], p], g.find === 'arm' ? '#7f8c8d' : K.ink, g.find === 'arm' ? 5 : 1.2);
+      if (g.find === 'cable') { v.line([[0, g.hc, 0], p], K.ink, 2); v.line([[0, Math.min(lo[1], 0), 0], [0, g.hc, 0]], '#7f8c8d', 5); hi[1] = Math.max(hi[1], g.hc); }
       DYUI.sphere(v, p, 0.05 * sc, CA);
       v.setBounds([Math.min(lo[0], 0) - 0.1 * sc, Math.min(lo[1], 0) - 0.1 * sc, Math.min(lo[2], 0) - 0.1 * sc], [Math.max(hi[0], 0) + 0.1 * sc, Math.max(hi[1], 0) + 0.2 * sc, Math.max(hi[2], 0) + 0.1 * sc]);
       return;
@@ -922,6 +932,16 @@
     { name: 'Satellite launched at 9 km/s, 7000 km from the earth\'s centre', units: 'SI', state: P0({ scene: 'orbit', otask: 'launch', oMf: 1, oAlt: false, oRe: 6378, oR0: 7000, oV0: 9000 }) },
     { name: 'Block on a table pulled by a hanging block, μ_k = 0.2', units: 'SI', state: P0({ scene: 'pulley', onA: 'table', mA: 10, mB: 5, nA: 1, nB: 1, mus: 0.3, muk: 0.2, find: 'time', t: 2 }) },
     { name: 'Edge: P lifts the block off the floor (fails on purpose)', units: 'SI', fails: true, state: P0({ scene: 'block', method: 'force', m: 5, th: 0, P: 100, al: 80, t: 2 }) },
+    { name: 'Test: Problem 13–92, 50 kg sled on ice drawn in by a cable from 1 m above O, r from 3 m at −0.5 m/s with θ̇₀ = 0.1 rad/s, at r = 2 m (T = 5.66 N)', units: 'SI',
+      state: P0({ scene: 'cyl', qgiven: 'central', qrt: '3 - 0.5 t', qt: 2, qr0: 3, qw0: 0.1, qm: 50, qplane: 'horizontal', qspr: false, qfind: 'cable', qhc: 1 }),
+      expect: [{ k: 'Cable tension T', v: 5.660 }, { k: 'Angular velocity θ̇', v: 0.225 }, { k: 'Radial acceleration a_r', v: -0.10125 }, { k: 'Cable angle φ below the horizontal', v: 26.57 }] },
+    { name: 'Test: Problem 13–95, 0.5 kg ball driven along a level spiral tube r = 0.2e^(0.1θ) m by 6 N along the path, at θ = 90° (a_t = 12 m/s², ψ = 84.3°)', units: 'SI',
+      state: P0({ scene: 'cyl', qgiven: 'theta', qr: '0.2 exp(0.1 θ)', qz: '0', qth: 90, qrate: 'force', qPt: 6, qv: 0, qm: 0.5, qplane: 'horizontal', qspr: false, qfind: 'path' }),
+      expect: [{ k: 'Tangential acceleration a_t = v̇', v: 12 }, { k: 'Angle ψ from r to the tangent', v: 84.29 }] },
+    { name: 'Puck on a level table, its cord drawn down through a hole at O at 0.2 m/s', units: 'SI',
+      state: P0({ scene: 'cyl', qgiven: 'central', qrt: '1.2 - 0.2 t', qt: 3, qr0: 1.2, qw0: 2, qm: 0.3, qplane: 'horizontal', qspr: false, qfind: 'cable', qhc: 0 }) },
+    { name: 'Bead pushed along a spiral tube in a vertical plane, with a spring from O', units: 'SI',
+      state: P0({ scene: 'cyl', qgiven: 'theta', qr: '0.3 + 0.05 θ', qz: '0', qth: 60, qrate: 'force', qPt: 4, qv: 1.5, qm: 0.4, qplane: 'vertical', qspr: true, qk: 20, qL0: 0.2, qfind: 'path' }) },
   ];
 
   root.DPkin = M;

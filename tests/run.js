@@ -1094,6 +1094,62 @@ group('dynamics: cylindrical components and motor power', () => {
   { const st = Object.assign(Pkin.defaults(), { scene: 'power', pc: 0.3, pa: 1 }); const a = out(Pkin.solve(st, U.SI), 'Power input P_in'); Pkin.convertState(st, 'SI', 'US'); close('power units', out(Pkin.solve(st, U.US), 'Power input P_in') * 745.69987, a, 1e-3); }
 });
 
+group('dynamics: r²θ̇ constant and a cable pulling toward O', () => {
+  const run = (o, sys) => Pkin.solve(Object.assign(Pkin.defaults(), { scene: 'cyl', qplane: 'horizontal', qspr: false }, o), U[sys]);
+  const book = { qgiven: 'central', qrt: '3 - 0.5 t', qt: 2, qr0: 3, qw0: 0.1, qm: 50, qfind: 'cable', qhc: 1 };
+  let r = run(book, 'SI');
+  close('13-92 θ̇ = 9(0.1)/4', out(r, 'Angular velocity θ̇'), 0.225); close('13-92 a_r', out(r, 'Radial acceleration a_r'), -0.10125);
+  close('13-92 φ', out(r, 'Cable angle φ below the horizontal'), 26.57); close('13-92 T', out(r, 'Cable tension T'), 5.66);
+  close('a_θ = 0 when r²θ̇ is constant', out(r, 'Transverse acceleration a_θ'), 0, 1e-9);
+  truthy('13-92 one highlighted result (T)', r.out.filter((o) => o.hl).length === 1 && r.out.find((o) => o.hl).k === 'Cable tension T');
+  // Hand check (not from the book): 0.3 kg puck, cord drawn down through a hole at O (h = 0), r = 1.2 − 0.2t, θ̇₀ = 2 rad/s, t = 3 s.
+  // r = 0.6 m, C = 1.2²(2) = 2.88 m²/s, θ̇ = 2.88/0.36 = 8 rad/s, θ̈ = −2(−0.2)(8)/0.6 = 5.333 rad/s²,
+  // a_r = 0 − 0.6(8²) = −38.4 m/s², T = −m a_r = 11.52 N, N = W = 2.943 N.
+  // The angle turned: θ = ∫ C/r² dt = (C/0.2)(1/r − 1/r₀) = 14.4(1/0.6 − 1/1.2) = 12 rad.
+  r = run({ qgiven: 'central', qrt: '1.2 - 0.2 t', qt: 3, qr0: 1.2, qw0: 2, qm: 0.3, qfind: 'cable', qhc: 0 }, 'SI');
+  close('puck θ̇', out(r, 'Angular velocity θ̇'), 8, 1e-9); close('puck θ̈', out(r, 'Angular acceleration θ̈'), 16 / 3, 1e-6);
+  close('puck T', out(r, 'Cable tension T'), 11.52, 1e-6); close('puck N', out(r, 'Normal force of the surface N'), 2.943, 1e-9);
+  close('puck θ turned', R('dy/cylkin.js').build({ qgiven: 'central', qrt: '1.2 - 0.2 t', qt: 3, qr0: 1.2, qw0: 2 }).at(3).th, 12, 1e-6);
+  // units round trip
+  const st = Object.assign(Pkin.defaults(), { scene: 'cyl', qplane: 'horizontal', qspr: false }, book), a = Pkin.solve(st, U.SI);
+  Pkin.convertState(st, 'SI', 'US'); const b = Pkin.solve(st, U.US); Pkin.convertState(st, 'US', 'SI'); const c = Pkin.solve(st, U.SI);
+  close('units: T in lb', out(b, 'Cable tension T'), 5.66 / 4.4482216, 2e-3); close('units: round trip T', out(c, 'Cable tension T'), out(a, 'Cable tension T'), 1e-4);
+  close('units: θ̇ unchanged in U.S. units', out(b, 'Angular velocity θ̇'), 0.225, 1e-6);
+  // validation and warnings
+  r = run(Object.assign({}, book, { qplane: 'vertical' }), 'SI'); truthy('r²θ̇ constant in a vertical plane fails', !r.ok && /horizontal plane/.test(r.err[0]));
+  r = run(Object.assign({}, book, { qr0: 0 }), 'SI'); truthy('r₀ = 0 fails', !r.ok && /starting radius/.test(r.err[0]));
+  r = run(Object.assign({}, book, { qt: 7 }), 'SI'); truthy('r below zero at the instant fails', !r.ok && /above zero at the instant/.test(r.err[0]));
+  r = run(Object.assign({}, book, { qfind: 'cable', qhc: -1 }), 'SI'); truthy('negative cable height fails', !r.ok && /height of the fixed end/.test(r.err[0]));
+  r = run(Object.assign({}, book, { qrt: '3 + t^2' }), 'SI'); truthy('a cable that would push warns', r.ok && r.warn.some((w) => /would have to push/.test(w)));
+});
+
+group('dynamics: force along a spiral path and the angle ψ', () => {
+  const run = (o, sys) => Pkin.solve(Object.assign(Pkin.defaults(), { scene: 'cyl', qgiven: 'theta', qz: '0', qrate: 'force', qspr: false, qfind: 'path' }, o), U[sys]);
+  const book = { qr: '0.2 exp(0.1 θ)', qth: 90, qPt: 6, qv: 0, qm: 0.5, qplane: 'horizontal' };
+  let r = run(book, 'SI');
+  close('13-95 ψ = tan⁻¹ 10', out(r, 'Angle ψ from r to the tangent'), 84.3); close('13-95 a_t', out(r, 'Tangential acceleration a_t = v̇'), 12);
+  close('13-95 at rest: θ̇ = 0', out(r, 'Angular velocity θ̇'), 0, 1e-12);
+  close('13-95 push along the path equals P_t', out(r, 'Push along the path P'), 6, 1e-9);
+  truthy('13-95 one highlighted result (a_t)', r.out.filter((o) => o.hl).length === 1);
+  // Hand check (not from the book): 1 kg bead in a smooth circular tube r = 0.5 m in a vertical plane, at θ = 0 (level with O),
+  // moving up at v = 1 m/s and pushed along the tube by P_t = 2 N. The tangent there points straight up, so
+  // m v̇ = 2 − 9.81 → v̇ = −7.81 m/s²; θ̇ = v/r = 2 rad/s, θ̈ = v̇/r = −15.62 rad/s²; a_r = −rθ̇² = −2 m/s²,
+  // and the tube supplies the whole radial force: N = m a_r = −2 N (2 N toward O).
+  r = run({ qr: '0.5', qth: 0, qPt: 2, qv: 1, qm: 1, qplane: 'vertical' }, 'SI');
+  close('bead a_t', out(r, 'Tangential acceleration a_t = v̇'), -7.81, 1e-9); close('bead θ̇', out(r, 'Angular velocity θ̇'), 2, 1e-9);
+  close('bead θ̈', out(r, 'Angular acceleration θ̈'), -15.62, 1e-9); close('bead N', out(r, 'Normal force of the guide N (+ away from O)'), -2, 1e-9);
+  // the same rates as the "speed" option when v̇ is entered directly
+  const sp = Pkin.solve(Object.assign(Pkin.defaults(), { scene: 'cyl', qgiven: 'theta', qz: '0', qspr: false, qfind: 'path', qr: '0.5', qth: 0, qrate: 'speed', qv: 1, qvd: -7.81, qm: 1, qplane: 'vertical' }), U.SI);
+  close('force and speed options agree on θ̈', out(sp, 'Normal force of the guide N (+ away from O)'), -2, 1e-9);
+  // units round trip
+  const st = Object.assign(Pkin.defaults(), { scene: 'cyl', qgiven: 'theta', qz: '0', qrate: 'force', qspr: false, qfind: 'path' }, book, { qv: 0.3 }), a = Pkin.solve(st, U.SI);
+  Pkin.convertState(st, 'SI', 'US'); const b = Pkin.solve(st, U.US); Pkin.convertState(st, 'US', 'SI'); const c = Pkin.solve(st, U.SI);
+  close('units: a_t in ft/s²', out(b, 'Tangential acceleration a_t = v̇'), out(a, 'Tangential acceleration a_t = v̇') / 0.3048, 2e-3);
+  close('units: round trip a_t', out(c, 'Tangential acceleration a_t = v̇'), out(a, 'Tangential acceleration a_t = v̇'), 1e-4);
+  r = run(Object.assign({}, book, { qv: -1 }), 'SI'); truthy('negative speed fails', !r.ok && /zero or above/.test(r.err[0]));
+  r = run(Object.assign({}, book, { qPt: '' }), 'SI'); truthy('missing P_t fails', !r.ok && /force along the path/.test(r.err[0]));
+});
+
 group('dynamics: central-force motion', () => {
   const run = (o, sys) => Pkin.solve(Object.assign(Pkin.defaults(), { scene: 'orbit' }, o), U[sys]);
   let r = run({ otask: 'ellipse', oMf: 0.6, oRp: 7600, oRa: 18300 }, 'SI');
