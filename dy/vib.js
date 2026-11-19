@@ -6,9 +6,12 @@
  *   Undamped forced: x_p = (F₀/k)/(1 − (ω₀/ω_n)²) sin ω₀t; support δ₀ sin ω₀t  (22–22, 22–24)
  *   Viscous damped free: c_c = 2mω_n, ζ = c/c_c, ω_d = ω_n√(1 − ζ²)           (22–28 to 22–31)
  *   Damped forced: MF = X/(F₀/k) = 1/√([1 − r²]² + [2ζr]²), tan φ′ = 2ζr/(1 − r²)  (22–35, 22–36)
- * Systems: a mass on springs (in parallel or in series), a simple pendulum, a body swinging on a pin
- * (compound pendulum), a torsional pendulum, a block on a cord over a disk held by a spring, and a
- * cylinder rolling against a spring. Damping and forcing apply to the mass on springs.
+ *   Electrical analog (Table 22–1): Lq̈ + Rq̇ + q/C = E(t) with L ↔ m, R ↔ c, 1/C ↔ k, E ↔ F
+ * Systems: a mass on springs (in parallel or in series, with dampers in parallel), a simple pendulum,
+ * a body swinging on a pin (compound pendulum), a torsional pendulum, a block on a cord over a disk
+ * held by a spring, a cylinder rolling against a spring, and a bar on a pin held by a spring and a
+ * dashpot. Damping applies to the mass on springs and the bar; forcing to the mass on springs, which can
+ * also be set moving by a projectile that embeds in it.
  * ===================================================================== */
 (function (root) {
   'use strict';
@@ -22,11 +25,12 @@
     return {
       sys: 'sm', m: 10, k: 1000, n: 1, arr: 'parallel', vert: false,
       L: 1, body: 'rod', len: 1, r: 0.15, a: 0.2, b: 0.3, kO: 0.3, dG: 0.3, kt: 1.5, md: 5, mb: 10, rs: 0.15, rb: 0.15,
-      damp: 'none', c: 40, zeta: 0.1,
-      exc: 'free', x0: 50, v0: 0.5, th0: 5, w0: 8, F0: 10, d0: 10, m0: 4, e: 60,
+      sa: 1, sb: 0.6,
+      damp: 'none', c: 40, zeta: 0.1, nc: 1,
+      exc: 'free', x0: 50, v0: 0.5, th0: 5, w0: 8, F0: 10, d0: 10, m0: 4, e: 60, mp: 0.02, vp: 300, xt: 0,
     };
   }
-  const KINDS = { m: 'M', k: 'K', L: 'L', len: 'L', r: 'L', a: 'L', b: 'L', kO: 'L', dG: 'L', kt: 'KT', md: 'M', mb: 'M', rs: 'L', rb: 'L', c: 'CD', x0: 'S', v0: 'V', F0: 'F', d0: 'S', m0: 'M', e: 'S' };
+  const KINDS = { m: 'M', k: 'K', L: 'L', len: 'L', r: 'L', a: 'L', b: 'L', kO: 'L', dG: 'L', kt: 'KT', md: 'M', mb: 'M', rs: 'L', rb: 'L', c: 'CD', x0: 'S', v0: 'V', F0: 'F', d0: 'S', m0: 'M', e: 'S', sa: 'L', sb: 'L', mp: 'M', vp: 'V', xt: 'S' };
   function convertState(st, from, to) { return DY.convertObj(st, KINDS, from, to); }
   const BODY = {
     rod: { name: 'Slender rod pinned at one end', I: (m, s) => (m * s.len * s.len) / 3, d: (s) => s.len / 2, f: 'I_O = ⅓mL², d = L/2' },
@@ -40,13 +44,19 @@
     const u = DY.units(U), S = Steps(), out = [], warn = [];
     const g = u.g, sys = st.sys;
     const num = (k) => +st[k];
-    let mEq, kEq, coord = 'x', rot = false, geo = {};
+    let mEq, kEq, coord = 'x', rot = false, geo = {}, vImp = null;
     if (sys === 'sm') {
       if (!(num('m') > 0) || !(num('k') > 0)) return fail('Enter the mass (or weight) and the spring stiffness.');
       const n = Math.round(num('n'));
       if (!(n >= 1 && n <= 8)) return fail('The number of springs must be a whole number from 1 to 8.');
       const m = B(num('m'), 'M', u), k = num('k');
       kEq = st.arr === 'series' ? k / n : k * n; mEq = m;
+      if (st.exc === 'impact') {
+        const mp = B(num('mp'), 'M', u), vp = num('vp');
+        if (!(mp > 0) || !(vp > 0)) return fail('Enter the mass (or weight) and speed of the projectile.');
+        mEq = m + mp; vImp = (mp * vp) / mEq;
+        S.add({ t: 'Projectile embeds (conservation of momentum)', n: 'The impact is too short for the springs to act, so momentum is conserved; the block then starts from equilibrium with speed v′ towards the support (−x), compressing the springs.', f: 'm_p v_p = (m + m_p)v′', s: `${fmt(mp)}(${fmt(vp)}) = (${fmt(m)} + ${fmt(mp)})v′`, r: `v′ = ${fmt(vImp)} ${u.V}, vibrating mass ${DY.massTxt(mEq, u)}` });
+      }
       S.add({ t: 'Equivalent spring', n: n === 1 ? 'One spring.' : st.arr === 'series' ? 'Springs in series carry the same force; their stretches add.' : 'Springs in parallel stretch the same amount; their forces add.',
         f: n === 1 ? 'k_eq = k' : st.arr === 'series' ? '1/k_eq = Σ 1/k' : 'k_eq = Σ k', s: n === 1 ? null : st.arr === 'series' ? `k_eq = ${fmt(k)}/${n}` : `k_eq = ${n}(${fmt(k)})`, r: `k_eq = ${fmt(kEq)} ${u.K}` });
       S.add({ t: 'Equation of motion', n: st.vert ? 'Measured from the static equilibrium position, the weight and the static spring force cancel, so the equation is the same as for horizontal motion.' : (st.damp !== 'none' || st.exc !== 'free' ? 'The spring force −kx' + (st.damp !== 'none' ? ', the damper force −cẋ' : '') + (st.exc !== 'free' ? ' and the periodic force' : '') + ' act on the block.' : 'The spring force −kx is the only horizontal force.'),
@@ -91,24 +101,40 @@
       S.add({ t: 'Energy of the rolling cylinder', n: 'It rolls without slipping, so ω = v/r; the spring is fixed to its centre.', f: 'T = ½mv² + ½I_Gω² = ½(m + I_G/r²)ẋ² = ¾mẋ²;  V = ½kx²', r: `m_eq = ${fmt(mEq)} ${u.Mb}` });
       S.add({ t: 'Time derivative of the energy', f: '(3/2)m ẍ + kx = 0', s: `ω_n² = ${fmt(kEq)}/${fmt(mEq)}` });
       geo = { m, r, k };
+    } else if (sys === 'bar') {
+      if (!(num('m') > 0) || !(num('len') > 0) || !(num('k') > 0)) return fail('Enter the bar, its length and the spring stiffness.');
+      const m = B(num('m'), 'M', u), L = num('len'), a = num('sa'), b = num('sb'), k = num('k');
+      if (!(a > 0 && a <= L)) return fail('The spring must be on the bar: 0 < a ≤ L.');
+      if (st.damp !== 'none' && !(b > 0 && b <= L)) return fail('The dashpot must be on the bar: 0 < b ≤ L.');
+      mEq = (m * L * L) / 3; kEq = k * a * a; coord = 'θ'; rot = true;
+      S.add({ t: 'Moment of inertia about the pin A', n: 'Slender bar pinned at its end A, horizontal at equilibrium.', f: 'I_A = ⅓mL²', s: `I_A = ⅓(${fmt(m)})(${fmt(L)})²`, r: `I_A = ${fmt(mEq)} ${u.I}` });
+      S.add({ t: 'Equation of motion', n: 'Measured from equilibrium the weight and the static spring force cancel. For a small turn θ the spring at a stretches aθ and the dashpot at b moves at bθ̇.', f: '(+↺) ΣM_A = I_Aα:  −(k aθ)a − (c bθ̇)b = I_Aθ̈  ⇒  I_Aθ̈ + cb²θ̇ + ka²θ = 0', s: `k a² = ${fmt(k)}(${fmt(a)})² = ${fmt(kEq)}` });
+      geo = { m, L, a, b, k };
     } else return fail('Pick a system.');
     const wn = Math.sqrt(kEq / mEq), tau = TAU / wn, f = 1 / tau;
-    const wnF = { sm: 'ω_n = √(k_eq/m)', pend: 'ω_n = √(g/L)', comp: 'ω_n = √(mgd/I_O)', tors: 'ω_n = √(k/I_O)', pulley: 'ω_n = √(k_eq/m_eq)', roll: 'ω_n = √(k_eq/m_eq)' }[sys];
+    const wnF = { bar: 'ω_n = √(ka²/I_A)', sm: 'ω_n = √(k_eq/m)', pend: 'ω_n = √(g/L)', comp: 'ω_n = √(mgd/I_O)', tors: 'ω_n = √(k/I_O)', pulley: 'ω_n = √(k_eq/m_eq)', roll: 'ω_n = √(k_eq/m_eq)' }[sys];
     S.add({ t: 'Natural frequency and period', f: wnF + ';  τ = 2π/ω_n;  f = 1/τ', s: `ω_n = √(${fmt(kEq)}/${fmt(mEq)})`, r: `ω_n = ${fmt(wn)} rad/s, τ = ${fmt(tau)} s, f = ${fmt(f)} Hz` });
     out.push({ k: 'Natural frequency ω_n', v: wn, u: 'rad/s', hl: true }, { k: 'Period τ', v: tau, u: 's', hl: true }, { k: 'Frequency f', v: f, u: 'Hz' });
     if (sys === 'sm') out.push({ k: 'Equivalent stiffness k_eq', v: kEq, u: u.K });
     if (sys === 'pulley' || sys === 'roll') out.push({ k: 'Equivalent mass m_eq', v: mEq, u: u.Mb });
     if (sys === 'comp' || sys === 'tors') out.push({ k: 'Moment of inertia I_O', v: mEq, u: u.I });
+    if (sys === 'bar') out.push({ k: 'Moment of inertia I_A', v: mEq, u: u.I }, { k: 'Equivalent stiffness ka²', v: kEq, u: u.MO + '/rad' });
 
-    // damping (spring and mass only)
+    // damping (mass on springs, with dashpots in parallel, and the bar with a dashpot at b)
     let zeta = 0, c = 0, cc = 2 * mEq * wn, wd = wn;
-    const canDF = sys === 'sm';
-    if (canDF && st.damp !== 'none') {
-      if (st.damp === 'c') { c = +st.c; if (!(c >= 0)) return fail('The damping coefficient cannot be negative.'); zeta = c / cc; }
-      else { zeta = +st.zeta; if (!(zeta >= 0)) return fail('The damping factor cannot be negative.'); c = zeta * cc; }
+    const canD = sys === 'sm' || sys === 'bar', canF = sys === 'sm';
+    const cGeo = sys === 'bar' ? geo.b * geo.b : Math.max(1, Math.round(+st.nc || 1)); // c_eq = c × this
+    if (canD && st.damp !== 'none') {
+      if (sys === 'sm' && !(cGeo >= 1 && cGeo <= 4)) return fail('The number of dampers must be from 1 to 4.');
+      if (st.damp === 'c') {
+        const c1 = +st.c; if (!(c1 >= 0)) return fail('The damping coefficient cannot be negative.'); c = c1 * cGeo; zeta = c / cc;
+        if (cGeo !== 1) S.add({ t: 'Equivalent damping', n: sys === 'bar' ? 'The dashpot at b resists with a moment (c bθ̇)b.' : 'Dampers side by side move together; their forces add.', f: sys === 'bar' ? 'c_eq = c b²' : 'c_eq = Σ c', s: sys === 'bar' ? `c_eq = ${fmt(c1)}(${fmt(geo.b)})²` : `c_eq = ${cGeo}(${fmt(c1)})`, r: `c_eq = ${fmt(c)} ${sys === 'bar' ? u.MO + '·s/rad' : u.CD}` });
+      } else { zeta = +st.zeta; if (!(zeta >= 0)) return fail('The damping factor cannot be negative.'); c = zeta * cc; }
       const kind = zeta < 1 - 1e-9 ? 'underdamped' : zeta > 1 + 1e-9 ? 'overdamped' : 'critically damped';
       S.add({ t: 'Damping', f: 'c_c = 2mω_n;  ζ = c/c_c', s: `c_c = 2(${fmt(mEq)})(${fmt(wn)}) = ${fmt(cc)} ${u.CD}`, r: `ζ = ${fmt(zeta)}: the system is ${kind}` });
-      out.push({ k: 'Critical damping c_c', v: cc, u: u.CD }, { k: 'Damping factor ζ = c/c_c', v: zeta, u: '' }, { k: 'Damping coefficient c', v: c, u: u.CD }, { k: 'Type of damping', v: kind, u: '' });
+      out.push({ k: 'Critical damping c_c', v: cc, u: sys === 'bar' ? u.MO + '·s/rad' : u.CD }, { k: 'Damping factor ζ = c/c_c', v: zeta, u: '' }, { k: sys === 'bar' ? 'Equivalent damping c b²' : 'Damping coefficient c (all dampers)', v: c, u: sys === 'bar' ? u.MO + '·s/rad' : u.CD }, { k: 'Type of damping', v: kind, u: '' });
+      if (sys === 'bar') { S.add({ t: 'Dashpot for critical damping', f: '(c b²)_c = c_c  ⇒  c = c_c/b²', s: `c = ${fmt(cc)}/${fmt(geo.b)}²`, r: `c = ${fmt(cc / (geo.b * geo.b))} ${u.CD}` }); out.push({ k: 'Dashpot c for critical damping', v: cc / (geo.b * geo.b), u: u.CD }); }
+      else if (cGeo > 1) out.push({ k: 'Each damper c for critical damping', v: cc / cGeo, u: u.CD });
       if (zeta < 1 - 1e-9) {
         wd = wn * Math.sqrt(1 - zeta * zeta);
         const dlog = (TAU * zeta) / Math.sqrt(1 - zeta * zeta);
@@ -117,8 +143,8 @@
       }
     }
 
-    // excitation
-    let exc = canDF ? st.exc : 'free', X = 0, phiP = 0, w0 = 0, r = 0, F0 = 0, MF = 1, xp = () => 0, vp = () => 0;
+    // excitation (a projectile that embeds only sets the starting velocity)
+    let exc = canF && st.exc !== 'impact' ? st.exc : 'free', X = 0, phiP = 0, w0 = 0, r = 0, F0 = 0, MF = 1, xp = () => 0, vp = () => 0;
     if (exc !== 'free') {
       w0 = +st.w0; if (!(w0 > 0)) return fail('Enter the forcing frequency ω₀.');
       r = w0 / wn;
@@ -136,8 +162,17 @@
       xp = (t) => X * Math.sin(w0 * t - phiP); vp = (t) => X * w0 * Math.cos(w0 * t - phiP);
     }
 
+    if (canD) {
+      const d2 = `${coord}\u0308`, d1 = `${coord}\u0307`, rhs = exc === 'free' ? '0' : `${fmt(F0)} sin ${fmt(w0)}t`;
+      S.add({ t: 'Differential equation of motion', f: `${sys === 'bar' ? 'I_A' : 'm'}${d2} + ${sys === 'bar' ? 'cb²' : 'c'}${d1} + ${sys === 'bar' ? 'ka²' : 'k'}${coord} = ${exc === 'free' ? '0' : 'F₀ sin ω₀t'}`,
+        s: `${fmt(mEq)}${d2} + ${fmt(c)}${d1} + ${fmt(kEq)}${coord} = ${rhs}`, r: `${d2} + ${fmt(c / mEq)}${d1} + ${fmt(kEq / mEq)}${coord} = ${exc === 'free' ? '0' : `${fmt(F0 / mEq)} sin ${fmt(w0)}t`}` });
+      S.add({ t: 'Equivalent electrical circuit', n: 'A series circuit of an inductor, a resistor and a capacitor obeys the same equation for the charge q (Table 22–1): mass ↔ inductance, damping ↔ resistance, stiffness ↔ 1/capacitance, force ↔ voltage.',
+        f: 'L q̈ + R q̇ + q/C = E(t)', s: `L = ${fmt(mEq)}, R = ${fmt(c)}, 1/C = ${fmt(kEq)}${exc === 'free' ? '' : `, E = ${fmt(F0)} sin ${fmt(w0)}t`}`, r: `${fmt(mEq)} q̈ + ${fmt(c)} q̇ + ${fmt(kEq)} q = ${exc === 'free' ? '0' : `${fmt(F0)} sin ${fmt(w0)}t`}` });
+      out.push({ k: 'Analog inductance L (↔ mass)', v: mEq, u: 'H' }, { k: 'Analog resistance R (↔ c)', v: c, u: 'Ω' }, { k: 'Analog capacitance C (↔ 1/k)', v: 1 / kEq, u: 'F' });
+    }
+
     // free response from the initial conditions (the transient, for forced vibration)
-    const x0 = rot ? +st.th0 * D2R : B(+st.x0, 'S', u), v0 = rot ? 0 : +st.v0;
+    const x0 = vImp !== null ? 0 : rot ? +st.th0 * D2R : B(+st.x0, 'S', u), v0 = vImp !== null ? -vImp : rot ? 0 : +st.v0; // the projectile pushes the block towards the support (−x), compressing the springs
     if (!isFinite(x0) || !isFinite(v0)) return fail('Enter the initial displacement and velocity.');
     const X0 = x0 - xp(0), V0 = v0 - vp(0);
     let xh, env = null, amp = null;
@@ -164,9 +199,28 @@
       if (exc === 'free') S.add({ t: 'Critically damped motion', f: 'x = (A + Bt)e^(−ω_n t)', s: `A = ${DY.show(X0, 'S', u)}, B = ${fmt(Bc)} ${u.V}`, r: 'It returns to equilibrium in the shortest time without oscillating.' });
     }
     const x = (t) => xh(t) + xp(t);
+    if (exc === 'free' && !rot) extremes(x, wn, zeta, x0, B(+st.xt || 0, 'S', u), S, out, u);
     const Tper = Math.max(tau, exc !== 'free' ? TAU / w0 : 0), Tw = exc === 'free' ? (zeta > 0 ? Math.min(6 * tau, Math.max(2 * tau, 4.6 / (zeta * wn))) : 4 * tau) : Math.max(5 * Tper, zeta > 0 ? Math.min(30 * Tper, 4 / (zeta * wn)) : 5 * Tper);
     const status = exc === 'free' ? `ω_n = ${fmt(wn)} rad/s, τ = ${fmt(tau)} s${zeta > 0 ? `, ζ = ${fmt(zeta)}` : ''}` : `X = ${DY.show(X, 'S', u)}, MF = ${fmt(MF)} (ω₀/ω_n = ${fmt(r)})`;
-    return DY.result(status, warn.length ? 'warn' : 'ok', out, S, Object.assign(geo, { u, sys, rot, wn, tau, zeta, wd, exc, X, MF, r, w0, F0, x, xp, env, span: [0, Tw], body: st.body, vert: st.vert, damped: zeta > 0 }), warn);
+    return DY.result(status, warn.length ? 'warn' : 'ok', out, S, Object.assign(geo, { u, sys, rot, wn, tau, zeta, wd, exc, X, MF, r, w0, F0, x, xp, env, span: [0, Tw], body: st.body, vert: st.vert, damped: zeta > 0, impact: vImp !== null, ndamp: sys === 'sm' ? cGeo : 1, analog: canD ? { L: mEq, R: c, C: 1 / kEq, E: exc !== 'free' } : null }), warn);
+  }
+
+  /** Largest displacement (when the start is not already the largest) and the time to reach x_t. */
+  function extremes(x, wn, zeta, x0, xt, S, out, u) {
+    const T = (zeta > 0 ? Math.min(60, Math.max(8, 12 / zeta)) : 4) * (TAU / wn), n = 6000, h = T / n;
+    let best = Math.abs(x0), tb = 0, peak = false;
+    for (let i = 1; i <= n; i++) { const a = x((i - 1) * h), b = x(i * h), c2 = x((i + 1) * h); if (Math.abs(b) > Math.abs(a) && Math.abs(b) >= Math.abs(c2)) { if (Math.abs(b) > best * (1 + 1e-9)) { best = Math.abs(b); tb = i * h; peak = true; } break; } }
+    if (peak) {
+      let lo = Math.max(0, tb - h), hi = tb + h; for (let k = 0; k < 60; k++) { const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3; if (Math.abs(x(m1)) < Math.abs(x(m2))) lo = m1; else hi = m2; }
+      tb = (lo + hi) / 2; best = Math.abs(x(tb));
+      S.add({ t: 'Largest displacement', n: 'The first turning point, where ẋ = 0.', r: `x_max = ${DY.show(best, 'S', u)} at t = ${fmt(tb)} s` });
+      out.push({ k: 'Largest displacement x_max', v: DY.fromBase(best, 'S', u), u: u.S, hl: true }, { k: 'Time to x_max', v: tb, u: 's' });
+    }
+    if (xt > 0 && Math.abs(x0) > xt) {
+      const sg = Math.sign(x0), f = (t) => sg * x(t) - xt;
+      for (let i = 1; i <= n; i++) if (f(i * h) <= 0) { let lo = (i - 1) * h, hi = i * h; for (let k = 0; k < 80; k++) { const m = (lo + hi) / 2; if (f(m) > 0) lo = m; else hi = m; } const t = (lo + hi) / 2;
+        S.add({ t: `Time to come back to x = ${DY.show(sg * xt, 'S', u)}`, n: 'Solved from x(t) = x_t by bisection.', r: `t = ${fmt(t)} s` }); out.push({ k: 'Time to reach x_t', v: t, u: 's', hl: true }); return; }
+    }
   }
 
   const Vib = { defaults, convertState, solve, BODY, TBODY };

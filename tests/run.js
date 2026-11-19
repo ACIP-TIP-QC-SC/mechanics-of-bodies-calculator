@@ -1132,6 +1132,19 @@ group('dynamics: impulse and momentum', () => {
   ['ft', 'cons', 'angmom', 'stream', 'vary'].forEach((mode) => { const st = Object.assign(Impact.defaults(), { mode }); const a = Impact.solve(st, U.SI).out[0].v; Impact.convertState(st, 'SI', 'US'); Impact.convertState(st, 'US', 'SI'); close(`${mode}: units round trip`, Impact.solve(st, U.SI).out[0].v, a, 1e-4); });
 });
 
+group('dynamics: damped systems and electrical analogs', () => {
+  const run = (o, sys) => Vib.solve(Object.assign(Vib.defaults(), o), U[sys]);
+  let r = run({ sys: 'sm', m: 10, k: 60, damp: 'c', c: 80, x0: 50, v0: 0, xt: 2 }, 'SI'); close('22-71 time to 2 mm', out(r, 'Time to reach x_t'), 3.99, 2e-3);
+  r = run({ sys: 'bar', m: 6, len: 5, k: 8, sa: 5, sb: 3, damp: 'c', c: 60, th0: 5 }, 'US');
+  close('22-73 I_A', out(r, 'Moment of inertia I_A'), 1.5528, 1e-4); close('22-73 c b²', out(r, 'Equivalent damping c b²'), 540, 1e-9); close('22-73 k a²', out(r, 'Equivalent stiffness ka²'), 200, 1e-9); close('22-73 critical dashpot', out(r, 'Dashpot c for critical damping'), 3.916, 1e-3);
+  r = run({ sys: 'sm', m: 25, k: 100, n: 3, damp: 'c', c: 200, nc: 2, x0: 50, v0: 0 }, 'SI'); close('22-76 c/m = 16', out(r, 'Damping coefficient c (all dampers)') / 25, 16, 1e-9); close('22-76 k/m = 12', out(r, 'Equivalent stiffness k_eq') / 25, 12, 1e-9);
+  r = run({ sys: 'sm', m: 2, k: 500, n: 2, damp: 'c', c: 10, exc: 'impact', mp: 0.02, vp: 400 }, 'SI');
+  { // 22-75: x_max = (v′/ω_d) e^(−(c/2m)t) sin ω_d t at tan ω_d t = 2mω_d/c
+    const mT = 2.02, v1 = (0.02 * 400) / mT, wn = Math.sqrt(1000 / mT), z = 10 / (2 * mT), wd = Math.sqrt(wn * wn - z * z), t = Math.atan(wd / z) / wd;
+    close('22-75 largest compression', out(r, 'Largest displacement x_max'), 1000 * (v1 / wd) * Math.exp(-z * t) * Math.sin(wd * t), 1e-6); }
+  r = run({ sys: 'sm', m: 20, k: 400, n: 2, damp: 'c', c: 125, exc: 'force', F0: 90, w0: 6, x0: 0, v0: 0 }, 'SI'); close('22-77 X', out(r, 'Steady-state amplitude X'), 119.3, 1e-3); close('22-77 phase', out(r, 'Phase angle φ′'), 83.91, 1e-3); close('22-77 analog L = m', out(r, 'Analog inductance L (↔ mass)'), 20, 1e-12); close('analog C = 1/k', out(r, 'Analog capacitance C (↔ 1/k)'), 1 / 800, 1e-12); close('analog R = c', out(r, 'Analog resistance R (↔ c)'), 125, 1e-12);
+});
+
 group('dynamics: connected bodies and eccentric impact', () => {
   const run = (o, sys) => RbForce.solve(Object.assign(RbForce.defaults(), o), U[sys]);
   let r = run({ scene: 'linked' }, 'SI'); close('17-110 α', out(r, 'Angular acceleration α'), 6.2089, 1e-4); close('17-110 link force', Math.abs(out(r, 'Force in the link T (+ tension)')), 6.2089, 1e-3);

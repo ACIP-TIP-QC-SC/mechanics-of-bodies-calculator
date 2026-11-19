@@ -21,7 +21,7 @@
     let sec = C.section(c, 'System');
     C.select(sec, { label: 'System', get: () => st.sys, set: (v) => { st.sys = v; if (v === 'comp' && !Vib.BODY[st.body]) st.body = 'rod'; if (v === 'tors' && !Vib.TBODY[st.body]) st.body = 'plate'; }, options: [
       ['sm', 'Mass on springs (damping and forcing allowed)'], ['pend', 'Simple pendulum'], ['comp', 'Body swinging on a pin (compound pendulum)'], ['tors', 'Torsional pendulum'],
-      ['pulley', 'Block on a cord over a disk, held by a spring (energy method)'], ['roll', 'Cylinder rolling against a spring (energy method)']] });
+      ['pulley', 'Block on a cord over a disk, held by a spring (energy method)'], ['roll', 'Cylinder rolling against a spring (energy method)'], ['bar', 'Bar on a pin with a spring and a dashpot (damping allowed)']] });
     if (st.sys === 'sm') {
       num(sec, 'm', mlab, u.M); num(sec, 'k', 'Stiffness of each spring k', u.K);
       C.num(sec, { label: 'Number of springs', get: () => st.n, set: (v) => (st.n = v), step: 1 });
@@ -44,25 +44,33 @@
     } else if (st.sys === 'pulley') {
       num(sec, 'mb', `Block: ${mlab.toLowerCase()}`, u.M); num(sec, 'md', `Disk (uniform): ${mlab.toLowerCase()}`, u.M);
       num(sec, 'rb', 'Radius where the cord leaves r_b', u.L); num(sec, 'rs', 'Radius where the spring is tied r_s', u.L); num(sec, 'k', 'Spring stiffness k', u.K);
+    } else if (st.sys === 'bar') {
+      C.note(sec, 'A uniform bar pinned at its end A, horizontal at equilibrium, held by a vertical spring at a and a dashpot at b from A.');
+      num(sec, 'm', `Bar: ${mlab.toLowerCase()}`, u.M); num(sec, 'len', 'Length L', u.L); num(sec, 'k', 'Spring stiffness k', u.K); num(sec, 'sa', 'Spring at a from A', u.L);
+      if (st.damp !== 'none') num(sec, 'sb', 'Dashpot at b from A', u.L);
     } else { num(sec, 'm', `Cylinder: ${mlab.toLowerCase()}`, u.M); num(sec, 'r', 'Radius r', u.L); num(sec, 'k', 'Spring stiffness k', u.K); }
-    const rot = ['pend', 'comp', 'tors'].includes(st.sys);
-    if (st.sys === 'sm') {
+    const rot = ['pend', 'comp', 'tors', 'bar'].includes(st.sys);
+    if (st.sys === 'sm' || st.sys === 'bar') {
       sec = C.section(c, 'Damping');
       C.seg(sec, { get: () => st.damp, set: (v) => (st.damp = v), options: [['none', 'None'], ['c', 'Coefficient c'], ['z', 'Factor c/c_c']] });
-      if (st.damp === 'c') num(sec, 'c', 'Damping coefficient c', u.CD);
+      if (st.damp === 'c') { num(sec, 'c', st.sys === 'bar' ? 'Dashpot coefficient c' : 'Coefficient of each damper c', u.CD); if (st.sys === 'sm') C.num(sec, { label: 'Number of dampers side by side', get: () => st.nc, set: (v) => (st.nc = v), step: 1 }); }
       if (st.damp === 'z') num(sec, 'zeta', 'Damping factor ζ = c/c_c', '');
+    }
+    if (st.sys === 'sm') {
       sec = C.section(c, 'What makes it vibrate');
-      C.select(sec, { label: 'Excitation', get: () => st.exc, set: (v) => (st.exc = v), options: [['free', 'Nothing: free vibration from a start'], ['force', 'A periodic force F₀ sin ω₀t'], ['support', 'The support moves δ₀ sin ω₀t'], ['unb', 'A rotating unbalance m₀ at radius e']] });
-      if (st.exc !== 'free') {
+      C.select(sec, { label: 'Excitation', get: () => st.exc, set: (v) => (st.exc = v), options: [['free', 'Nothing: free vibration from a start'], ['impact', 'A projectile embeds in the block'], ['force', 'A periodic force F₀ sin ω₀t'], ['support', 'The support moves δ₀ sin ω₀t'], ['unb', 'A rotating unbalance m₀ at radius e']] });
+      if (st.exc === 'impact') { num(sec, 'mp', `Projectile: ${mlab.toLowerCase()}`, u.M); num(sec, 'vp', 'Projectile speed', u.V); }
+      else if (st.exc !== 'free') {
         num(sec, 'w0', 'Forcing frequency ω₀', 'rad/s');
         if (st.exc === 'force') num(sec, 'F0', 'Force amplitude F₀', u.F);
         if (st.exc === 'support') num(sec, 'd0', 'Support amplitude δ₀', u.S);
         if (st.exc === 'unb') { num(sec, 'm0', `Unbalanced ${u.us ? 'weight' : 'mass'} m₀`, u.M); num(sec, 'e', 'Eccentricity e', u.S); }
       }
     }
+    if (st.sys === 'sm' && st.exc === 'impact') return;
     sec = C.section(c, st.sys === 'sm' && st.exc !== 'free' ? 'Start (adds the transient)' : 'Start');
     if (rot) { num(sec, 'th0', 'Released from rest at θ₀', '°'); }
-    else { num(sec, 'x0', 'Initial displacement x₀', u.S); num(sec, 'v0', 'Initial velocity v₀', u.V); }
+    else { num(sec, 'x0', 'Initial displacement x₀', u.S); num(sec, 'v0', 'Initial velocity v₀', u.V); if (st.exc === 'free' || st.sys !== 'sm') num(sec, 'xt', 'Find when it comes back to x_t (0 to skip)', u.S); }
   };
   M.diagram = function (c, C) {
     const st = S();
@@ -70,6 +78,7 @@
     C.toggle(c, { label: 'Equilibrium position and displacement arrow', get: () => dopt('eq', true), set: (v) => (st.eq = v), rebuild: false });
     C.toggle(c, { label: 'Envelope and steady-state curve on the x(t) graph', get: () => dopt('envl', true), set: (v) => (st.envl = v), rebuild: false });
     C.toggle(c, { label: 'Exaggerate small motions so they can be seen', get: () => dopt('exag', true), set: (v) => (st.exag = v), rebuild: false });
+    if (st.sys === 'sm' || st.sys === 'bar') C.toggle(c, { label: 'Equivalent electrical circuit', get: () => dopt('circ', false), set: (v) => (st.circ = v), rebuild: false });
   };
 
   M.compute = (U) => Vib.solve(S(), U);
@@ -93,6 +102,21 @@
   /* ------------------------------------------------------------------ */
   /* 2D                                                                 */
   /* ------------------------------------------------------------------ */
+  /** Inset: the series L–R–C circuit with the same equation (Table 22–1), drawn in pixels in the top-right corner. */
+  function circuit(D, g) {
+    if (!dopt('circ', false) || !g.analog) return;
+    const a = g.analog, w = 200, h = 106, x0 = D.W - w - 10, y0 = 34, P = (x, y) => D.inv(x0 + x, y0 + y), ln = (pts) => D.pline(pts.map(([x, y]) => P(x, y)), { stroke: K.ink, sw: 1.6 });
+    D.el('rect', { x: x0, y: y0, width: w, height: h, fill: '#fff', stroke: '#d3dce0', rx: 6 });
+    D.text([x0 + 8, y0 + 15], 'Equivalent circuit', { px: true, color: K.ink, size: 11, weight: 700 });
+    const top = 46, bot = 94, L0 = 20, R0 = w - 20;
+    ln([[L0, bot], [L0, top], [44, top]]);
+    const coil = []; for (let i = 0; i <= 32; i++) { const t = i / 32; coil.push([44 + 36 * t, top - 6 * Math.abs(Math.sin(t * 4 * Math.PI))]); } ln(coil);
+    ln([[80, top], [100, top]]); const zz = [[100, top]]; for (let i = 1; i <= 6; i++) zz.push([100 + i * 5, top + (i % 2 ? -6 : 6)]); zz.push([135, top]); ln(zz);
+    ln([[135, top], [R0, top], [R0, 58]]); ln([[R0 - 10, 58], [R0 + 10, 58]]); ln([[R0 - 10, 66], [R0 + 10, 66]]); ln([[R0, 66], [R0, bot], [L0, bot]]);
+    if (a.E) { D.circle(P(L0, 64), 9 / D.sc, { fill: '#fff', stroke: K.ink, sw: 1.4 }); D.text([x0 + L0, y0 + 68], '~', { px: true, anchor: 'middle', color: K.ink, size: 12 }); }
+    const T = (x, y, s) => D.text([x0 + x, y0 + y], s, { px: true, anchor: 'middle', color: K.force, size: 10.5, weight: 700 });
+    T(62, top - 11, `L = ${fmt(a.L)}`); T(118, top - 11, `R = ${fmt(a.R)}`); D.text([x0 + R0 - 14, y0 + 66], `C = ${fmt(a.C)}`, { px: true, anchor: 'end', color: K.force, size: 10.5, weight: 700 });
+  }
   M.draw2D = function (svg, res, U, opt) {
     const g = res.geo, u = g.u, t = tNow(g), x = g.x(t);
     let D;
@@ -132,7 +156,8 @@
         if (dopt('eq', true)) { D.line([-1.5, ye], [1.5, ye], { stroke: K.ink, sw: 1, dash: '5 4' }); D.text([-1.55, ye], 'equilibrium', { anchor: 'end', dy: 4, color: K.ink, size: 11 }); if (Math.abs(dx) > 0.02) D.arrow([-1.25, ye], [-1.25, ye + dx], { color: K.pos, w: 2.2, head: 9 }); D.text([-1.3, ye + dx], lbl(opt, `x = ${fmt(DY.fromBase(x, 'S', u))} ${u.S}`, 'x'), { anchor: 'end', dy: dx > 0 ? -4 : 14, color: K.pos, size: 12 }); }
       }
       if (dopt('exag', true) && Math.abs(k - 1) > 0.01) D.text([D.W - 12, D.H - 12], 'motion drawn to a larger scale', { px: true, anchor: 'end', color: '#5a6b75', size: 11, weight: 500 });
-      head(); return true;
+      if (g.impact && !vert && t < 0.04 * g.span[1] + 1e-9) { const yb = 0.16 + 0.45; D.circle([2.6 - 0.55 + dx + 1.1 + 0.5, yb], 0.06, { fill: K.force }); DYUI.vec(D, [2.6 + 0.55 + dx + 0.56, yb], [-1, 0], 40, { color: K.force, label: 'projectile', size: 11, anchor: 'start', ldx: 4, ldy: -8 }); }
+      circuit(D, g); head(); return true;
     }
     if (g.sys === 'pend' || g.sys === 'comp') {
       D = UI.Draw2D(svg, { xmin: -2.4, xmax: 2.4, ymin: -3.6, ymax: 0.8 }, { pad: 30 });
@@ -156,6 +181,23 @@
       if (dopt('eq', true)) { D.line([0, 0], [0, 2], { stroke: K.ink, sw: 1, dash: '5 4' }); D.line([0, 0], R([0, 2]), { stroke: K.pos, sw: 2 }); if (Math.abs(th) > 0.01) { D.arc([0, 0], 70, 90, 90 + th / D2R, null, { color: K.pos }); D.text([0, 2], lbl(opt, `θ = ${fmt(x / D2R)}°`, 'θ'), { color: K.pos, anchor: th > 0 ? 'start' : 'end', dx: th > 0 ? 8 : -8, dy: 4, size: 12 }); } }
       D.circle([0, 0], 0.12, { fill: '#7f8c8d', stroke: K.ink, sw: 1.2 });
       head(); return true;
+    }
+    if (g.sys === 'bar') {
+      D = UI.Draw2D(svg, { xmin: -0.8, xmax: 4.6, ymin: -1.8, ymax: dopt('circ', false) ? 2.8 : 1.6 }, { pad: 30 }); // room above for the circuit inset
+      const k = scaleOf(g), th = x * k, Ld = 4, P = (r) => [r * Math.cos(th), r * Math.sin(th)], ya = (g.a / g.L) * Ld, yb = (g.b / g.L) * Ld;
+      D.poly([[-0.7, -0.6], [-0.3, -0.6], [-0.3, 0.6], [-0.7, 0.6]], { fill: 'url(#hatch)', stroke: K.edge, sw: 1 });
+      DYUI.ground(D, [-0.2, -1.5], [4.5, -1.5]);
+      if (dopt('eq', true)) D.line([0, 0], [Ld + 0.3, 0], { stroke: K.ink, sw: 1, dash: '5 4' });
+      DYUI.spring(D, [ya, -1.5], P(ya), { n: 8, w: 0.1 });
+      if (g.damped && g.b > 0) DYUI.damper(D, [yb, -1.5], P(yb));
+      const n = [-Math.sin(th) * 0.09, Math.cos(th) * 0.09], b0 = P(0), b1 = P(Ld);
+      D.poly([[b0[0] - n[0], b0[1] - n[1]], [b1[0] - n[0], b1[1] - n[1]], [b1[0] + n[0], b1[1] + n[1]], [b0[0] + n[0], b0[1] + n[1]]], { fill: BLK, stroke: K.edge, sw: 1.4 });
+      D.circle([0, 0], 0.07, { fill: '#fff', stroke: K.ink, sw: 1.6 }); D.text([0, 0], 'A', { dx: -6, dy: -10, color: K.ink, size: 12, anchor: 'end' });
+      D.text(P(ya), lbl(opt, `k at a = ${fmt(g.a)} ${u.L}`, 'k'), { dx: 6, dy: -12, color: K.ink, size: 11.5 });
+      if (g.damped && g.b > 0) D.text(P(yb), lbl(opt, `c at b = ${fmt(g.b)} ${u.L}`, 'c'), { dx: -6, dy: -12, anchor: 'end', color: K.ink, size: 11.5 });
+      if (dopt('eq', true) && Math.abs(th) > 0.01) { D.arc([0, 0], 70, 0, th / D2R, null, { color: K.pos }); D.text([Ld + 0.3, 0], lbl(opt, `θ = ${fmt(x / D2R)}°`, 'θ'), { dx: 4, dy: 4, color: K.pos, size: 12, weight: 700, anchor: 'start' }); }
+      if (dopt('exag', true) && Math.abs(k - 1) > 0.01) D.text([D.W - 12, D.H - 12], `angles drawn ×${fmt(k, 2)}`, { px: true, anchor: 'end', color: '#5a6b75', size: 11, weight: 500 });
+      circuit(D, g); head(); return true;
     }
     if (g.sys === 'pulley') {
       D = UI.Draw2D(svg, { xmin: -2.6, xmax: 2.6, ymin: -3.4, ymax: 1.6 }, { pad: 30 });
@@ -269,6 +311,16 @@
       v.setBounds([-2, -0.2, -2], [2, 3.3, 2]);
       return;
     }
+    if (g.sys === 'bar') {
+      const k = scaleOf(g), th = x * k, Ld = 4, P = (r) => [r * Math.cos(th), r * Math.sin(th)], ya = (g.a / g.L) * Ld, yb = (g.b / g.L) * Ld;
+      v.box(-0.7, -0.6, -0.5, -0.3, 0.6, 0.5, '#d5dbe1', 1, K.edge); DYUI.floor3(v, -0.3, 4.5, -1.5, 0.8);
+      const n = [-Math.sin(th) * 0.09, Math.cos(th) * 0.09], b0 = P(0), b1 = P(Ld);
+      v.extrude([[b0[0] - n[0], b0[1] - n[1]], [b1[0] - n[0], b1[1] - n[1]], [b1[0] + n[0], b1[1] + n[1]], [b0[0] + n[0], b0[1] + n[1]]], -0.15, 0.15, BLK, 1, K.edge);
+      spring3(v, [ya, -1.5, 0], [...P(ya), 0], 0.1, 8);
+      if (g.damped && g.b > 0) { const q = P(yb); v.box(yb - 0.08, -1.5, -0.08, yb + 0.08, (q[1] - 1.5) / 2, 0.08, '#7f8c8d', 1, K.edge); v.line([[yb, (q[1] - 1.5) / 2, 0], [q[0], q[1], 0]], SPR, 2); }
+      v.setBounds([-0.8, -1.6, -0.8], [4.5, 1, 0.8]);
+      return;
+    }
     if (g.sys === 'pulley') {
       const k = scaleOf(g, 0.5), s = x * k, R0 = 1.1, rb = R0 * Math.min(1, g.rb / Math.max(g.rb, g.rs)), rs = R0 * Math.min(1, g.rs / Math.max(g.rb, g.rs));
       cylZ(v, [0, 0, 0], R0, 0.3, -s / rb, '#d5dbe1');
@@ -306,6 +358,16 @@
       expect: [{ k: 'Natural frequency ω_n', v: 10 }, { k: 'Period τ', v: 0.6283 }, { k: 'Amplitude C', v: 70.71 }] },
     { name: 'Test: the same with c = 40 N·s/m (ζ = 0.2, ω_d = 9.80 rad/s)', units: 'SI', state: P0({ sys: 'sm', m: 10, k: 1000, n: 1, x0: 50, v0: 0.5, damp: 'c', c: 40 }),
       expect: [{ k: 'Critical damping c_c', v: 200 }, { k: 'Damping factor ζ = c/c_c', v: 0.2 }, { k: 'Damped natural frequency ω_d', v: 9.798 }] },
+    { name: 'Test: Problem 22–71, 10 kg, k = 60 N/m, c = 80 N·s/m, from 50 mm back to 2 mm (t = 3.99 s)', units: 'SI', state: P0({ sys: 'sm', m: 10, k: 60, n: 1, damp: 'c', c: 80, nc: 1, x0: 50, v0: 0, xt: 2 }),
+      expect: [{ k: 'Time to reach x_t', v: 3.99 }] },
+    { name: 'Test: Problem 22–73, 6-lb bar 5 ft, k = 8 lb/ft at 5 ft, c = 60 lb·s/ft at 3 ft (1.55θ̈ + 540θ̇ + 200θ = 0; critical c = 3.92 lb·s/ft)', units: 'US', state: P0({ sys: 'bar', m: 6, len: 5, k: 8, sa: 5, sb: 3, damp: 'c', c: 60, th0: 5 }),
+      expect: [{ k: 'Moment of inertia I_A', v: 1.5528 }, { k: 'Equivalent damping c b²', v: 540 }, { k: 'Dashpot c for critical damping', v: 3.916 }] },
+    { name: 'Test: Problem 22–76, 25 kg on three 100 N/m springs and two 200 N·s/m dampers (ÿ + 16ẏ + 12y = 0, overdamped)', units: 'SI', state: P0({ sys: 'sm', m: 25, k: 100, n: 3, arr: 'parallel', damp: 'c', c: 200, nc: 2, x0: 50, v0: 0 }),
+      expect: [{ k: 'Damping coefficient c (all dampers)', v: 400 }, { k: 'Equivalent stiffness k_eq', v: 300 }, { k: 'Damping factor ζ = c/c_c', v: 2.309 }] },
+    { name: 'Test: Problem 22–77, 20 kg on two 400 N/m springs, c = 125 N·s/m, F = 90 cos 6t N (x = 0.119 cos(6t − 83.9°) m)', units: 'SI', state: P0({ sys: 'sm', m: 20, k: 400, n: 2, arr: 'parallel', damp: 'c', c: 125, nc: 1, exc: 'force', F0: 90, w0: 6, x0: 0, v0: 0 }),
+      expect: [{ k: 'Steady-state amplitude X', v: 119.3 }, { k: 'Phase angle φ′', v: 83.91 }] },
+    { name: 'Problem 22–75 type: 20 g bullet at 400 m/s embeds in a 2 kg target on two 500 N/m springs with a light dashpot (largest compression)', units: 'SI', state: P0({ sys: 'sm', m: 2, k: 500, n: 2, arr: 'parallel', damp: 'c', c: 10, nc: 1, exc: 'impact', mp: 0.02, vp: 400, x0: 0, v0: 0 }),
+      expect: [{ k: 'Largest displacement x_max', v: 151.17 }] },
     { name: 'Simple pendulum 2 m long released at 8°', units: 'SI', state: P0({ sys: 'pend', L: 2, th0: 8 }) },
     { name: 'Thin hoop of radius 0.5 m on a peg (Example 22.5 shape)', units: 'SI', state: P0({ sys: 'comp', body: 'hoop', m: 2, r: 0.5, th0: 6 }) },
     { name: 'Slender rod 3 ft long swinging on a pin at its end', units: 'US', state: P0({ sys: 'comp', body: 'rod', m: 8, len: 3, th0: 10 }) },
