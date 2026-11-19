@@ -42,7 +42,7 @@
   M.controls = function (c, C) {
     const st = S(), U = Core.UNITS[M.units], Lu = U.len, F = st.fu, FL = `${F}·${Lu}`;
     let sec = C.section(c, 'Problem');
-    C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [['particle', 'Particle in a plane'], ['particle3d', 'Particle held by three cables in space'], ['rigid', 'Rigid body in a plane (supports and reactions)'], ['rigid3d', 'Rigid body in space (bearings, ball joints, cables)'], ['frame', 'Frames, machines and compound beams']] });
+    C.select(sec, { label: 'Type of problem', get: () => st.mode, set: (v) => (st.mode = v), options: [['particle', 'Particle in a plane'], ['particle3d', 'Particle held by three cables in space'], ['rigid', 'Rigid body in a plane (supports and reactions)'], ['rigid3d', 'Rigid body in space (bearings, ball joints, cables)'], ['frame', 'Frames, machines and compound beams'], ['net', 'Cords, springs, rings and pulleys (several joints)']] });
     C.seg(sec, { label: 'Force unit', get: () => st.fu, set: (v) => (st.fu = v), options: U.forces.map((f) => [f, f]) });
     if (st.mode === 'particle') {
       const q = st.pa;
@@ -67,6 +67,31 @@
       C.note(sec, 'Each cable pulls the particle toward its anchor point, or along the direction angles you give.');
       C.list(sec, { items: q.cables, max: 3, min: 3, color: () => '#e2cdef', title: (it) => `Cable ${it.name}`,
         fields: (it) => [{ key: 'by', label: 'Direction from', options: [['point', 'Anchor point'], ['angles', 'Direction angles']], wide: true }].concat(it.by === 'angles' ? [{ key: 'al', label: 'α', unit: '°' }, { key: 'be', label: 'β', unit: '°' }, { key: 'ga', label: 'γ', unit: '°', wide: true }] : [{ key: 'x', label: 'Anchor x', unit: Lu }, { key: 'y', label: 'Anchor y', unit: Lu }, { key: 'z', label: 'Anchor z', unit: Lu, wide: true }]) });
+    } else if (st.mode === 'net') {
+      const q = st.cn, d3 = q.dim === '3d', pn = () => q.points.map((p) => [p.name, p.name]);
+      C.seg(sec, { label: 'Layout', get: () => q.dim, set: (v) => (q.dim = v), options: [['2d', 'In a plane'], ['3d', 'In space (z up)']] });
+      C.seg(sec, { label: 'Find', get: () => q.task, set: (v) => (q.task = v), options: [['forces', 'Forces in the members'], ['place', 'Where the rings hang (sag)']] });
+      sec = C.section(c, 'Points');
+      C.list(sec, { items: q.points, max: 10, min: 2, color: (it) => (it.kind === 'ring' ? '#cfe8d8' : '#d5dbe1'), title: (it) => `${it.kind === 'ring' ? 'Ring' : 'Fixed point'} ${it.name}`,
+        fields: () => [{ key: 'name', label: 'Name', text: true }, { key: 'kind', label: 'Kind', options: [['fixed', 'Fixed (anchor or pulley)'], ['ring', 'Free ring or knot']] }, { key: 'x', label: 'x', unit: Lu }, { key: 'y', label: 'y', unit: Lu }].concat(d3 ? [{ key: 'z', label: 'z (up)', unit: Lu, wide: true }] : []),
+        add: [['Point', () => ({ name: 'ABCDEFGHIJ'.split('').find((n) => !q.points.some((p) => p.name === n)) || 'P', x: 0, y: 0, z: 0, kind: 'fixed' })]] });
+      if (q.task === 'place') C.note(sec, 'Give each ring a first guess near where it hangs (below its supports); the calculator moves it to the equilibrium position.');
+      sec = C.section(c, 'Members');
+      C.list(sec, { items: q.members, max: 10, min: 1, color: (it) => ({ cord: '#e2cdef', spring: '#d6e4f3', known: '#f6c9c2', free: '#f9dcc0' }[it.type] || '#e2cdef'), title: (it) => `${{ cord: 'Cord', spring: 'Spring', known: 'Cord, known tension', free: 'Cord, direction unknown' }[it.type] || 'Member'} ${it.a}${it.type === 'free' ? '' : it.b}`,
+        fields: (it) => [{ key: 'type', label: 'Kind', options: [['cord', 'Cord (tension unknown)'], ['spring', 'Spring'], ['known', 'Cord with a known tension (over a pulley)'], ['free', 'Cord in an unknown direction']], wide: true }, { key: 'a', label: it.type === 'free' ? 'From ring' : 'From', options: pn() }].concat(it.type === 'free' ? [] : [{ key: 'b', label: 'To', options: pn() }])
+          .concat(it.type === 'spring' ? [{ key: 'k', label: 'k (0 if unknown)', unit: `${F}/${Lu}` }, { key: 'L0', label: 'Unstretched L₀', unit: Lu }] : it.type === 'known' ? [{ key: 'T', label: 'Tension T (= hanging weight)', unit: F, wide: true }] : []),
+        add: [['Member', () => ({ a: q.points[q.points.length - 1].name, b: q.points[0].name, type: 'cord', k: 0, L0: 0, T: 10 })]] });
+      C.note(sec, 'A cord over a small pulley to a hanging weight W has tension T = W on both sides. A spring needs k to find its stretch, or L₀ to find k; to find where rings hang, give a spring both.');
+      sec = C.section(c, 'Loads on the rings');
+      C.list(sec, { items: q.loads, max: 6, color: () => '#f6c9c2', title: (it, i) => `Load ${i + 1} at ${it.at}`,
+        fields: (it) => [{ key: 'at', label: 'Ring', options: q.points.filter((p) => p.kind === 'ring').map((p) => [p.name, p.name]) }, { key: 'by', label: 'Given as', options: [['mass', 'Mass'], ['weight', 'Weight'], ['force', 'Force components']] }]
+          .concat(it.by === 'mass' ? [{ key: 'm', label: 'Mass', unit: massU() }] : it.by === 'weight' ? [{ key: 'W', label: 'Weight', unit: F }] : [{ key: 'Fx', label: 'F_x', unit: F }, { key: 'Fy', label: 'F_y', unit: F }].concat(d3 ? [{ key: 'Fz', label: 'F_z (up +)', unit: F }] : [])),
+        add: [['Load', () => ({ at: (q.points.find((p) => p.kind === 'ring') || q.points[0]).name, by: 'weight', m: 10, W: 10, Fx: 0, Fy: 0, Fz: 0 })]] });
+      if (q.task === 'forces') {
+        sec = C.section(c, 'Largest load');
+        C.toggle(sec, { label: 'Find the largest load so that no cord exceeds a tension', get: () => !!q.capOn, set: (v) => (q.capOn = v) });
+        if (q.capOn) C.num(sec, { label: 'Largest tension a cord can carry', get: () => q.capT, set: (v) => (q.capT = v), unit: F });
+      }
     } else if (st.mode === 'frame') {
       const q = st.fm, pn = () => q.points.map((p) => [p.name, p.name]), mn = () => [['', 'Found from the point']].concat(q.members.map((m) => [m.name, m.name])), mn1 = () => q.members.map((m) => [m.name, m.name]);
       sec = C.section(c, 'Points');
@@ -125,7 +150,7 @@
   M.compute = (U) => Equil.solve(S(), U);
   M.onUnits = (from, to) => Equil.convertState(S(), from, to);
   M.toggle = 'Values on the diagram';
-  M.cap2D = () => ({ particle: 'Free-body diagram and force polygon', particle3d: 'Top and front views', rigid: 'Free-body diagram', rigid3d: 'Top and front views', frame: S().fm.sel ? `Free-body diagram of member ${S().fm.sel}` : 'The frame and its support reactions' }[mode()]);
+  M.cap2D = () => ({ particle: 'Free-body diagram and force polygon', particle3d: 'Top and front views', rigid: 'Free-body diagram', rigid3d: 'Top and front views', frame: S().fm.sel ? `Free-body diagram of member ${S().fm.sel}` : 'The frame and its support reactions', net: S().cn.dim === '3d' ? 'Top and front views' : 'Cords, springs and rings' }[mode()]);
   M.cap3D = '3D view';
   M.hint = () => ({
     particle: 'Left: the free-body diagram of the particle. Right: the forces drawn tip to tail; in equilibrium the polygon closes.',
@@ -133,6 +158,7 @@
     rigid3d: 'Reactions are drawn green in the direction they actually act; couple moments are double-headed arrows along their axis. Use the 3D view to see the body in space.',
     frame: 'Green arrows are support reactions, drawn the way they act. Pick a member under Diagram options to see its own free-body diagram with the pin forces (teal) the other members put on it.',
     rigid: 'Reactions are drawn green in the direction they actually act (a negative answer flips the arrow). Loads are red.',
+    net: 'Hatched squares are fixed points, circles at fixed points are small pulleys, small rings are free joints. Member forces are written beside each member (green: found, red: known). When the rings\' positions are found, the dashed outline shows where they were first placed.',
   }[mode()]);
   M.diagram = function (c, C) {
     if (mode() !== 'frame') return;
@@ -162,7 +188,7 @@
 
   /* -------- particle in a plane -------- */
   function zig(g, x1, y1, x2, y2, color) {
-    const L = Math.hypot(x2 - x1, y2 - y1), ux = (x2 - x1) / L, uy = (y2 - y1) / L, px = -uy, py = ux, n = 10, pts = [[x1, y1]];
+    const L = Math.hypot(x2 - x1, y2 - y1), ux = (x2 - x1) / L, uy = (y2 - y1) / L, px = -uy, py = ux, n = Math.max(8, Math.min(24, Math.round(L / 9))), pts = [[x1, y1]];
     for (let i = 1; i < n; i++) { const t = 0.15 + (0.7 * i) / n, sg = i % 2 ? 1 : -1; pts.push([x1 + ux * L * t + px * 7 * sg, y1 + uy * L * t + py * 7 * sg]); }
     pts.push([x2, y2]);
     s('polyline', { points: pts.map((p) => p.join(',')).join(' '), fill: 'none', stroke: color, 'stroke-width': 1.8 }, g);
@@ -367,10 +393,81 @@
     g.Mb.forEach((m, k) => { if (!show(k)) return; const a = Pp(m.pts[0]), b = Pp(m.pts[Math.min(1, m.pts.length - 1)]); T(g0, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 12, m.name, { anchor: 'middle', color: '#5a6b75', size: 11, weight: 700 }); });
   }
 
+  /* -------- cords, springs, rings and pulleys -------- */
+  /** Draws the network in a plane given 2D coordinates of each point (P2), used for the 2D layout and for each view in 3D. */
+  function netPanel(g0, D, g, P2, opt, ghost, flat) {
+    const F = g.c.F, pts = g.pts, pulley = new Set(), placed = [];
+    // labels are nudged down until they clear the ones already placed (members seen end-on in a view overlap)
+    const put = (x, y, txt, o) => {
+      const w = txt.length * 6.6, l = (a) => (o.anchor === 'start' ? a : o.anchor === 'end' ? a - w : a - w / 2);
+      for (let k = 0; k < 8 && placed.some((r) => Math.abs(r.y - y) < 13 && l(x) < r.x + r.w && l(x) + w > r.x); k++) y += 14;
+      placed.push({ x: l(x), y, w }); T(g0, x, y, txt, o);
+    };
+    g.mem.forEach((m) => { if (m.type === 'known') [m.a, m.b].forEach((j) => { if (j != null && pts[j].fix) pulley.add(j); }); });
+    const X = (j) => [D.X(P2[j][0]), D.Y(P2[j][1])];
+    if (ghost) ghost.forEach((p, j) => { if (!pts[j].fix) { const q = [D.X(p[0]), D.Y(p[1])]; s('circle', { cx: q[0], cy: q[1], r: 6, fill: 'none', stroke: '#9aa5ad', 'stroke-dasharray': '3 2' }, g0); } });
+    const span = Math.hypot(D.X(1) - D.X(0), 0) || 1;
+    g.mem.forEach((m) => {
+      const a = X(m.a);
+      let b;
+      if (m.type === 'free') { const v = m.v ? [m.v[0], m.v[1]] : [0, 1], L = Math.hypot(...v) || 1; b = [a[0] + (v[0] / L) * 90, a[1] - (v[1] / L) * 90]; }
+      else b = X(m.b);
+      const known = m.type === 'known', col = known ? '#7a3b33' : '#2c3e50';
+      if (m.type === 'spring') zig(g0, a[0], a[1], b[0], b[1], '#2c3e50');
+      else s('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: col, 'stroke-width': 2, 'stroke-dasharray': m.type === 'free' ? '6 4' : null }, g0);
+      if (m.type === 'free') s('rect', { x: b[0] - 8, y: b[1] - 8, width: 16, height: 16, fill: 'url(#hatchE)', stroke: '#6b7785' }, g0);
+      // a known tension usually comes from a weight hanging from the pulley at the fixed end
+      if (known && !flat) { const j = pts[m.b] && pts[m.b].fix ? m.b : pts[m.a].fix ? m.a : null; if (j != null) { const p = X(j), h = 34 + 18 * Math.min(2, (m.F || 0) / (Math.max(...g.mem.map((x) => Math.abs(x.F || 0))) || 1)); s('line', { x1: p[0] + 10, y1: p[1], x2: p[0] + 10, y2: p[1] + h, stroke: col, 'stroke-width': 2 }, g0); s('rect', { x: p[0] + 2, y: p[1] + h, width: 16, height: 14, fill: '#d9b58a', stroke: '#8a6a3f' }, g0); } }
+      const tl = m.type !== 'free' && !pts[m.a].fix && pts[m.b].fix ? 0.62 : m.type !== 'free' && pts[m.a].fix && !pts[m.b].fix ? 0.38 : 0.5, mx = a[0] + (b[0] - a[0]) * tl, my = a[1] + (b[1] - a[1]) * tl, L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L; if (ny > 0) { nx = -nx; ny = -ny; }
+      const txt = opt.showP && Number.isFinite(m.F) ? `${m.name} = ${fmt(Math.abs(m.F))} ${F}` : m.name;
+      put(mx + nx * 10, my + ny * 10, txt, { anchor: nx > 0.3 ? 'start' : nx < -0.3 ? 'end' : 'middle', color: known ? LCOL : RCOL, size: 11.5, weight: 700 });
+    });
+    pts.forEach((p, j) => {
+      const q = X(j);
+      if (p.fix) { if (pulley.has(j)) { s('circle', { cx: q[0], cy: q[1], r: 10, fill: '#dfe5ea', stroke: '#4a5661', 'stroke-width': 1.6 }, g0); s('circle', { cx: q[0], cy: q[1], r: 2.5, fill: '#4a5661' }, g0); } else s('rect', { x: q[0] - 8, y: q[1] - 8, width: 16, height: 16, fill: 'url(#hatchE)', stroke: '#6b7785' }, g0); }
+      else s('circle', { cx: q[0], cy: q[1], r: 5.5, fill: '#fff', stroke: '#1d2733', 'stroke-width': 2.2 }, g0);
+      T(g0, q[0] - 12, q[1] - 10, p.name, { anchor: 'end', color: '#1d2733', size: 12.5, weight: 800 });
+    });
+    g.loads.forEach((l) => {
+      const q = X(l.at), v = [l.v[0], l.v[1]], m = Math.hypot(...v); if (!(m > 0)) return;
+      const ux = v[0] / m, uy = -v[1] / m;
+      arrowPx(g0, q[0] + ux * 8, q[1] + uy * 8, q[0] + ux * 52, q[1] + uy * 52, LCOL, 2.4, 10);
+      put(q[0] + ux * 58 + (Math.abs(ux) > 0.3 ? 0 : 6), q[1] + uy * 58 + (uy > 0.3 ? 8 : 0), opt.showP ? `${l.name} = ${fmt(m)} ${F}` : l.name, { anchor: ux < -0.3 ? 'end' : 'start', color: LCOL, size: 11.5, weight: 700 });
+    });
+    return span;
+  }
+  function netBounds(P2, extra) {
+    const xs = P2.map((p) => p[0]), ys = P2.map((p) => p[1]), e = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1e-9);
+    return { xmin: Math.min(...xs) - e * 0.15, xmax: Math.max(...xs) + e * 0.15, ymin: Math.min(...ys) - e * (extra || 0.3), ymax: Math.max(...ys) + e * 0.15 };
+  }
+  function drawNet(svg, g, opt) {
+    hatch(svg);
+    const P2 = g.pts.map((p) => p.p), all = g.X0 ? P2.concat(g.X0) : P2;
+    const D = UI.Draw2D(svg, netBounds(all), { pad: 58 });
+    netPanel(D.root, D, g, P2, opt, g.X0);
+  }
+  function drawNet3views(svg, g, opt) {
+    const { W, H } = Charts.clear(svg); hatch(svg);
+    const views = [['Top view (x, y)', (p) => [p[0], p[1]]], ['Front view (x, z)', (p) => [p[0], p[2]]]], wide = W > 640;
+    views.forEach(([name, f], k) => {
+      const box = wide ? { x: (W / 2) * k, y: 0, w: W / 2, h: H } : { x: 0, y: (H / 2) * k, w: W, h: H / 2 };
+      const gg = s('g', { transform: `translate(${box.x},${box.y})` }, svg);
+      const sub = s('svg', { x: 0, y: 0, width: box.w, height: box.h, overflow: 'visible' }, gg);
+      Object.defineProperty(sub, 'clientWidth', { value: box.w }); Object.defineProperty(sub, 'clientHeight', { value: box.h });
+      const P2 = g.pts.map((p) => f(p.p)), G2 = g.X0 ? g.X0.map(f) : null;
+      const D = UI.Draw2D(sub, netBounds(G2 ? P2.concat(G2) : P2, 0.35), { pad: 50 });
+      const gv = Object.assign({}, g, { loads: g.loads.map((l) => Object.assign({}, l, { v: f(l.v) })), mem: g.mem.map((m) => Object.assign({}, m, { v: m.v ? f(m.v) : null })) });
+      netPanel(D.root, D, gv, P2, opt, G2, true);
+      T(gg, 12, 20, name, { color: '#5a6b75', size: 12, weight: 700 });
+    });
+  }
+
   M.draw2D = function (svg, res, U, opt) {
     const g = res.geo;
     if (g.kind === 'frame') return drawFrame(svg, g, opt);
     if (g.kind === 'particle') return drawParticle(svg, g, opt);
+    if (g.kind === 'cablenet') return g.d3 ? drawNet3views(svg, g, opt) : drawNet(svg, g, opt);
     if (g.kind === 'rigid') return drawRigid(svg, g, opt);
     if (g.kind === 'rigid3d') {
       const F = g.c.F, pts = g.members.flat().concat(g.sups.map((x) => x.p), g.loads.map((l) => l.p)), e = Math.max(...[0, 1, 2].map((k) => Math.max(...pts.map((p) => p[k])) - Math.min(...pts.map((p) => p[k]))), 1e-9);
@@ -422,6 +519,19 @@
       g.K.filter((k) => k.name !== 'W').forEach((k) => { const m = Math.hypot(...k.v) || 1, tip = A.map((x, i) => x + (k.v[i] / m) * ext * 0.5); arrow3(v, V(A), V(tip), LCOL, 2.6); v.label(V(tip), lab(k.name, m, F), LCOL); });
       const L = ext * 0.5; [[[L, 0, 0], 'x'], [[0, L, 0], 'y'], [[0, 0, L], 'z']].forEach(([p, n]) => { arrow3(v, V(A), V(A.map((x, i) => x + p[i])), COL.axis, 1.3); v.label(V(A.map((x, i) => x + p[i] * 1.08)), n, COL.axis); });
       v.label(a, 'A', '#1d2733');
+      v.autoBounds(); return;
+    }
+    if (g.kind === 'cablenet') {
+      const P3 = g.pts.map((p) => (g.d3 ? p.p : [p.p[0], 0, p.p[1]])), all = P3.concat(g.X0 ? g.X0.map((p) => (g.d3 ? p : [p[0], 0, p[1]])) : []);
+      const e = Math.max(...[0, 1, 2].map((k) => Math.max(...all.map((p) => p[k])) - Math.min(...all.map((p) => p[k]))), 1e-9), h = e * 0.025; v._hs = e * 0.04;
+      const up = (p) => (g.d3 ? p : [p[0], 0, p[1]]);
+      g.mem.forEach((m) => {
+        const a = P3[m.a], b = m.type === 'free' ? a.map((x, i) => x + (up(m.v || [0, 1, 0])[i] / (Math.hypot(...(m.v || [0, 1])) || 1)) * e * 0.4) : P3[m.b];
+        v.line([V(a), V(b)], m.type === 'known' ? '#7a3b33' : m.type === 'spring' ? '#2e5f80' : '#2c3e50', m.type === 'spring' ? 3.2 : 2.2);
+        const mid = a.map((x, i) => (x + b[i]) / 2); v.label(V(mid), opt.showP && Number.isFinite(m.F) ? `${m.name} = ${fmt(Math.abs(m.F))} ${F}` : m.name, m.type === 'known' ? LCOL : RCOL);
+      });
+      g.pts.forEach((p, j) => { const q = V(P3[j]), k = p.fix ? h * 1.4 : h; v.box(q[0] - k, q[1] - k, q[2] - k, q[0] + k, q[1] + k, q[2] + k, p.fix ? '#8d98a3' : '#ffffff', 1, '#1d2733'); v.label([q[0] + k * 2, q[1] + k * 2, q[2]], p.name, '#1d2733'); });
+      g.loads.forEach((l) => { const vv = up(l.v), m = Math.hypot(...vv); if (!(m > 0)) return; const a = P3[l.at], tip = a.map((x, i) => x + (vv[i] / m) * e * 0.25); arrow3(v, V(a), V(tip), LCOL, 2.6); v.label(V(tip), lab(l.name, m, F), LCOL); });
       v.autoBounds(); return;
     }
     if (g.kind === 'frame') {
@@ -486,7 +596,21 @@
   const U1 = (name, ang, o) => Object.assign({ name, type: 'cable', ang, k: 0, P: 0 }, o);
   const FP = (s2) => s2.split(' ').map((t) => { const [name, x, y] = t.split(','); return { name, x: +x, y: +y }; });
   const FL1 = (at, Fx, Fy, mem) => ({ mem: mem || '', at, by: 'comp', Fx, Fy, F: Math.hypot(Fx, Fy), ang: 270, dx: 4, dy: 3 });
+  const NP = (str) => str.split(' ').map((t) => { const [name, x, y, z, k] = t.split(','); return { name, x: +x, y: +y, z: +z, kind: k === 'r' ? 'ring' : 'fixed' }; });
+  const NM = (a, b, type, o) => Object.assign({ a, b, type, k: 0, L0: 0, T: 0 }, o || {});
+  const NET = (fu, o) => ({ mode: 'net', fu, cn: Object.assign({ dim: '2d', task: 'forces', capOn: false, capT: 100 }, o) });
   M.presets = [
+    { name: 'Test: Prob. 3-9, block on two springs: unstretched lengths', units: 'SI', state: NET('N', { points: NP('C,-0.6,0,0 B,0.4,0,0 A,0,-0.5,0,r'), members: [NM('A', 'B', 'spring', { k: 1200 }), NM('A', 'C', 'spring', { k: 1500 })], loads: [{ at: 'A', by: 'mass', m: 30, W: 0, Fx: 0, Fy: 0, Fz: 0 }] }),
+      expect: [{ k: 'F_AB', v: 226.1 }, { k: 'F_AC', v: 183.9 }, { k: 'Unstretched length of AB', v: 0.4519 }, { k: 'Unstretched length of AC', v: 0.6584 }] },
+    { name: 'Test: Prob. 3-10, stiffness of spring DB to hold a 40 kg crate', units: 'SI', state: NET('N', { points: NP('D,0,0,0,r B,3,2,0 C,-2,2,0'), members: [NM('D', 'B', 'spring', { L0: 2 }), NM('D', 'C', 'cord')], loads: [{ at: 'D', by: 'mass', m: 40, W: 0, Fx: 0, Fy: 0, Fz: 0 }] }),
+      expect: [{ k: 'Stiffness of DB', v: 176.2 }, { k: 'F_DC', v: 332.96 }] },
+    { name: 'Test: Prob. 3-14, stretch of three springs holding a 2 kg block', units: 'SI', state: NET('N', { points: NP('A,0,0,0,r B,-4,3,0 C,3,3,0 D,0,-1,0,r'), members: [NM('A', 'B', 'spring', { k: 30 }), NM('A', 'C', 'spring', { k: 20 }), NM('A', 'D', 'spring', { k: 40 })], loads: [{ at: 'D', by: 'mass', m: 2, W: 0, Fx: 0, Fy: 0, Fz: 0 }] }),
+      expect: [{ k: 'Stretch of AB', v: 0.467 }, { k: 'Stretch of AC', v: 0.7928 }, { k: 'Stretch of AD', v: 0.4905 }] },
+    { name: 'Test: Prob. 3-33, sag of the ring with 5 lb blocks over two pulleys and 8 lb hanging', units: 'US', state: NET('lb', { task: 'place', points: NP('B,-4,0,0 C,4,0,0 A,0,-1,0,r'), members: [NM('A', 'B', 'known', { T: 5 }), NM('A', 'C', 'known', { T: 5 })], loads: [{ at: 'A', by: 'weight', m: 0, W: 8, Fx: 0, Fy: 0, Fz: 0 }] }),
+      expect: [{ k: 'Ring A: sag below its highest support', v: 5.333 }] },
+    { name: 'Test: Prob. 3-67, sag of a 15 lb ball held by three 10 lb balls over pulleys (in.)', units: 'US', state: NET('lb', { dim: '3d', task: 'place', points: NP('B,0,11.547,0 C,10,-5.7735,0 D,-10,-5.7735,0 A,0,0,-3,r'), members: [NM('A', 'B', 'known', { T: 10 }), NM('A', 'C', 'known', { T: 10 }), NM('A', 'D', 'known', { T: 10 })], loads: [{ at: 'A', by: 'weight', m: 0, W: 15, Fx: 0, Fy: 0, Fz: 0 }] }),
+      expect: [{ k: 'Ring A: sag below its highest support', v: 6.667 }] },
+    { name: 'Two knots B and C: the direction of cord C is found, and the largest load for 20 lb cords', units: 'US', state: NET('lb', { capOn: true, capT: 20, points: NP('D,-3,4,0 B,-1,2,0,r C,3,2,0,r'), members: [NM('B', 'D', 'cord'), NM('B', 'C', 'cord'), NM('C', '', 'free')], loads: [{ at: 'B', by: 'weight', m: 0, W: 10, Fx: 0, Fy: 0, Fz: 0 }, { at: 'C', by: 'weight', m: 0, W: 15, Fx: 0, Fy: 0, Fz: 0 }] }) },
     { name: 'Test: Prob. 6-66, frame with a two-force member BD (A_x = 24 kN, A_y = 12 kN, D_x = 18 kN, D_y = 24 kN)', units: 'SI', state: { mode: 'frame', fu: 'kN' },
       expect: [{ k: 'A_x', v: 24 }, { k: 'A_y', v: -12 }, { k: 'D_x', v: -18 }, { k: 'D_y', v: 24 }, { k: 'Pin B: resultant', v: 30 }] },
     { name: 'Test: Prob. 6-78, compound beam with a hinge at D (N_A = 3 kN, B_y = 18 kN, N_C = 3 kN)', units: 'SI', state: { mode: 'frame', fu: 'kN', fm: { points: FP('A,0,0 B,6,0 D,9,0 C,12,0'), members: [{ name: 'ABD', pts: 'A B D' }, { name: 'DC', pts: 'D C' }], supports: [{ at: 'A', type: 'roller', ang: 90, mem: '' }, { at: 'B', type: 'pin', ang: 90, mem: '' }, { at: 'C', type: 'roller', ang: 90, mem: '' }], loads: [], couples: [], dists: [{ mem: 'ABD', from: 'A', to: 'D', w1: 2, w2: 2 }, { mem: 'DC', from: 'D', to: 'C', w1: 2, w2: 2 }], sel: '' } },

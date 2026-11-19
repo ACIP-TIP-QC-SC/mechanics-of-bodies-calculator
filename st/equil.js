@@ -6,6 +6,7 @@
  *   rigid      2D rigid body on pins, rollers, fixed supports, cables and links (5.1 to 5.4)
  *   rigid3d    rigid body in space on ball-and-socket joints, journal and thrust bearings, hinges,
  *              cables, smooth surfaces, links and fixed supports (5.5 to 5.7, Table 5-2)
+ *   net        cords, springs, rings and pulleys with several joints (3.3, 3.4): see cablenet.js
  *   frame      frames, machines and compound beams (6.6): members joined by pins, each member a rigid
  *              body with three equations; the pin forces and support reactions are solved together
  * Particles and plane rigid bodies can also give the largest load: when every load is scaled by the
@@ -16,6 +17,7 @@
   'use strict';
   const Core = root.Core || require('../shared/core.js');
   const Forces = root.Forces || require('./forces.js');
+  const CableNet = root.CableNet || require('./cablenet.js');
   const { fmt, fail, Steps, sumStr, linSolve } = Core;
   const DEG = Math.PI / 180;
   const { comp2, comp3 } = Forces;
@@ -52,6 +54,7 @@
         loads: [{ mem: '', at: 'G', by: 'comp', Fx: -6, Fy: 0, F: 6, ang: 180, dx: 4, dy: 3 }, { mem: '', at: 'C', by: 'comp', Fx: 0, Fy: -6, F: 6, ang: 270, dx: 4, dy: 3 }, { mem: '', at: 'E', by: 'comp', Fx: 0, Fy: -6, F: 6, ang: 270, dx: 4, dy: 3 }],
         couples: [], dists: [], sel: '',
       },
+      cn: CableNet.defaults(),
       cap: { on: false, T: 500, sup: [] },
     };
   }
@@ -67,6 +70,7 @@
     if (st.mode === 'particle3d') return capWrap(particle3d(st, c), st, c);
     if (st.mode === 'particle') return capWrap(particle(st, c), st, c);
     if (st.mode === 'frame') return frame(st, c);
+    if (st.mode === 'net') return CableNet.solve(st.cn, c);
     return particle(st, c);
   }
 
@@ -524,6 +528,7 @@
       });
     };
     ['pa', 'p3', 'rb', 'r3', 'fm'].forEach((k) => walk(st[k]));
+    if (st.cn) CableNet.convertState(st.cn, kL, kF, kM);
     if (st.cap) { if (typeof st.cap.T === 'number') st.cap.T = tidy(st.cap.T * kF, 8); st.cap.sup = (st.cap.sup || []).map((v) => (v === '' || v == null ? v : tidy(+v * kF, 8))); }
     st.fu = f1;
     return st;

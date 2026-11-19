@@ -327,6 +327,33 @@ group('trusses module', () => {
   truthy('space truss: m + r < 3j fails', !Truss.solve(bad, U.US).ok);
   { const s2 = mk({ mode: 'space' }), F0 = out(Truss.solve(s2, SI), 'F_CA'); Truss.convertState(s2, 'SI', 'US'); Truss.convertState(s2, 'US', 'SI'); close('space units round trip', out(Truss.solve(s2, SI), 'F_CA'), F0, 1e-6); }
 });
+group('statics: cords, springs, rings and pulleys', () => {
+  const E = R('st/equil.js'), US = U.US, SI = U.SI;
+  const P = (str) => str.split(' ').map((t) => { const [name, x, y, z, k] = t.split(','); return { name, x: +x, y: +y, z: +z, kind: k === 'r' ? 'ring' : 'fixed' }; });
+  const M2 = (a, b, type, o) => Object.assign({ a, b, type, k: 0, L0: 0, T: 0 }, o || {});
+  const run = (cn, u, fu) => { const st = E.defaults(); st.mode = 'net'; st.fu = fu; st.cn = Object.assign(E.defaults().cn, cn); return E.solve(st, u); };
+  let r = run({}, SI, 'N');
+  close('3-9 F_AB', out(r, 'F_AB'), 226.13); close('3-9 F_AC', out(r, 'F_AC'), 183.88); close('3-9 L0 AB', out(r, 'Unstretched length of AB'), 0.4519);
+  r = run({ points: P('A,0,0,0,r B,3,2,0 C,-2,2,0'), members: [M2('A', 'B', 'spring', { L0: 2 }), M2('A', 'C', 'cord')], loads: [{ at: 'A', by: 'mass', m: 40 }] }, SI, 'N');
+  close('3-10 k', out(r, 'Stiffness of AB'), 176.24);
+  r = run({ points: P('A,0,0,0,r B,-4,3,0 C,3,3,0 D,0,-1,0,r'), members: [M2('A', 'B', 'spring', { k: 30 }), M2('A', 'C', 'spring', { k: 20 }), M2('A', 'D', 'spring', { k: 40 })], loads: [{ at: 'D', by: 'mass', m: 2 }] }, SI, 'N');
+  close('3-14 x_AB', out(r, 'Stretch of AB'), 0.4671); close('3-14 x_AC', out(r, 'Stretch of AC'), 0.7928); close('3-14 x_AD', out(r, 'Stretch of AD'), 0.4905);
+  r = run({ task: 'place', points: P('A,0,-1,0,r B,-4,0,0 C,4,0,0'), members: [M2('A', 'B', 'known', { T: 5 }), M2('A', 'C', 'known', { T: 5 })], loads: [{ at: 'A', by: 'weight', W: 8 }] }, US, 'lb');
+  close('3-33 sag', out(r, 'Ring A: sag below its highest support'), 16 / 3);
+  r = run({ task: 'place', dim: '3d', points: P('A,0,0,-3,r B,0,11.547,0 C,10,-5.7735,0 D,-10,-5.7735,0'), members: [M2('A', 'B', 'known', { T: 10 }), M2('A', 'C', 'known', { T: 10 }), M2('A', 'D', 'known', { T: 10 })], loads: [{ at: 'A', by: 'weight', W: 15 }] }, US, 'lb');
+  close('3-67 sag', out(r, 'Ring A: sag below its highest support'), 20 / 3, 1e-4);
+  // a ring on two springs with k and L0: where it settles, and the forces there balance the weight
+  r = run({ task: 'place', points: P('A,0,-1,0,r B,-1,0,0 C,1,0,0'), members: [M2('A', 'B', 'spring', { k: 100, L0: 1 }), M2('A', 'C', 'spring', { k: 100, L0: 1 })], loads: [{ at: 'A', by: 'weight', W: 50 }] }, SI, 'N');
+  { const y = -out(r, 'Ring A: sag below its highest support'), L = Math.hypot(1, y), Fs = 100 * (L - 1); close('springs settle: ΣF_y = 0', 2 * Fs * (-y / L), 50, 1e-6); }
+  r = run({ capOn: true, capT: 100, points: P('A,0,0,0,r B,3,2,0 C,-2,2,0'), members: [M2('A', 'B', 'cord'), M2('A', 'C', 'cord')], loads: [{ at: 'A', by: 'weight', W: 100 }] }, US, 'lb');
+  close('largest load', out(r, 'Largest total load'), (100 * 100) / out(r, 'F_AC'));
+  r = run({ points: P('D,-3,4,0 B,-1,2,0,r C,3,2,0,r'), members: [M2('B', 'D', 'cord'), M2('B', 'C', 'cord'), M2('C', '', 'free')], loads: [{ at: 'B', by: 'weight', W: 10 }, { at: 'C', by: 'weight', W: 15 }] }, US, 'lb');
+  close('free-direction cord', out(r, 'F_C'), Math.hypot(10, 15)); close('free-direction angle', out(r, 'Angle of C (↺ from +x)'), (Math.atan2(15, 10) * 180) / Math.PI);
+  truthy('indeterminate fails', !run({ points: P('A,0,0,0,r B,3,2,0'), members: [M2('A', 'B', 'cord'), M2('A', '', 'free')], loads: [{ at: 'A', by: 'weight', W: 1 }] }, US, 'lb').ok);
+  truthy('cord in compression fails', !run({ points: P('A,0,0,0,r B,3,-2,0 C,-2,-2,0'), members: [M2('A', 'B', 'cord'), M2('A', 'C', 'cord')], loads: [{ at: 'A', by: 'weight', W: 1 }] }, US, 'lb').ok);
+  { const st = E.defaults(); st.mode = 'net'; const a = out(E.solve(st, SI), 'F_AB'); E.convertState(st, 'SI', 'US'); E.convertState(st, 'US', 'SI'); close('net units round trip', out(E.solve(st, SI), 'F_AB'), a, 1e-6); }
+});
+
 group('friction module', () => {
   const mk = (o) => Core.deepMerge(Friction.defaults(), o), SI = U.SI, US = U.US;
   // Example 8.1: crate 20 kg, P = 80 N at 30° downward, 0.2 m above the floor
