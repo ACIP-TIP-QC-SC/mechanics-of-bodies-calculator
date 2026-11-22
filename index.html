@@ -68,7 +68,7 @@ nav.side {
   background: var(--panel); border-right: 1px solid var(--rule); padding: 12px 10px 20px;
 }
 .sidetop { display: flex; align-items: center; gap: 8px; }
-.sidetop .cur { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; padding: 0 10px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidetop .navitem { flex: 1; min-width: 0; min-height: 36px; }
 .sidebtn {
   flex: none; height: 36px; min-width: 36px; padding: 0 10px; border: 1px solid var(--rule); border-radius: 6px;
   background: var(--panel); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
@@ -91,11 +91,40 @@ nav.side {
 .railic:hover { border-color: var(--accent); color: var(--accent); }
 .railic.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 nav.side.rail { width: 57px; }
-nav.side.rail .navlist, nav.side.rail .cur { display: none; }
+nav.side.rail .navlist, nav.side.rail .sidetop .navitem { display: none; }
 nav.side.rail .railonly { display: flex; }
 
 main { flex: 1; position: relative; min-width: 0; min-height: 0; }
 main iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: var(--paper); }
+
+/* All calculators: every module as a card, with course filters. */
+.home { position: absolute; inset: 0; overflow-y: auto; padding: 24px; }
+.home .in { max-width: 1400px; display: flex; flex-direction: column; gap: 20px; }
+.home h2 { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.25; }
+.home .lead { margin: 6px 0 0; color: var(--muted); max-width: 820px; }
+.pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.pillbtn { font: inherit; font-size: 13px; font-weight: 500; color: var(--ink); background: var(--panel); border: 1px solid var(--rule); border-radius: 18px; height: 36px; padding: 0 14px; cursor: pointer; }
+.pillbtn:hover { border-color: var(--accent); }
+.pillbtn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
+.mcardwrap { position: relative; display: flex; }
+.mcard { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 160px; padding: 14px; text-align: left; color: var(--ink); background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; cursor: pointer; }
+.mcard:hover { border-color: var(--accent); }
+.mc-ic { width: 32px; height: 32px; border-radius: 6px; background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+.mc-t { font-weight: 600; font-size: 15px; padding-right: 30px; }
+.mc-d { font-size: 13px; color: var(--muted); }
+.mc-f { margin-top: auto; font-size: 12px; font-weight: 500; line-height: 1.6; }
+.mc-f a { color: var(--accent); text-decoration: none; }
+.mc-f a:hover { text-decoration: underline; }
+.mc-f .dot { color: var(--muted); padding: 0 4px; }
+.mc-q { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; border-radius: 14px; border: 1px solid var(--rule); background: var(--panel); color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.mc-q:hover, .mc-q[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.pop { position: absolute; z-index: 10; top: 46px; right: 8px; left: 8px; background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; font-size: 13px; box-shadow: 0 6px 18px rgba(22, 32, 43, .15); }
+.pop b { display: block; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.pop ul { margin: 0; padding-left: 18px; }
+.pop li { padding: 2px 0; }
+.pop a { color: var(--accent); text-decoration: none; }
+.pop a:hover { text-decoration: underline; }
 
 /* Footer */
 footer.foot { background: var(--panel); border-top: 1px solid var(--rule); color: var(--muted); font-size: 13px; padding: 16px 24px calc(16px + env(safe-area-inset-bottom, 0px)); }
@@ -116,10 +145,10 @@ footer.foot .dev strong { color: var(--ink); }
   .body { flex-direction: column; }
   /* Phones: the module list folds into a "Modules" button above the solver. */
   nav.side, nav.side.rail { width: auto; overflow: visible; border-right: 0; border-bottom: 1px solid var(--rule); padding: 8px 12px; }
-  nav.side.rail .navlist, nav.side.rail .cur { display: block; }
+  nav.side.rail .navlist, nav.side.rail .sidetop .navitem { display: flex; }
+  .home { position: static; padding: 16px; }
   nav.side .railonly, #railBtn { display: none !important; }
   #navToggle { display: inline-block; }
-  .sidetop .cur { padding: 0 4px; }
   nav.side:not(.open) .navlist { display: none; }
   .navlist { padding-bottom: 8px; }
   /* On phones the solver frame is sized to its whole content (see fit below), so the page
@@ -133,14 +162,14 @@ footer.foot .dev strong { color: var(--ink); }
 <body>
 <div class="shell">
 <header class="top">
-  <div class="brand">
+  <a class="brand" href="#home" id="brandLink">
     <img src="logo.png" width="56" height="56" alt="ACI Philippines T.I.P. Quezon City Student Chapter logo">
     <div>
       <h1>Mechanics of Rigid and Deformable Bodies Calculator</h1>
       <p>American Concrete Institute Philippines T.I.P. QC Student Chapter</p>
       <p class="by">by CEM Jumawan</p>
     </div>
-  </div>
+  </a>
   <div class="ctrls">
     <div class="ctrl"><span id="themeLbl">Theme</span>
       <div class="seg theme" role="radiogroup" aria-labelledby="themeLbl">
@@ -152,7 +181,7 @@ footer.foot .dev strong { color: var(--ink); }
 <div class="body">
 <nav class="side" id="side" aria-label="Modules">
   <div class="sidetop">
-    <span class="cur" id="navCur">Modules</span>
+    <button type="button" class="navitem" id="homeBtn">All calculators</button>
     <button type="button" class="sidebtn" id="navToggle" aria-expanded="false" aria-controls="navList">Modules</button>
     <button type="button" class="sidebtn" id="railBtn" aria-label="Hide the module list" title="Hide the module list">&laquo;</button>
   </div>
@@ -191,12 +220,28 @@ footer.foot .dev strong { color: var(--ink); }
     </div>
   </div>
   <div class="railonly">
+    <button type="button" class="railic" data-pane="home" title="All calculators">All</button>
     <button type="button" class="railic" data-pane="statics" title="Statics of Rigid Bodies">ST</button>
     <button type="button" class="railic" data-pane="dynamics" title="Dynamics of Rigid Bodies">DY</button>
     <button type="button" class="railic" data-pane="mdb" title="Mechanics of Deformable Bodies">MD</button>
   </div>
 </nav>
 <main>
+  <section class="home" id="homePage" aria-labelledby="homeTitle" hidden>
+    <div class="in">
+      <div>
+        <h2 id="homeTitle">Statics, dynamics and mechanics of deformable bodies</h2>
+        <p class="lead">Pick a calculator. Each one draws the problem as you type, animates the motion or deflection, and ends with the results and a numbered step-by-step solution you can copy or print.</p>
+      </div>
+      <div class="pills" role="group" aria-label="Show calculators for">
+        <button type="button" class="pillbtn" data-f="all" aria-pressed="true">All</button>
+        <button type="button" class="pillbtn" data-f="statics" aria-pressed="false">Statics of Rigid Bodies</button>
+        <button type="button" class="pillbtn" data-f="dynamics" aria-pressed="false">Dynamics of Rigid Bodies</button>
+        <button type="button" class="pillbtn" data-f="mdb" aria-pressed="false">Mechanics of Deformable Bodies</button>
+      </div>
+      <div class="cards" id="cards"></div>
+    </div>
+  </section>
   <iframe id="pane-statics" title="Statics of Rigid Bodies solver" data-src="st/index.html" hidden></iframe>
   <iframe id="pane-dynamics" title="Dynamics of Rigid Bodies solver" data-src="dy/index.html" hidden></iframe>
   <iframe id="pane-mdb" title="Mechanics of Deformable Bodies solver" data-src="md/index.html" hidden></iframe>
@@ -273,7 +318,7 @@ footer.foot .dev strong { color: var(--ink); }
     if (!mod || !grp.querySelector('[data-mod="' + mod + '"]')) mod = grp.querySelector('.navitem').dataset.mod;
     all('.navitem').forEach(function (b) {
       var on = b.parentNode === grp && b.dataset.mod === mod;
-      if (on) { b.setAttribute('aria-current', 'page'); document.getElementById('navCur').textContent = b.textContent; }
+      if (on) b.setAttribute('aria-current', 'page');
       else b.removeAttribute('aria-current');
     });
     all('.railic').forEach(function (b) { b.classList.toggle('on', b.dataset.pane === id); });
@@ -285,9 +330,21 @@ footer.foot .dev strong { color: var(--ink); }
     for (var id in PKEY) if (PKEY[id] === key && id === current) mark(id, mod);
   };
 
+  var home = document.getElementById("homePage"), homeBtn = document.getElementById('homeBtn');
+  function showHome() {
+    current = 'home';
+    home.hidden = false;
+    frames().forEach(function (fr) { fr.hidden = true; });
+    homeBtn.setAttribute('aria-current', 'page');
+    all('.navlist .navitem').forEach(function (b) { b.removeAttribute('aria-current'); });
+    all('.railic').forEach(function (b) { b.classList.toggle('on', b.dataset.pane === 'home'); });
+    if (location.hash !== '#home') { try { history.replaceState(null, '', '#home'); } catch (e) {} }
+  }
   function select(id, mod) {
+    if (id === 'home') { showHome(); return; }
     if (ids.indexOf(id) < 0) id = ids[0];
     current = id;
+    home.hidden = true; homeBtn.removeAttribute('aria-current');
     if (mod) {
       var fr0 = document.getElementById('pane-' + id), app = null;
       try { app = fr0.getAttribute('src') && fr0.contentWindow && fr0.contentWindow.App; } catch (e) {}
@@ -317,6 +374,77 @@ footer.foot .dev strong { color: var(--ink); }
     });
   });
   all('.railic').forEach(function (b) { b.addEventListener('click', function () { select(b.dataset.pane); }); });
+  homeBtn.addEventListener('click', function () { select('home'); if (phone.matches) openList(false); });
+  document.getElementById('brandLink').addEventListener('click', function (e) { e.preventDefault(); select('home'); window.scrollTo(0, 0); });
+
+  // All calculators page. The topic links open a module with that kind of problem chosen.
+  var CAT = { statics: ['ST', 'Statics of Rigid Bodies'], dynamics: ['DY', 'Dynamics of Rigid Bodies'], mdb: ['MD', 'Mechanics of Deformable Bodies'] };
+  var INFO = {"forces":{"d":"Resultants of forces and couples, components, moments and distributed loads.","t":["Resultant of coplanar forces","Cartesian vectors and direction angles","Component of a force along a line","Moment about a point and about an axis","Coplanar system: force and couple, single resultant","3D system: force and couple, wrench","Resultant of distributed loads"],"s":[["Resultant",0],["Moments",3],["Distributed loads",6]]},"equil":{"d":"Reactions of particles, rigid bodies, frames and machines in the plane and in space.","t":["Particle in a plane","Particle held by three cables in space","Rigid body in a plane (supports and reactions)","Rigid body in space (bearings, ball joints, cables)","Frames, machines and compound beams","Cords, springs, rings and pulleys (several joints)"],"s":[["Particles",0],["Rigid bodies",2],["Frames and machines",4]]},"truss":{"d":"Member forces in plane and space trusses by the method of joints, with ready-made templates.","t":["Pratt (bridge)","Howe (bridge)","Warren (no verticals)","Pitched roof truss","Cantilever truss from a wall"],"s":[["Bridge trusses",0],["Roof truss",3],["Cantilever",4]]},"internal":{"d":"Shear and moment diagrams, loadings at a cut, and cables.","t":["Shear and moment diagrams","Internal loadings at a cut","Pipe assembly in space: loadings at a section","Cable with concentrated loads","Cable with a uniform load (parabola)","Cable under its own weight (catenary)"],"s":[["V and M diagrams",0],["Loadings at a cut",1],["Cables",3]]},"friction":{"d":"Slip or tip, wedges, screws, belts, brakes, vehicles and bearings.","t":["Block on a floor or slope: slip or tip","Block sliding on an incline","Ladder against a wall","Wedge","Square-threaded screw","Belt, rope or V-belt over drums; band brakes","Vehicle on wheels (car, truck, cart)","Bearings and rolling resistance","Two bodies: joined or stacked blocks, person and crate","Spool, hoop or disk against a floor and a wall","Block brake or pawl on a wheel"],"s":[["Slip or tip",0],["Wedge",3],["Belts",5],["Brakes",10]]},"section":{"d":"Centroids, centres of mass, moments of inertia, Mohr's circle and Pappus–Guldinus.","t":["Composite area: centroid and moments of inertia","Inclined axes and Mohr's circle (I_x, I_y, I_xy known)","Composite wire: centroid","Composite body: centre of mass","Pappus and Guldinus: surface and volume of revolution","By integration: area under curves, rod, solid of revolution, fluid pressure"],"s":[["Composite area",0],["Mohr's circle",1],["Integration",5]]},"vwork":{"d":"Equilibrium positions and their stability by the principle of virtual work.","t":["The equilibrium positions and their stability","The load or value that holds a given position"],"s":[["Stability",0],["Holding load",1]]},"rect":{"d":"Straight-line motion from constant or variable acceleration, graphs and pulleys.","t":["Constant acceleration or free fall","Two particles on the same line","s, v or a given as a function of time","Acceleration given as a function of velocity","Acceleration given as a function of position","Erratic motion from a v–t or a–t graph","Blocks joined by cords and pulleys (dependent motion)"],"s":[["Constant a",0],["Variable a",2],["Graphs",5],["Pulleys",6]]},"curv":{"d":"Projectiles, normal and tangential and polar components, and relative motion.","t":["Projectile","Path y = f(x) or a circle: normal and tangential components","Cylindrical (polar) components r(t), θ(t)","Relative motion of two particles"],"s":[["Projectile",0],["n–t components",1],["Polar",2],["Relative",3]]},"pkin":{"d":"Force and acceleration, work and energy, and impulse for particles.","t":["Block on a floor or incline","Two blocks joined by a cord","Block and spring","Car on a flat or banked curve","Particle on a vertical circle","Stacked blocks and plates","Block on a wedge pushed along a floor","Particle in cylindrical coordinates (r, θ, z)","Vehicle or hoist driven by a motor (power)","Satellite or rocket in orbit (central force)"],"s":[["Blocks",0],["Curves",3],["Power",8],["Orbits",9]]},"impact":{"d":"Impact, impulse and momentum, fluid streams and variable mass.","t":["Central impact of two bodies","Oblique impact of two smooth disks","Ball striking a fixed wall or floor","Ball dropped and bouncing on a floor","Impulse from a force–time graph","Conservation of momentum (recoil, throws, block onto a cart)","Angular impulse and momentum","Steady fluid stream on a vane or pipe","Variable mass (sand on a car, rockets, jets)"],"s":[["Central impact",0],["Oblique impact",1],["Momentum",5],["Variable mass",8]]},"rbmotion":{"d":"Velocities and accelerations of gears, linkages, rolling wheels and rotating frames.","t":["Rotation about a fixed axis (gears, belts)","Slider-crank","Four-bar linkage","Wheel or spool rolling without slipping","Bar sliding on a wall and a floor","Absolute motion: cam or linkage, s = f(θ)","Slotted link driven by a peg","Rotating frame and Coriolis acceleration","Planetary gears","Double collar on a rotating rod and a fixed circle"],"s":[["Gears",0],["Slider-crank",1],["Four-bar",2],["Rolling",3]]},"rbforce":{"d":"Equations of motion and energy for bodies in translation, rotation and plane motion.","t":["Moment of inertia of a composite body","Vehicle accelerating or braking (translation)","Pendulum on a fixed pin (rotation)","Drum lowering a block (rotation)","Wheel or spool rolling (general plane motion)","Two wheels joined by a link on a slope","Arm driving gears round a fixed gear (work and energy)","Two bars released from rest (energy)","Eccentric impact"],"s":[["Translation",1],["Rotation",2],["Plane motion",4],["Energy",7]]},"vib":{"d":"Natural frequency, damping and forced vibration of springs and pendulums.","t":["Mass on springs (damping and forcing allowed)","Simple pendulum","Body swinging on a pin (compound pendulum)","Torsional pendulum","Block on a cord over a disk, held by a spring (energy method)","Cylinder rolling against a spring (energy method)","Bar on a pin with a spring and a dashpot (damping allowed)"],"s":[["Springs",0],["Pendulums",1],["Energy method",4]]},"rb3d":{"d":"Angular motion, inertia, momentum and gyroscopic motion in three dimensions.","t":["Angular velocity and acceleration, and the motion of a point","Moments and products of inertia of a body","Angular momentum and kinetic energy","Equations of motion and bearing reactions","Gyroscope or top in steady precession","Torque-free motion (satellite, projectile)"],"s":[["Kinematics",0],["Inertia",1],["Gyroscope",4]]},"stress":{"d":"Normal and shear stress and strain, joints, allowable stress and test data.","t":["Bar under an axial load","Weight hung from two rods","Bolted or pinned joint","Size a part from an allowable stress","Stress-strain diagram from test data","Block in shear (shear strain)"],"s":[["Axial bar",0],["Joints",2],["Allowable stress",3]]},"axial":{"d":"Elongation and stress of axially loaded and statically indeterminate members.","t":["Stepped bar with loads along it","Members side by side under a rigid cap","Rigid bar on rods or posts","Stress concentration at a hole or fillet"],"s":[["Stepped bar",0],["Indeterminate",1],["Rigid bar",2]]},"torsion":{"d":"Shear stress and angle of twist of shafts, and power transmission.","t":["Stepped shaft with torques along it","Shaft transmitting power","Tube bonded to a core","Square, triangular or elliptical shaft"],"s":[["Stepped shaft",0],["Power",1],["Non-circular",3]]},"beamstress":{"d":"Bending and shear stress, shear flow, unsymmetric bending and beam design.","t":["Bending stress (flexure formula)","Shear stress (shear formula)","Shear flow and fastener spacing","Bending about an inclined axis","Design: size or check a beam"],"s":[["Flexure",0],["Shear",1],["Shear flow",2],["Design",4]]},"deflect":{"d":"Elastic curve by integration and superposition, including indeterminate beams.","t":["Integration (elastic curve)","Superposition of standard cases","Indeterminate beam (redundants)"],"s":[["Integration",0],["Superposition",1],["Indeterminate",2]]},"combined":{"d":"Stresses at a point under combined loads, pressure vessels and off-centre loads.","t":["Stresses at a point of a loaded section","Thin-walled pressure vessel","Post with an off-centre load"],"s":[["At a point",0],["Pressure vessel",1],["Off-centre load",2]]},"transform":{"d":"Principal stresses and strains, Mohr's circle, strain rosettes and Hooke's law.","t":["Plane stress: turned element and principal stresses","Plane strain: turned element and principal strains","Strain rosette readings","Generalized Hooke's law"],"s":[["Plane stress",0],["Plane strain",1],["Rosette",2]]},"buckle":{"d":"Euler critical load, slenderness and column sizing.","t":["A, I_x and I_y typed in","Round bar, tube or rectangle","W shape from the table"],"s":[["Typed section",0],["Round or rectangle",1],["W shape",2]]}};
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    for (var k in attrs || {}) { if (k === 'text') n.textContent = attrs[k]; else n.setAttribute(k, attrs[k]); }
+    (kids || []).forEach(function (c) { if (c) n.appendChild(c); });
+    return n;
+  }
+  // Choose a problem type in the module's first list that offers it, once the solver is ready.
+  function chooseType(pane, text) {
+    var fr = document.getElementById('pane-' + pane), tries = 0;
+    (function go() {
+      var d = null;
+      try { d = fr.contentWindow && fr.contentWindow.App && fr.contentDocument; } catch (e) {}
+      var sel = d && Array.prototype.slice.call(d.querySelectorAll('#controls select')).filter(function (s) {
+        return Array.prototype.some.call(s.options, function (o) { return o.text === text; });
+      })[0];
+      if (!sel) { if (++tries < 50) setTimeout(go, 100); return; }
+      var opt = Array.prototype.filter.call(sel.options, function (o) { return o.text === text; })[0];
+      if (sel.value !== opt.value) { sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+    })();
+  }
+  function open(pane, mod, type) {
+    select(pane, mod);
+    if (type) setTimeout(function () { chooseType(pane, type); }, 0);
+    window.scrollTo(0, 0);
+  }
+  function closePops(except) {
+    all('.pop').forEach(function (p) { if (p !== except) { p.hidden = true; var q = p.parentNode.querySelector('.mc-q'); if (q) q.setAttribute('aria-expanded', 'false'); } });
+  }
+  var cards = document.getElementById('cards');
+  all('.navgrp').forEach(function (grp) {
+    var pane = grp.dataset.pane;
+    Array.prototype.forEach.call(grp.querySelectorAll('.navitem'), function (b) {
+      var mod = b.dataset.mod, inf = INFO[mod], title = b.textContent;
+      function link(label, type) {
+        var a = el('a', { href: '#' + pane + '/' + mod, text: label });
+        a.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); open(pane, mod, type); });
+        return a;
+      }
+      var foot = el('div', { class: 'mc-f' });
+      inf.s.forEach(function (x, i) { if (i) foot.appendChild(el('span', { class: 'dot', text: '·' })); foot.appendChild(link(x[0], inf.t[x[1]])); });
+      var card = el('div', { class: 'mcard', role: 'link', tabindex: '0', 'aria-label': title + ', ' + CAT[pane][1] }, [
+        el('div', { class: 'mc-ic', 'aria-hidden': 'true', text: CAT[pane][0] }),
+        el('div', { class: 'mc-t', text: title }),
+        el('div', { class: 'mc-d', text: inf.d }),
+        foot
+      ]);
+      card.addEventListener('click', function () { open(pane, mod); });
+      card.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(pane, mod); } });
+      var list = el('ul');
+      inf.t.forEach(function (t) { list.appendChild(el('li', null, [link(t, t)])); });
+      var pop = el('div', { class: 'pop', id: 'pop-' + mod }, [el('b', { text: 'Problems it solves' }), list]);
+      pop.hidden = true;
+      var q = el('button', { type: 'button', class: 'mc-q', 'aria-expanded': 'false', 'aria-controls': 'pop-' + mod, 'aria-label': 'Problems ' + title + ' solves', title: 'Problems it solves', text: '?' });
+      q.addEventListener('click', function (e) { e.stopPropagation(); var show = pop.hidden; closePops(pop); pop.hidden = !show; q.setAttribute('aria-expanded', show ? 'true' : 'false'); });
+      cards.appendChild(el('div', { class: 'mcardwrap', 'data-pane': pane }, [card, q, pop]));
+    });
+  });
+  document.addEventListener('click', function (e) { if (!e.target.closest || !e.target.closest('.pop')) closePops(null); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePops(null); });
+  all('.pillbtn').forEach(function (p) {
+    p.addEventListener('click', function () {
+      all('.pillbtn').forEach(function (x) { x.setAttribute('aria-pressed', x === p ? 'true' : 'false'); });
+      all('.mcardwrap').forEach(function (c) { c.hidden = p.dataset.f !== 'all' && c.dataset.pane !== p.dataset.f; });
+    });
+  });
   // Wide screens: the module list can fold to a narrow rail, remembered for next time.
   var rail = document.getElementById('railBtn');
   function setRail(on, save) {
@@ -389,8 +517,9 @@ footer.foot .dev strong { color: var(--ink); }
   };
 
   var hash = (location.hash || '').slice(1).split('/');
+  // The All calculators page opens first, unless the link names a course or module.
   if (hash[0] && ids.indexOf(hash[0]) >= 0) select(hash[0], hash[1] || null);
-  else select(stored() || ids[0]);
+  else select('home');
 })();
 </script>
 </body>
