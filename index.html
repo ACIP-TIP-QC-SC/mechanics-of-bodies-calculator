@@ -10,191 +10,220 @@
   else document.documentElement.setAttribute('data-theme', m === 'dark' ? 'dark' : 'light'); })();
 </script>
 <title>Mechanics of Rigid and Deformable Bodies Calculator</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
+<link rel="icon" type="image/png" href="logo.png">
 <style>
+/* IBM Plex, the typeface of the Structural Analysis and Design Calculator (vendor/fonts, SIL OFL). */
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:400;font-display:swap;src:url('vendor/fonts/ibm-plex-sans-latin-400-normal.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:500;font-display:swap;src:url('vendor/fonts/ibm-plex-sans-latin-500-normal.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:600;font-display:swap;src:url('vendor/fonts/ibm-plex-sans-latin-600-normal.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 :root {
-  --paper: #f2f5f6; --panel: #ffffff; --ink: #15242d; --muted: #5a6b75; --rule: #d3dce0;
-  --accent: #d4612a; --accent-ink: #ffffff; --tab-bg: #e8eef1;
-  --f-display: "Barlow Condensed", "Arial Narrow", Arial, sans-serif;
-  --f-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --paper: #f3f5f7; --panel: #ffffff; --ink: #16202b; --muted: #52606d; --rule: #d5dbe1;
+  --accent: #1f5fa8; --accent-ink: #ffffff; --tint: #e8f0fa; --brand: #9a5b00;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #0e161b; --panel: #142029; --ink: #e1eaee; --muted: #93a5af; --rule: #263642;
-    --accent: #f08a50; --accent-ink: #1a0d05; --tab-bg: #1c2b36; color-scheme: dark;
+    --paper: #0f151c; --panel: #18212b; --ink: #e6edf3; --muted: #9aa7b4; --rule: #2b3744;
+    --accent: #74acec; --accent-ink: #0f151c; --tint: #1d2c3d; --brand: #e9b44c; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --paper: #0e161b; --panel: #142029; --ink: #e1eaee; --muted: #93a5af; --rule: #263642;
-  --accent: #f08a50; --accent-ink: #1a0d05; --tab-bg: #1c2b36; color-scheme: dark;
+  --paper: #0f151c; --panel: #18212b; --ink: #e6edf3; --muted: #9aa7b4; --rule: #2b3744;
+  --accent: #74acec; --accent-ink: #0f151c; --tint: #1d2c3d; --brand: #e9b44c; color-scheme: dark;
 }
 * { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
 html, body { margin: 0; }
-body { background: var(--paper); color: var(--ink); font-family: var(--f-body); }
-/* The header and solver fill the first screen; the footer sits below it. */
+body { background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.45; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+/* The header, module list and solver fill the first screen; the footer sits below it. */
 .shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
-header.app {
-  display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap;
-  padding: 12px max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
-  padding-top: max(12px, env(safe-area-inset-top, 0px));
-  background: var(--panel); border-bottom: 1px solid var(--rule);
+
+/* Header: logo and name on the left, controls with small labels on the right. */
+header.top {
+  position: relative; z-index: 20; flex: none;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px;
+  padding: 10px max(20px, env(safe-area-inset-right, 0px)) 10px max(20px, env(safe-area-inset-left, 0px));
+  padding-top: max(10px, env(safe-area-inset-top, 0px));
+  background: var(--panel); border-bottom: 1px solid var(--rule); box-shadow: 0 1px 4px rgba(22, 32, 43, .08);
 }
-.brand { display: flex; align-items: center; gap: 14px; min-width: 0; padding-bottom: 12px; margin-right: auto; }
-.brand img { flex: none; width: 64px; height: 64px; display: block; object-fit: contain; }
-.brand h1 { margin: 0; font-family: var(--f-display); font-weight: 700; font-size: clamp(22px, 3vw, 34px); line-height: 1.02; letter-spacing: 0.01em; text-wrap: balance; }
-.brand p.by { margin-top: 1px; color: var(--accent); font-weight: 600; }
-.brand p { margin: 4px 0 0; font-family: var(--f-display); font-weight: 500; font-size: clamp(13px, 1.4vw, 16px); letter-spacing: 0.04em; color: var(--muted); }
-.side { flex: 1 1 auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 10px; align-self: stretch; }
-.theme { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; padding: 2px; background: var(--tab-bg); }
-.theme button {
-  display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 6px; background: transparent;
-  color: var(--muted); font: 600 13px/1 var(--f-body); padding: 5px 9px; cursor: pointer;
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; text-decoration: none; color: inherit; }
+.brand img { flex: none; height: 56px; width: 56px; object-fit: contain; display: block; }
+.brand h1 { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.2; }
+.brand p { margin: 0; font-size: 12px; line-height: 1.3; color: var(--muted); }
+.brand p.by { color: var(--brand); font-weight: 500; }
+.ctrls { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+.ctrl { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 500; letter-spacing: .02em; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; height: 36px; }
+.seg button { font: inherit; font-size: 13px; font-weight: 500; color: var(--muted); background: var(--panel); border: 0; padding: 0 12px; min-width: 44px; cursor: pointer; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); }
+
+/* Module list down the left side, grouped by course. */
+.body { flex: 1; min-height: 0; display: flex; }
+nav.side {
+  flex: none; width: 264px; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--panel); border-right: 1px solid var(--rule); padding: 12px 10px 20px;
 }
-.theme button svg { width: 15px; height: 15px; flex: none; }
-.theme button:hover { color: var(--ink); }
-.theme button[aria-checked="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
-.theme button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-nav.disc { display: flex; gap: 6px; align-self: flex-end; }
-nav.disc button[hidden] { display: none; }
-nav.disc button {
-  font-family: var(--f-display); font-weight: 700; font-size: 18px; letter-spacing: 0.02em;
-  border: 1px solid var(--rule); border-bottom: 0; border-radius: 10px 10px 0 0;
-  background: var(--tab-bg); color: var(--muted); padding: 10px 20px 9px; cursor: pointer;
-  display: flex; align-items: center; gap: 8px; position: relative; top: 1px;
+.sidetop { display: flex; align-items: center; gap: 8px; }
+.sidetop .cur { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; padding: 0 10px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebtn {
+  flex: none; height: 36px; min-width: 36px; padding: 0 10px; border: 1px solid var(--rule); border-radius: 6px;
+  background: var(--panel); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
 }
-nav.disc button svg { width: 20px; height: 20px; flex: none; }
-nav.disc button:hover { color: var(--ink); }
-nav.disc button[aria-selected="true"] { background: var(--paper); color: var(--ink); box-shadow: inset 0 3px 0 var(--accent); }
-nav.disc button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-nav.disc .short { display: none; }
-/* Wide screens: the theme switch sits in the top-right corner, so the discipline tabs can wrap onto their own row. */
-@media (min-width: 721px) {
-  header.app { position: relative; }
-  .theme { position: absolute; top: max(12px, env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); }
-  .brand { max-width: calc(100% - 290px); }
-  .side { justify-content: flex-end; min-height: 40px; }
+.sidebtn:hover { border-color: var(--accent); color: var(--accent); }
+#navToggle { display: none; }
+.navhead { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 16px 10px 6px; }
+.navitem {
+  width: 100%; display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 6px 10px;
+  font: inherit; font-size: 14px; line-height: 1.3; text-align: left; color: var(--ink);
+  background: transparent; border: 0; border-radius: 6px; cursor: pointer;
 }
-@media (max-width: 1240px) { nav.disc button { font-size: 16px; padding: 9px 13px 8px; } }
-main { flex: 1; position: relative; min-height: 0; }
+.navitem:hover { background: var(--tint); }
+.navitem[aria-current="page"] { background: var(--accent); color: var(--accent-ink); font-weight: 500; }
+.railonly { display: none; flex-direction: column; gap: 6px; margin-top: 10px; }
+.railic {
+  width: 36px; height: 36px; border-radius: 6px; border: 1px solid var(--rule); background: var(--panel); color: var(--ink);
+  font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.railic:hover { border-color: var(--accent); color: var(--accent); }
+.railic.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+nav.side.rail { width: 57px; }
+nav.side.rail .navlist, nav.side.rail .cur { display: none; }
+nav.side.rail .railonly { display: flex; }
+
+main { flex: 1; position: relative; min-width: 0; min-height: 0; }
 main iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: var(--paper); }
-main iframe[hidden] { display: none; }
-footer.site { background: var(--panel); border-top: 1px solid var(--rule); color: var(--ink); }
-footer.site .inner {
-  max-width: 1200px; margin: 0 auto; display: grid; gap: 28px 36px;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  padding: 36px max(16px, env(safe-area-inset-right, 0px)) 28px max(16px, env(safe-area-inset-left, 0px));
-}
-footer.site section { min-width: 0; }
-footer.site h2 {
-  margin: 0 0 8px; font-family: var(--f-display); font-weight: 700; font-size: 15px;
-  letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent);
-  padding-bottom: 6px; border-bottom: 2px solid var(--rule);
-}
-footer.site p { margin: 0; font-size: 15px; line-height: 1.55; color: var(--ink); }
-footer.site .dev { display: flex; align-items: center; gap: 12px; }
-footer.site .dev img { flex: none; width: 52px; height: 52px; object-fit: contain; }
-footer.site .dev .name { font-family: var(--f-display); font-weight: 700; font-size: 22px; line-height: 1.1; }
-footer.site .dev .role { color: var(--muted); font-weight: 600; font-size: 14px; margin-top: 2px; }
-footer.site .base {
-  border-top: 1px solid var(--rule); color: var(--muted); font-size: 13px; text-align: center;
-  padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
-}
+
+/* Footer */
+footer.foot { background: var(--panel); border-top: 1px solid var(--rule); color: var(--muted); font-size: 13px; padding: 16px 24px calc(16px + env(safe-area-inset-bottom, 0px)); }
+.footgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
+footer.foot h4 { margin: 0 0 6px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink); }
+footer.foot p { margin: 0; }
+footer.foot .dev { display: flex; gap: 10px; align-items: center; }
+footer.foot .dev img { height: 52px; width: 52px; object-fit: contain; }
+footer.foot .dev strong { color: var(--ink); }
+.footbase { border-top: 1px solid var(--rule); margin-top: 16px; padding-top: 12px; display: flex; flex-wrap: wrap; gap: 6px 24px; justify-content: space-between; }
+
+@media (max-width: 900px) { nav.side { width: 228px; } }
 @media (max-width: 720px) {
-  .brand img { width: 52px; height: 52px; }
-  .side { width: 100%; }
-  nav.disc { width: 100%; }
-  nav.disc button { flex: 1; justify-content: center; font-size: 16px; padding: 9px 8px 8px; white-space: nowrap; }
-  nav.disc button svg { display: none; }
-  nav.disc .full { display: none; } nav.disc .short { display: inline; }
+  header.top { padding: 10px 12px; }
+  .brand h1 { font-size: 16px; }
+  .brand img { width: 48px; height: 48px; }
   .shell { height: auto; min-height: 100dvh; }
-  /* On phones the solver frame is sized to its whole content (see fitFrames below), so the page
+  .body { flex-direction: column; }
+  /* Phones: the module list folds into a "Modules" button above the solver. */
+  nav.side, nav.side.rail { width: auto; overflow: visible; border-right: 0; border-bottom: 1px solid var(--rule); padding: 8px 12px; }
+  nav.side.rail .navlist, nav.side.rail .cur { display: block; }
+  nav.side .railonly, #railBtn { display: none !important; }
+  #navToggle { display: inline-block; }
+  .sidetop .cur { padding: 0 4px; }
+  nav.side:not(.open) .navlist { display: none; }
+  .navlist { padding-bottom: 8px; }
+  /* On phones the solver frame is sized to its whole content (see fit below), so the page
      scrolls as one and the footer follows the solver. A swipe inside a frame never scrolls the
      page on iOS or Android, so a fixed-height frame hid the footer. */
   main { flex: none; height: auto; }
   main iframe { position: static; height: 80vh; height: 80dvh; }
-  footer.site .inner { padding-top: 28px; gap: 24px; }
 }
 </style>
 </head>
 <body>
 <div class="shell">
-<header class="app">
+<header class="top">
   <div class="brand">
-    <img src="logo.png" width="64" height="64" alt="ACI Philippines T.I.P. Quezon City Student Chapter logo">
+    <img src="logo.png" width="56" height="56" alt="ACI Philippines T.I.P. Quezon City Student Chapter logo">
     <div>
       <h1>Mechanics of Rigid and Deformable Bodies Calculator</h1>
       <p>American Concrete Institute Philippines T.I.P. QC Student Chapter</p>
       <p class="by">by CEM Jumawan</p>
     </div>
   </div>
-  <div class="side">
-  <div class="theme" role="radiogroup" aria-label="Colour theme">
-    <button type="button" role="radio" data-mode="light" aria-checked="false" title="Light theme">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Light</button>
-    <button type="button" role="radio" data-mode="dark" aria-checked="false" title="Dark theme">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>Dark</button>
-    <button type="button" role="radio" data-mode="system" aria-checked="false" title="Follow the device setting">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>System</button>
-  </div>
-  <nav class="disc" role="tablist" aria-label="Discipline">
-    <button role="tab" id="tab-statics" aria-controls="pane-statics" data-pane="statics">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9h20v4H2z"/><path d="M6 13l-3 6h6z"/><circle cx="18" cy="16.5" r="2.5"/><path d="M12 2v6m-2.5-2.5L12 8l2.5-2.5"/></svg>
-      <span class="full">Statics of Rigid Bodies</span><span class="short">Statics</span>
-    </button>
-    <button role="tab" id="tab-dynamics" aria-controls="pane-dynamics" data-pane="dynamics">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="5"/><path d="M14 6h8M16 10h6M3 21h18"/><path d="M19 3.5L22 6l-3 2.5"/></svg>
-      <span class="full">Dynamics of Rigid Bodies</span><span class="short">Dynamics</span>
-    </button>
-    <button role="tab" id="tab-mdb" aria-controls="pane-mdb" data-pane="mdb">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8c6 5 12 5 18 0"/><path d="M3 12c6 5 12 5 18 0"/><path d="M3 8v4M21 8v4"/><path d="M12 15v6m-2.5-2.5L12 21l2.5-2.5"/></svg>
-      <span class="full">Mechanics of Deformable Bodies</span><span class="short">Deformable</span>
-    </button>
-  </nav>
+  <div class="ctrls">
+    <div class="ctrl"><span id="themeLbl">Theme</span>
+      <div class="seg theme" role="radiogroup" aria-labelledby="themeLbl">
+        <button type="button" role="radio" data-mode="light" aria-checked="false" title="Light theme">Light</button><button type="button" role="radio" data-mode="dark" aria-checked="false" title="Dark theme">Dark</button><button type="button" role="radio" data-mode="system" aria-checked="false" title="Follow the device setting">System</button>
+      </div>
+    </div>
   </div>
 </header>
+<div class="body">
+<nav class="side" id="side" aria-label="Modules">
+  <div class="sidetop">
+    <span class="cur" id="navCur">Modules</span>
+    <button type="button" class="sidebtn" id="navToggle" aria-expanded="false" aria-controls="navList">Modules</button>
+    <button type="button" class="sidebtn" id="railBtn" aria-label="Hide the module list" title="Hide the module list">&laquo;</button>
+  </div>
+  <div class="navlist" id="navList">
+    <div class="navhead">Statics of Rigid Bodies</div>
+    <div class="navgrp" data-pane="statics">
+      <button type="button" class="navitem" data-mod="forces">Force Systems</button>
+      <button type="button" class="navitem" data-mod="equil">Equilibrium</button>
+      <button type="button" class="navitem" data-mod="truss">Trusses</button>
+      <button type="button" class="navitem" data-mod="internal">Internal Forces</button>
+      <button type="button" class="navitem" data-mod="friction">Friction</button>
+      <button type="button" class="navitem" data-mod="section">Centroids and Moments of Inertia</button>
+      <button type="button" class="navitem" data-mod="vwork">Virtual Work</button>
+    </div>
+    <div class="navhead">Dynamics of Rigid Bodies</div>
+    <div class="navgrp" data-pane="dynamics">
+      <button type="button" class="navitem" data-mod="rect">Rectilinear Kinematics</button>
+      <button type="button" class="navitem" data-mod="curv">Curvilinear Motion and Projectiles</button>
+      <button type="button" class="navitem" data-mod="pkin">Particle Kinetics</button>
+      <button type="button" class="navitem" data-mod="impact">Impulse, Momentum and Impact</button>
+      <button type="button" class="navitem" data-mod="rbmotion">Planar Kinematics of Rigid Bodies</button>
+      <button type="button" class="navitem" data-mod="rbforce">Planar Kinetics of Rigid Bodies</button>
+      <button type="button" class="navitem" data-mod="vib">Vibrations</button>
+      <button type="button" class="navitem" data-mod="rb3d">3D Rigid-Body Motion</button>
+    </div>
+    <div class="navhead">Mechanics of Deformable Bodies</div>
+    <div class="navgrp" data-pane="mdb">
+      <button type="button" class="navitem" data-mod="stress">Simple Stress and Strain</button>
+      <button type="button" class="navitem" data-mod="axial">Axial Load</button>
+      <button type="button" class="navitem" data-mod="torsion">Torsion</button>
+      <button type="button" class="navitem" data-mod="beamstress">Beam Stresses</button>
+      <button type="button" class="navitem" data-mod="deflect">Beam Deflection</button>
+      <button type="button" class="navitem" data-mod="combined">Combined Loadings</button>
+      <button type="button" class="navitem" data-mod="transform">Stress and Strain Transformation</button>
+      <button type="button" class="navitem" data-mod="buckle">Buckling of Columns</button>
+    </div>
+  </div>
+  <div class="railonly">
+    <button type="button" class="railic" data-pane="statics" title="Statics of Rigid Bodies">ST</button>
+    <button type="button" class="railic" data-pane="dynamics" title="Dynamics of Rigid Bodies">DY</button>
+    <button type="button" class="railic" data-pane="mdb" title="Mechanics of Deformable Bodies">MD</button>
+  </div>
+</nav>
 <main>
-  <iframe id="pane-statics" role="tabpanel" aria-labelledby="tab-statics" title="Statics of Rigid Bodies solver" data-src="st/index.html" hidden></iframe>
-  <iframe id="pane-dynamics" role="tabpanel" aria-labelledby="tab-dynamics" title="Dynamics of Rigid Bodies solver" data-src="dy/index.html" hidden></iframe>
-  <iframe id="pane-mdb" role="tabpanel" aria-labelledby="tab-mdb" title="Mechanics of Deformable Bodies solver" data-src="md/index.html" hidden></iframe>
+  <iframe id="pane-statics" title="Statics of Rigid Bodies solver" data-src="st/index.html" hidden></iframe>
+  <iframe id="pane-dynamics" title="Dynamics of Rigid Bodies solver" data-src="dy/index.html" hidden></iframe>
+  <iframe id="pane-mdb" title="Mechanics of Deformable Bodies solver" data-src="md/index.html" hidden></iframe>
 </main>
 </div>
-<footer class="site">
-  <div class="inner">
-    <section aria-labelledby="ft-about">
-      <h2 id="ft-about">About Us</h2>
-      <p>The American Concrete Institute Philippines Technological Institute of the Philippines Quezon City Student Chapter (ACIP T.I.P. QC SC) is the Premier Civil Engineering Student Organization at T.I.P. QC.</p>
-    </section>
-    <section aria-labelledby="ft-mission">
-      <h2 id="ft-mission">Mission</h2>
-      <p>To help our members grow into competent, ethical, and future-ready civil engineers by providing academic and professional services, technical seminars, and hands-on workshops guided by ACI standards and best practices in concrete design and construction.</p>
-    </section>
-    <section aria-labelledby="ft-vision">
-      <h2 id="ft-vision">Vision</h2>
-      <p>To be the leading student chapter of ACI Philippines, known for producing civil engineers who build safe, durable, and sustainable concrete structures for the nation.</p>
-    </section>
-    <section aria-labelledby="ft-dev">
-      <h2 id="ft-dev">Developer</h2>
-      <div class="dev">
-        <img src="logo.png" width="52" height="52" alt="">
-        <div>
-          <div class="name">Engr. CEM Jumawan</div>
-          <div class="role">President 2026-2027</div>
-        </div>
-      </div>
-    </section>
+</div>
+<footer class="foot">
+  <div class="footgrid">
+    <div><h4>About Us</h4><p>The American Concrete Institute Philippines Technological Institute of the Philippines Quezon City Student Chapter (ACIP T.I.P. QC SC) is the Premier Civil Engineering Student Organization at T.I.P. QC.</p></div>
+    <div><h4>Mission</h4><p>To help our members grow into competent, ethical, and future-ready civil engineers by providing academic and professional services, technical seminars, and hands-on workshops guided by ACI standards and best practices in concrete design and construction.</p></div>
+    <div><h4>Vision</h4><p>To be the leading student chapter of ACI Philippines, known for producing civil engineers who build safe, durable, and sustainable concrete structures for the nation.</p></div>
+    <div><h4>Developer</h4><div class="dev"><img src="logo.png" width="52" height="52" alt=""><p><strong>Engr. CEM Jumawan</strong><br>President 2026-2027</p></div></div>
   </div>
-  <div class="base">ACIP T.I.P. QC SC · Mechanics of Rigid and Deformable Bodies Calculator</div>
+  <div class="footbase">
+    <span>ACIP T.I.P. QC SC · Mechanics of Rigid and Deformable Bodies Calculator</span>
+  </div>
 </footer>
 <script>
 (function () {
   'use strict';
   var KEY = 'mob.tab';
-  // A discipline tab stays hidden until its solver is built.
-  var tabs = Array.prototype.slice.call(document.querySelectorAll('nav.disc button')).filter(function (b) { return !b.hidden; });
-  var ids = tabs.map(function (b) { return b.dataset.pane; });
+  var ids = ['statics', 'dynamics', 'mdb'];
+  // Each solver page remembers its own module under mob.<key>.tab (see shared/app.js).
+  var PKEY = { statics: 'st', dynamics: 'dy', mdb: 'md' };
+  var current = null;
+  var side = document.getElementById('side');
+  function all(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
   function store(v) { try { localStorage.setItem(KEY, v); } catch (e) {} }
   function stored() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
 
@@ -236,13 +265,35 @@ footer.site .base {
   window.addEventListener('resize', fitFrames);
   if (phone.addEventListener) phone.addEventListener('change', fitFrames); else if (phone.addListener) phone.addListener(fitFrames);
 
-  function select(id) {
-    if (ids.indexOf(id) < 0) id = ids[0];
-    tabs.forEach(function (b) {
-      var on = b.dataset.pane === id;
-      b.setAttribute('aria-selected', on ? 'true' : 'false');
-      b.tabIndex = on ? 0 : -1;
+  function modOf(id) { try { return localStorage.getItem('mob.' + PKEY[id] + '.tab'); } catch (e) { return null; } }
+  // Highlight the module shown, and keep the address as #course/module so a link opens it.
+  function mark(id, mod) {
+    if (!mod) mod = modOf(id);
+    var grp = document.querySelector('.navgrp[data-pane="' + id + '"]');
+    if (!mod || !grp.querySelector('[data-mod="' + mod + '"]')) mod = grp.querySelector('.navitem').dataset.mod;
+    all('.navitem').forEach(function (b) {
+      var on = b.parentNode === grp && b.dataset.mod === mod;
+      if (on) { b.setAttribute('aria-current', 'page'); document.getElementById('navCur').textContent = b.textContent; }
+      else b.removeAttribute('aria-current');
     });
+    all('.railic').forEach(function (b) { b.classList.toggle('on', b.dataset.pane === id); });
+    var h = '#' + id + '/' + mod;
+    if (location.hash !== h) { try { history.replaceState(null, '', h); } catch (e) {} }
+  }
+  // Called by a solver page whenever its module changes.
+  window.MOB_module = function (key, mod) {
+    for (var id in PKEY) if (PKEY[id] === key && id === current) mark(id, mod);
+  };
+
+  function select(id, mod) {
+    if (ids.indexOf(id) < 0) id = ids[0];
+    current = id;
+    if (mod) {
+      var fr0 = document.getElementById('pane-' + id), app = null;
+      try { app = fr0.getAttribute('src') && fr0.contentWindow && fr0.contentWindow.App; } catch (e) {}
+      if (app && app.selectModule) app.selectModule(mod);
+      else { try { localStorage.setItem('mob.' + PKEY[id] + '.tab', mod); } catch (e) {} }
+    }
     frames().forEach(function (fr) {
       var on = fr.id === 'pane-' + id;
       if (on && !fr.getAttribute('src')) {
@@ -253,20 +304,34 @@ footer.site .base {
       if (on) { try { fr.contentWindow && fr.contentWindow.dispatchEvent(new Event('resize')); } catch (e) {} fit(fr); }
     });
     store(id);
-    if (location.hash !== '#' + id) { try { history.replaceState(null, '', '#' + id); } catch (e) {} }
+    mark(id, mod);
   }
 
-  tabs.forEach(function (b, i) {
-    b.addEventListener('click', function () { select(b.dataset.pane); });
-    b.addEventListener('keydown', function (e) {
-      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-      var n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
-      n.focus(); select(n.dataset.pane);
+  var toggle = document.getElementById('navToggle');
+  function openList(on) { side.classList.toggle('open', on); toggle.setAttribute('aria-expanded', on ? 'true' : 'false'); }
+  toggle.addEventListener('click', function () { openList(!side.classList.contains('open')); });
+  all('.navitem').forEach(function (b) {
+    b.addEventListener('click', function () {
+      select(b.parentNode.dataset.pane, b.dataset.mod);
+      if (phone.matches) { openList(false); side.scrollIntoView({ block: 'start' }); }
     });
   });
+  all('.railic').forEach(function (b) { b.addEventListener('click', function () { select(b.dataset.pane); }); });
+  // Wide screens: the module list can fold to a narrow rail, remembered for next time.
+  var rail = document.getElementById('railBtn');
+  function setRail(on, save) {
+    side.classList.toggle('rail', on);
+    rail.innerHTML = on ? '&raquo;' : '&laquo;';
+    var t = on ? 'Show the module list' : 'Hide the module list';
+    rail.setAttribute('aria-label', t); rail.title = t;
+    if (save) { try { localStorage.setItem('mob.rail', on ? '1' : '0'); } catch (e) {} }
+    frames().forEach(function (fr) { try { if (!fr.hidden && fr.contentWindow) fr.contentWindow.dispatchEvent(new Event('resize')); } catch (e) {} });
+  }
+  rail.addEventListener('click', function () { setRail(!side.classList.contains('rail'), true); });
+  try { if (localStorage.getItem('mob.rail') === '1') setRail(true, false); } catch (e) {}
   // Theme switcher: Light (default), Dark, or System (follows the device).
   var THEME_KEY = 'mob.theme';
-  var modeBtns = Array.prototype.slice.call(document.querySelectorAll('.theme button'));
+  var modeBtns = all('.theme button');
   function themeMode() { var m = null; try { m = localStorage.getItem(THEME_KEY); } catch (e) {} return (m === 'dark' || m === 'system') ? m : 'light'; }
   function setTheme(m, save) {
     var de = document.documentElement;
@@ -323,8 +388,9 @@ footer.site .base {
     } catch (e) { return false; }
   };
 
-  var start = (location.hash || '').slice(1) || stored() || ids[0];
-  select(start);
+  var hash = (location.hash || '').slice(1).split('/');
+  if (hash[0] && ids.indexOf(hash[0]) >= 0) select(hash[0], hash[1] || null);
+  else select(stored() || ids[0]);
 })();
 </script>
 </body>

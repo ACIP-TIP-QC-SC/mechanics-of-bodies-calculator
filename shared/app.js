@@ -41,10 +41,20 @@
     function buildTabs() {
       const t = $('tabs'); t.innerHTML = '';
       Object.values(App.modules).forEach((m, i) => {
-        t.append(h('button', { type: 'button', role: 'tab', 'aria-selected': App.active === m.id ? 'true' : 'false', onclick: () => { anim.set(null); App.active = m.id; try { localStorage.setItem(TAB_KEY, m.id); } catch (e) {} buildTabs(); syncUnits(); App.rebuild(); } }, h('span', { class: 'n' }, String(i + 1)), m.title));
-        if (App.active === m.id) $('modTitle').textContent = `${i + 1}. ${m.title}`;
+        t.append(h('button', { type: 'button', role: 'tab', 'aria-selected': App.active === m.id ? 'true' : 'false', onclick: () => App.selectModule(m.id) }, h('span', { class: 'n' }, String(i + 1)), m.title));
+        if (App.active === m.id) $('modTitle').textContent = m.title;
       });
+      /* Inside the main page, its side list of modules follows the module shown here. */
+      try { if (window.parent !== window && window.parent.MOB_module) window.parent.MOB_module(cfg.key, App.active); } catch (e) { /* opened on its own */ }
     }
+    /* Switch modules; also called by the main page's side list. */
+    App.selectModule = function (id) {
+      if (!App.modules[id]) return;
+      if (id === App.active) { buildTabs(); return; }
+      anim.set(null); App.active = id;
+      try { localStorage.setItem(TAB_KEY, id); } catch (e) {}
+      buildTabs(); syncUnits(); App.rebuild();
+    };
     function buildExamples() {
       const sel = $('examples'); sel.innerHTML = '';
       sel.append(h('option', { value: '' }, 'Load example / test case…'));

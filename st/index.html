@@ -5,7 +5,7 @@
 <script>
 /* Theme from the main page (light by default); when opened on its own, from the saved choice. */
 (function () { var de = document.documentElement, m = 'light';
-  try { if (window.parent !== window) { var p = window.parent.document.documentElement; m = p.hasAttribute('data-theme') ? p.getAttribute('data-theme') : 'system'; } else { m = localStorage.getItem('mob.theme') || 'light'; } } catch (e) {}
+  try { if (window.parent !== window) { de.classList.add('embedded'); var p = window.parent.document.documentElement; m = p.hasAttribute('data-theme') ? p.getAttribute('data-theme') : 'system'; } else { m = localStorage.getItem('mob.theme') || 'light'; } } catch (e) {}
   if (m === 'system') de.removeAttribute('data-theme'); else de.setAttribute('data-theme', m === 'dark' ? 'dark' : 'light'); })();
 </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -19,7 +19,7 @@
 <div class="wrap">
   <nav class="tabs" id="tabs" role="tablist" aria-label="Modules"></nav>
   <div class="bar">
-    <h2 id="modTitle">Module</h2>
+    <div class="ttl"><p class="kicker">Statics of Rigid Bodies</p><h2 id="modTitle">Module</h2></div>
     <div class="seg" role="group" aria-label="Units">
       <button type="button" id="uSI" aria-pressed="true">SI</button><button type="button" id="uUS" aria-pressed="false">U.S. Customary</button>
     </div>
